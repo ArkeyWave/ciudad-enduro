@@ -1,6 +1,8 @@
 # Phase 0 — Foundation
 
-Status: **proposed** (2026-11-10). The implementation plan `docs/plans/2026-11-10-phase-0-foundation.md` (rev. 2) refines these decisions after the plan gate. Phase 0 is mostly sequential. One parallel pair (staging deploy and auth, in separate worktrees) is
+Status: **proposed** (2026-11-10). The implementation plan `docs/plans/2026-11-10-phase-0-foundation.md` (rev. 3) refines these decisions after the plan gate.
+
+Phase 0 is mostly sequential. One parallel pair (staging deploy and auth, in separate worktrees) is
 defined in the implementation plan. Wide parallel work starts in Phase 1, after the contract and the schema exist.
 
 ## Goal
