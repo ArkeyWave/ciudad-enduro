@@ -3,6 +3,7 @@
 ## [Unreleased] - 2026-11-10
 
 ### Added
+- Staging deploy (`docs/operations/deploy.md`): production images `apps/api/Dockerfile` (prod `node_modules`, `dist`, migrations, entrypoint; `BUILD_SHA` baked from the build arg or Coolify's `SOURCE_COMMIT`) and `apps/web/Dockerfile` (Next standalone output), both `node:24-alpine` as `USER node`; `.dockerignore`; `scripts/verify-image.sh` refuses test paths under `/app` and a canary from a build-context `.env` in any image layer. CI `images` job builds, verifies and smoke-runs both images; `deploy-staging` job (push to `main`, Environment `staging`) runs the box's forced-command script `ce-oss-deploy <sha>`, which deploys only commits on `main`, api first, and checks `/api/health` reports that SHA. Live at https://enduro-next.vops.pe behind the Cloudflare origin lock.
 - `pnpm dev` builds `api-client` before the web dev server (the web imports its runtime from `dist/`, which a fresh clone does not have).
 - Typed API client (`packages/api-client`): `openapi-typescript` 7.13 renders the committed OpenAPI contract, `createApiClient` wraps `openapi-fetch` 0.17; a type-checked contract test rejects an unknown city. CI `contract` job fails on a stale client.
 - Web app (`apps/web`, Next.js 16.4.5, React 19.3.1): the home page lists published trails from the API with Spanish labels (an unknown slug throws); `/api` rewrite only in development. Playwright 1.65.0 e2e on a seeded per-worktree test database, run by the CI `e2e` job.
