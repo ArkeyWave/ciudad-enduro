@@ -167,7 +167,7 @@ jobs:
             -e TURNSTILE_SECRET_KEY="$(secret)" \
             ce-api:ci
           docker run -d --name web --network host -e API_INTERNAL_URL=http://127.0.0.1:3001 \
-            -e TURNSTILE_SITE_KEY=ci-site-key ce-web:ci
+            ce-web:ci
           for i in $(seq 30); do curl -fsS http://127.0.0.1:3001/api/health -o health.json && break; sleep 2; done
           cat health.json; echo
           test "$(jq -r .revision health.json)" = "${{ github.sha }}"
