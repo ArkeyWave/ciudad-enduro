@@ -160,7 +160,7 @@ jobs:
           secret() { echo "ci-$(openssl rand -hex 24)"; }
           docker run -d --name api --network host \
             -e DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/ciudad_enduro \
-            -e WEB_ORIGIN=http://127.0.0.1:3000 -e BETTER_AUTH_URL=http://127.0.0.1:3000 \
+            -e WEB_ORIGIN=https://smoke.invalid -e BETTER_AUTH_URL=https://smoke.invalid \
             -e BETTER_AUTH_SECRET="$(secret)" -e OTP_HMAC_SECRET="$(secret)" \
             -e RESEND_API_KEY="$(secret)" -e GOOGLE_CLIENT_SECRET="$(secret)" \
             -e EMAIL_FROM=ci@example.com -e GOOGLE_CLIENT_ID=ci \
