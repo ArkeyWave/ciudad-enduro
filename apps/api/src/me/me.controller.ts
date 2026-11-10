@@ -7,7 +7,7 @@ export class MeDto {
   @ApiProperty() id!: string;
   @ApiProperty() email!: string;
   @ApiProperty() name!: string;
-  @ApiProperty({ enum: ['rider', 'admin'] }) role!: string;
+  @ApiProperty() role!: string;
 }
 
 @ApiTags('me')
