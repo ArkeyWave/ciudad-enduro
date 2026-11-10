@@ -41,8 +41,8 @@ export function buildAuthOptions({ env, db, mailer, throttle }: AuthDeps) {
     },
     databaseHooks: {
       account: {
-        create: { before: async (account) => withoutProviderTokens(account) },
-        update: { before: async (account) => withoutProviderTokens(account) },
+        create: { before: (account) => Promise.resolve(withoutProviderTokens(account)) },
+        update: { before: (account) => Promise.resolve(withoutProviderTokens(account)) },
       },
     },
     disabledPaths: [...DISABLED_AUTH_PATHS],
@@ -65,7 +65,7 @@ export function buildAuthOptions({ env, db, mailer, throttle }: AuthDeps) {
         otpLength: 6,
         expiresIn: 600,
         allowedAttempts: 5,
-        storeOTP: { hash: async (otp) => hmacSha256(env.OTP_HMAC_SECRET, otp) },
+        storeOTP: { hash: (otp) => Promise.resolve(hmacSha256(env.OTP_HMAC_SECRET, otp)) },
         resendStrategy: 'rotate',
         sendVerificationOTP: ({ email, otp }, ctx) => mailer.sendOtp(email, otp, ctx),
       }),
