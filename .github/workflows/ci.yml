@@ -113,3 +113,90 @@ jobs:
       - run: pnpm turbo run build --filter=web
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm --filter web test:e2e
+
+  # Builds both production images, smoke-runs them against PostGIS, and refuses an image that
+  # ships test code or a file from the build context's .env (scripts/verify-image.sh).
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ciudad_enduro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d ciudad_enduro"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The canary stands in for a real secret in a developer's apps/api/.env.
+      - name: Plant a canary in the build context
+        run: |
+          canary="CANARY_$(openssl rand -hex 16)"
+          echo "CANARY=$canary" >> "$GITHUB_ENV"
+          printf 'BETTER_AUTH_SECRET=%s\n' "$canary" > apps/api/.env
+          printf 'API_INTERNAL_URL=%s\n' "$canary" > apps/web/.env
+
+      - run: docker build -f apps/api/Dockerfile --build-arg BUILD_SHA=${{ github.sha }} -t ce-api:ci .
+      - run: docker build -f apps/web/Dockerfile -t ce-web:ci .
+      - run: scripts/verify-image.sh ce-api:ci "$CANARY"
+      - run: scripts/verify-image.sh ce-web:ci "$CANARY"
+
+      # The API container migrates an empty database, then answers with the baked revision;
+      # the web container renders the home page through it.
+      - name: Smoke-run both images
+        run: |
+          secret() { echo "ci-$(openssl rand -hex 24)"; }
+          docker run -d --name api --network host \
+            -e DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/ciudad_enduro \
+            -e WEB_ORIGIN=http://127.0.0.1:3000 -e BETTER_AUTH_URL=http://127.0.0.1:3000 \
+            -e BETTER_AUTH_SECRET="$(secret)" -e OTP_HMAC_SECRET="$(secret)" \
+            -e RESEND_API_KEY="$(secret)" -e GOOGLE_CLIENT_SECRET="$(secret)" \
+            -e EMAIL_FROM=ci@example.com -e GOOGLE_CLIENT_ID=ci \
+            ce-api:ci
+          docker run -d --name web --network host -e API_INTERNAL_URL=http://127.0.0.1:3001 ce-web:ci
+          for i in $(seq 30); do curl -fsS http://127.0.0.1:3001/api/health -o health.json && break; sleep 2; done
+          cat health.json; echo
+          test "$(jq -r .revision health.json)" = "${{ github.sha }}"
+          for i in $(seq 30); do curl -fsS http://127.0.0.1:3000/ -o home.html && break; sleep 2; done
+          grep -q 'Aún no hay senderos publicados.' home.html
+
+      - name: Container logs
+        if: failure()
+        run: docker logs api; docker logs web
+
+  # Push to main only, after every gate. The key in the `staging` Environment (restricted to
+  # main) can run one command on the box: ce-oss-deploy <sha> (docs/operations/deploy.md).
+  # Pull requests, including fork PRs, never reach this job or its secret.
+  deploy-staging:
+    needs: [check, contract, e2e, images]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    permissions: {}
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Deploy ${{ github.sha }} to enduro-next.vops.pe
+        env:
+          DEPLOY_KEY: ${{ secrets.CE_OSS_DEPLOY_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo '104.152.209.8 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGroYXrLr2Jn8Rfj9IMmw161mTAN3C404FChVhYl3bju' > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            root@104.152.209.8 '${{ github.sha }}'

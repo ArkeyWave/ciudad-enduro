@@ -131,6 +131,10 @@ Every package under `apps/` and `packages/` defines the scripts `lint`, `typeche
 A package that lints lists `eslint` and `typescript` in its own `devDependencies` (the shared
 config in `@ciudad-enduro/config` does not link their binaries into other packages).
 
+## Deploy
+
+Pushes to `main` deploy to staging at https://enduro-next.vops.pe. See [docs/operations/deploy.md](docs/operations/deploy.md).
+
 ## License
 
 MIT
