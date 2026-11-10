@@ -48,8 +48,21 @@ describe('loadEnv', () => {
   });
 });
 
+describe('auth URLs are bare origins', () => {
+  // trustedOrigins and the CSRF check compare exact origins; a trailing slash breaks every sign-in.
+  it.each(['BETTER_AUTH_URL', 'WEB_ORIGIN'])('rejects a trailing slash or a path in %s', (key) => {
+    for (const value of ['http://localhost:3000/', 'http://localhost:3000/app']) {
+      expect(() => loadEnv({ ...valid, [key]: value }), value).toThrow(new RegExp(`${key}: must be an origin`));
+    }
+  });
+
+  it('accepts an origin with a port', () => {
+    expect(() => loadEnv({ ...valid, WEB_ORIGIN: 'http://127.0.0.1:3100', BETTER_AUTH_URL: 'http://127.0.0.1:3100' })).not.toThrow();
+  });
+});
+
 describe('loadEnv in production', () => {
-  const prod = { ...valid, NODE_ENV: 'production' };
+  const prod = { ...valid, NODE_ENV: 'production', WEB_ORIGIN: 'https://enduro.example', BETTER_AUTH_URL: 'https://enduro.example' };
 
   it('accepts real secrets', () => {
     expect(() => loadEnv(prod)).not.toThrow();
@@ -63,6 +76,31 @@ describe('loadEnv in production', () => {
     const value = `${prefix}${'x'.repeat(32)}`;
     expect(() => loadEnv({ ...prod, GOOGLE_CLIENT_SECRET: value })).toThrow(/GOOGLE_CLIENT_SECRET/);
     expect(() => loadEnv({ ...prod, GOOGLE_CLIENT_SECRET: value })).not.toThrow(new RegExp(value));
+  });
+
+  it.each(['BETTER_AUTH_URL', 'WEB_ORIGIN'])('rejects an http:// %s', (key) => {
+    expect(() => loadEnv({ ...prod, [key]: 'http://enduro.example' })).toThrow(new RegExp(`${key}: must be https`));
+  });
+
+  // Better Auth sets Secure cookies only when baseURL.startsWith('https://') (cookies/index.mjs:23).
+  it.each(['BETTER_AUTH_URL', 'WEB_ORIGIN'])('rejects %s values that do not start with https:// exactly', (key) => {
+    for (const value of ['HTTPS://enduro.example', ' https://enduro.example']) {
+      expect(() => loadEnv({ ...prod, [key]: value }), value).toThrow(new RegExp(`${key}: must be https`));
+    }
+  });
+
+  it('rejects a set BETTER_AUTH_TRUSTED_ORIGINS (Better Auth adds it to the trusted origins)', () => {
+    expect(() => loadEnv({ ...prod, BETTER_AUTH_TRUSTED_ORIGINS: 'https://other.example' })).toThrow(
+      /BETTER_AUTH_TRUSTED_ORIGINS: must not be set in production/,
+    );
+  });
+
+  it('accepts production without BETTER_AUTH_TRUSTED_ORIGINS', () => {
+    expect(loadEnv(prod).NODE_ENV).toBe('production');
+  });
+
+  it('allows http:// URLs outside production', () => {
+    expect(() => loadEnv({ ...valid, WEB_ORIGIN: 'http://localhost:3000', BETTER_AUTH_URL: 'http://localhost:3000' })).not.toThrow();
   });
 
   it('allows dev- values outside production', () => {

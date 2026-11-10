@@ -32,6 +32,29 @@
         ],
         "type": "string"
       },
+      "MeDto": {
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role"
+        ],
+        "type": "object"
+      },
       "TrailDetailDto": {
         "properties": {
           "city": {
@@ -200,6 +223,30 @@
         },
         "tags": [
           "Health"
+        ]
+      }
+    },
+    "/api/me": {
+      "get": {
+        "operationId": "MeController_get",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "description": "No valid session"
+          }
+        },
+        "tags": [
+          "me"
         ]
       }
     },

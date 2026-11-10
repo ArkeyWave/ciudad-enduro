@@ -1,5 +1,6 @@
 import { integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { lineStringGeom, pointGeom } from '../types/geo.js';
+import { user } from './auth.js';
 
 export const CITIES = ['Chimbote', 'Nuevo Chimbote', 'Trujillo'] as const;
 export const DEPARTMENTS = ['Ancash', 'La Libertad'] as const;
@@ -32,8 +33,7 @@ export const trails = pgTable('trails', {
   path: lineStringGeom('path'),
   distanceM: integer('distance_m'),
   elevationGainM: integer('elevation_gain_m'),
-  // FK to the user table arrives with auth (B4).
-  authorId: text('author_id'),
+  authorId: text('author_id').references(() => user.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

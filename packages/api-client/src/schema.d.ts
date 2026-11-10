@@ -20,6 +20,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["MeController_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/trails": {
         parameters: {
             query?: never;
@@ -64,6 +80,12 @@ export interface components {
         };
         /** @enum {string} */
         Difficulty: "facil" | "intermedio" | "dificil";
+        MeDto: {
+            email: string;
+            id: string;
+            name: string;
+            role: string;
+        };
         TrailDetailDto: {
             city: components["schemas"]["City"];
             description: string;
@@ -112,6 +134,32 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MeController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeDto"];
+                };
+            };
+            /** @description No valid session */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

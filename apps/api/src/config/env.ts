@@ -6,15 +6,19 @@ const required = z.string().min(1);
 // Secrets that production must never run with an example or dev/test value.
 const SECRET_KEYS = ['BETTER_AUTH_SECRET', 'OTP_HMAC_SECRET', 'RESEND_API_KEY', 'GOOGLE_CLIENT_SECRET'] as const;
 const NON_PRODUCTION_PREFIXES = ['dev-', 'test-'];
+const HTTPS_KEYS = ['BETTER_AUTH_URL', 'WEB_ORIGIN'] as const;
 
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']),
     PORT: z.coerce.number().int().positive().default(3001),
     DATABASE_URL: z.url(),
-    WEB_ORIGIN: z.url(),
+    // Raw strings: z.url() would trim the value; the refine below checks the exact text.
+    WEB_ORIGIN: required,
     BETTER_AUTH_SECRET: secret,
-    BETTER_AUTH_URL: z.url(),
+    BETTER_AUTH_URL: required,
+    // Better Auth adds this list to trustedOrigins on its own (context/helpers.mjs:83-84).
+    BETTER_AUTH_TRUSTED_ORIGINS: z.string().optional(),
     RESEND_API_KEY: required,
     EMAIL_FROM: required,
     GOOGLE_CLIENT_ID: required,
@@ -24,11 +28,26 @@ const envSchema = z
     BUILD_SHA: z.preprocess((v) => (v === '' ? undefined : v), required.default('unknown')),
   })
   .superRefine((env, ctx) => {
+    // trustedOrigins and the CSRF check compare exact origins: a trailing slash or a path breaks sign-in.
+    for (const key of HTTPS_KEYS) {
+      if (!URL.canParse(env[key]) || new URL(env[key]).origin !== env[key]) {
+        ctx.addIssue({ code: 'custom', path: [key], message: 'must be an origin (scheme://host[:port], no path)' });
+      }
+    }
     if (env.NODE_ENV !== 'production') return;
     for (const key of SECRET_KEYS) {
       if (NON_PRODUCTION_PREFIXES.some((prefix) => env[key].startsWith(prefix))) {
         ctx.addIssue({ code: 'custom', path: [key], message: 'must be a real secret in production' });
       }
+    }
+    // Better Auth's own predicate for Secure, __Secure- cookies (cookies/index.mjs:23).
+    for (const key of HTTPS_KEYS) {
+      if (!env[key].startsWith('https://')) {
+        ctx.addIssue({ code: 'custom', path: [key], message: 'must be https in production' });
+      }
+    }
+    if (env.BETTER_AUTH_TRUSTED_ORIGINS !== undefined) {
+      ctx.addIssue({ code: 'custom', path: ['BETTER_AUTH_TRUSTED_ORIGINS'], message: 'must not be set in production' });
     }
   });
 

@@ -37,6 +37,10 @@ describe('OpenAPI document', () => {
     });
   });
 
+  it('documents /api/me with MeDto', () => {
+    expect(okSchema('/api/me')?.content['application/json']?.schema).toEqual({ $ref: '#/components/schemas/MeDto' });
+  });
+
   it('declares city as an enum of the three cities', () => {
     const city = document.paths['/api/trails']?.get?.parameters?.find((p) => 'name' in p && p.name === 'city');
     expect(city).toMatchObject({ in: 'query', required: false, schema: { $ref: '#/components/schemas/City' } });

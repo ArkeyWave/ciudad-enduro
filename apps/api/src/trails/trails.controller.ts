@@ -1,3 +1,4 @@
+import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import { Controller, Get, NotFoundException, Param, Query } from '@nestjs/common';
 import { ApiNotFoundResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { ListTrailsQuery } from './dto/list-trails.query.js';
@@ -5,6 +6,7 @@ import { TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
 import { TrailsService } from './trails.service.js';
 
 @ApiTags('trails')
+@AllowAnonymous()
 @Controller('trails')
 export class TrailsController {
   constructor(private readonly trails: TrailsService) {}

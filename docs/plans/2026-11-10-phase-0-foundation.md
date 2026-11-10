@@ -1,4 +1,4 @@
-# Phase 0 Foundation — Implementation Plan (rev. 3, gate closed)
+# Phase 0 Foundation — Implementation Plan (rev. 3.3, gate closed)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (inside the
 > orchestrated-delivery loop) to implement this plan batch by batch.
@@ -14,7 +14,8 @@ first-party and there is no CORS.
 
 **Tech stack (verified on npm 2026-11-10):** Node 24.18, pnpm 12.18, turbo 2.11, TypeScript
 **6.0.3** (pinned, D13), @nestjs/core 12.4, @nestjs/swagger 12.1, drizzle-orm 0.45.4, drizzle-kit
-0.31.11, better-auth 1.7.19, **auth 1.7.19** (the CLI; a separate package — better-auth has no bin),
+0.31.11, better-auth **1.7.18**, **auth 1.7.18** (the CLI; a separate package — better-auth has no bin;
+1.7.19 was published on 2026-11-10 and is blocked by pnpm's minimum release age — see F14),
 @thallesp/nestjs-better-auth 2.8.0, next 16.4, vitest 5.1, unplugin-swc 2.0 + @swc/core 1.16,
 @playwright/test 1.65, zod 4.6, pg 8.23, resend 6.37, openapi-typescript 7.13, openapi-fetch 0.17.
 
@@ -75,7 +76,7 @@ ledger is in section 9.
 | # | Question | Decision | Why |
 |---|----------|----------|-----|
 | G1 | Account linking | **Off.** Google sign-in additionally requires `email_verified === true`. An email-code user who taps Google gets a clear "Ingresa con tu código de correo" message. | Linking with trusted providers skips the verification check (takeover). Without the `email_verified` rule, an attacker pre-creates the user with Google and keeps access after the owner signs in by code — this applies even with linking off. Google warns a verified third-party address may no longer belong to the account holder. |
-| G2 | Throttle placement | `hooks.before` runs the CSRF check, then the per-address cooldown and global cap, and issues a one-use send permit; the **mailer refuses to send without a permit**; unused paths disabled via an allowlist test; the built-in per-IP limiter stays on the send path (5/60 s); mail is sent in the background. | Round 1 reproduced the bypass and the limiter ordering; the final review showed a cross-origin request could burn a slot with no mail, and that removing the per-IP limit let one IP drain the global cap. |
+| G2 | Throttle placement | `hooks.before` runs the CSRF check, then the per-address cooldown and global cap, and issues a one-use send permit; the **mailer refuses to send without a permit**; unused paths disabled via an allowlist test; the built-in per-IP limiter stays on the send path (5/60 s); mail is sent in the background. | Round 1 reproduced the bypass and the limiter ordering; the final review showed a cross-origin request could burn a slot with no mail, and that removing the per-IP limit let one IP drain the global cap at once. **Correction (F15):** the per-IP limit only slows that drain — one IP still fills the 50/24 h cap in about 10 minutes (5 per 60 s); see §8. |
 | G3 | Test runner | **Vitest + unplugin-swc**. | Both reviewers; ESM-only better-auth is the usual Jest pain. |
 | G4 | Parallelism | Auth and the web list do **not** run in parallel (they share `apps/api/package.json` and the contract). **Staging deploy (B3) and auth (B4) run in parallel worktrees**: disjoint files, separate databases. | Removes the real collisions, keeps real parallelism. |
 | G5 | Deploy access | Migrations run in the **API container entrypoint**. The GitHub secret is an SSH key restricted by `command=` to one deploy script that takes a commit SHA. | A public repo must not hold a general shell key to the shared box. |
@@ -348,13 +349,17 @@ Options (the full set; anything not listed stays default):
   database: drizzleAdapter(db, { provider: 'pg', schema: authSchema }),
   user: { additionalFields: { role: { type: 'string', defaultValue: 'rider', input: false } } },
   account: { accountLinking: { enabled: false } },                         // G1
-  socialProviders: { google: { clientId, clientSecret,
-    mapProfileToUser: (p) => { if (p.email_verified !== true) throw new APIError('FORBIDDEN'); return {}; } } },
+  user: { validateUserInfo: ({ source }) =>                              // F14: replaces mapProfileToUser
+    source.method === 'oauth' && source.oauth?.providerId === 'google' && source.oauth.profile?.email_verified !== true
+      ? { error: 'google_email_unverified' } : undefined },
+  socialProviders: { google: { clientId, clientSecret } },
+  databaseHooks: { account: { create: { before: dropTokens }, update: { before: dropTokens } } },  // B4.4
   disabledPaths: [
     '/email-otp/request-password-reset', '/forget-password/email-otp', '/email-otp/reset-password',
     '/email-otp/verify-email', '/email-otp/check-verification-otp',
     '/email-otp/change-email', '/email-otp/request-email-change',
     '/sign-up/email', '/sign-in/email', '/update-user', '/change-email', '/delete-user',
+    // … and every other literal path not in the allowlist (src/auth/auth-paths.ts, 30 in total)
   ],
   rateLimit: { enabled: true, storage: 'memory',                            // one container, windows ≤ 60 s
     customRules: { '/email-otp/send-verification-otp': { window: 60, max: 5 } } }, // per IP, before our throttle
@@ -373,14 +378,21 @@ Options (the full set; anything not listed stays default):
 
 The hook also rejects (400, generic body) any `/sign-in/social` request whose body carries
 `idToken`: Phase 0 supports only the redirect flow, where the token is merely decoded.
-The `email_verified` rejection from `mapProfileToUser` must end as a **redirect** to
+The `email_verified` rejection must end as a **redirect** to
 `/ingresar?error=google_email_unverified` (via the provider's `errorCallbackURL`), not raw JSON at
-the callback URL; the implementer verifies how the callback maps a thrown `APIError` and STOPS if
-it cannot redirect.
+the callback URL. **Rev. 3.1 (F14):** in 1.7.18 an `APIError` thrown by `mapProfileToUser` is not
+caught — `google.mjs:126` (core) calls it inside `getUserInfo`, `oauth2/callback.mjs:39` and
+`api/routes/callback.mjs:96` have no try/catch — so the user gets JSON 403. The rule therefore lives
+in `user.validateUserInfo`: it runs in `createUser` before the insert, inside the transaction
+(`db/internal-adapter.mjs:160-179`), and again on each later sign-in of a linked Google user
+(`oauth2/link-account.mjs:226`); the callback maps its `APIError` with `body.code` to
+`redirectOnError` (`api/routes/callback.mjs:152-153`, `utils/validate-user-info.mjs:38-41`).
 
 **Allowlist, not denylist.** `auth-paths.ts` exports the explicit set of enabled auth paths
 (`/sign-in/social`, `/callback/:id`, `/get-session`, `/sign-out`, `/email-otp/send-verification-otp`,
-`/sign-in/email-otp`, `/ok`, `/error`, …). A test reads every endpoint path from `auth.api` and
+`/sign-in/email-otp`, `/ok`, `/error`, and `/reset-password/:token`). The last one is an exception:
+`disabledPaths` matches exact paths only (`api/index.mjs:168-170`), so a parametric path cannot be
+disabled; it is inert, because every path that issues a reset token is disabled. A test reads every endpoint path from `auth.api` and
 asserts `enabled = all − disabledPaths` equals that set exactly. A library upgrade that adds an
 endpoint turns the test red until someone decides about it.
 
@@ -415,7 +427,8 @@ The success shape is **captured from the real endpoint** in the test, not hard-c
 Tests `throttle.int.spec.ts` (HTTP level, real DB; quota windows simulated by inserting backdated
 rows with SQL, e.g. `now() - interval '59 seconds'`; **every request sets a unique
 `cf-connecting-ip`** so the per-IP limiter never interferes; `beforeEach` truncates
-`otp_send_log` and resets the in-memory limiter by building a fresh app):
+`otp_send_log`. **Rev. 3.1 (F14):** a fresh app does **not** reset the limiter — its memory store is a
+module-level `Map` (`api/rate-limiter/index.mjs:6`) — so unique IPs are the only isolation):
 - hostile `Origin` (no cookie) → 403 and **zero rows** in `otp_send_log`; `WEB_ORIGIN` → 200.
 - a direct call of `mailer.sendOtp` without a permit → no mail, `otp_send_without_permit` logged.
 - first send → mailer called; repeat with a row at −59 s → not called, status + content-type +
@@ -464,6 +477,11 @@ undici `MockAgent`; it returns an ID token (an unsigned-checked JWT is fine, bec
 flow only decodes it). Drive the real flow: `POST /api/auth/sign-in/social` → take `state` from the
 redirect URL → `GET /api/auth/callback/google?code=…&state=…`.
 - verified email, new `sub=G1` → user created, `account.accountId = 'G1'`, redirect to the web.
+- `validateUserInfo` both sides (rev. 3.1): (a) `email_verified: false` → redirect with
+  `error=google_email_unverified`, zero user/account rows; (b) verified → user created; (c) must
+  not fire: an email-code sign-up still creates a user; (d) an existing Google user whose next
+  profile has `email_verified: false` is rejected on that sign-in. Mutations: remove the check →
+  (a) and (d) red; reject every source → (c) red.
 - same `sub`, changed email → same user.
 - `email_verified: false` → **redirect** to `/ingresar?error=google_email_unverified`, no user,
   no account row.
@@ -477,7 +495,9 @@ redirect URL → `GET /api/auth/callback/google?code=…&state=…`.
 - Google OAuth tokens: `account` stores Google's access/ID tokens in plain text; Phase 0 never
   calls Google APIs after sign-in, so a `databaseHooks.account.create.before` drops
   `accessToken`, `refreshToken` and `idToken` before insert. Test: after sign-in those columns are
-  null. Mutation: remove the hook → red.
+  null. Mutation: remove the hook → red. **Rev. 3.1:** each later sign-in writes fresh tokens
+  through `updateAccount` (`oauth2/link-account.mjs:242-258`), so `account.update.before` drops
+  them too. Test: null after a **second** sign-in; mutation: remove the update hook → red.
 
 **B4.5 Guard + `/api/me`** (`guard.int.spec.ts`): `/api/me` 401 without cookie, 200 with one;
 `/api/trails` and `/api/health` 200 anonymous; deleted session row → 401; expired session → 401;
@@ -501,6 +521,12 @@ the plaintext email. Mutation: log the OTP in the mailer → red.
 `apps/api/test/support/`; `tsconfig.build.json` excludes `test/`; nothing in `src/` imports them.
 B3's `verify-image.sh` proves no `/test/` path is in the image. (There is no capture endpoint in the
 API; e2e in B5 reads codes through a test-only entrypoint `test/support/e2e-main.ts`.)
+**Rev. 3.1 (as built):** `e2e-main.ts` runs as its own process (Playwright's TypeScript transform
+cannot run Nest decorators in-process), so it appends `{"to","otp"}` lines to `E2E_CODES_FILE`
+instead of an in-process store; codes still never travel over HTTP. No `scripts/seed-e2e.ts`: the
+sign-in e2e needs no auth seed, and `apps/web/e2e/prepare-db.ts` already recreates and migrates the
+database (auth tables included). The Google stub is `test/support/google-stub.ts` (no JWKS: the
+redirect flow only decodes the ID token).
 
 ---
 
@@ -529,6 +555,16 @@ sets its own `cf-connecting-ip` header.
   active — the operator signal and first line for the global-cap exhaustion attack.
 - **Self-cleaning:** create a user through the real flow, assert rows, delete them, assert zero
   residual in `user`, `session`, `account`, `verification`, `otp_send_log`.
+
+**OAuth errors before the callback has a state (rev. 3.1, F15):** errors such as `state_not_found`
+or `invalid_callback_request` happen before Better Auth knows the client's `errorCallbackURL`, so
+they redirect to Better Auth's own page `/api/auth/error`, not to `/ingresar`. If the UI must show
+them, B5 sets `onAPIError.errorURL` to `${WEB_ORIGIN}/ingresar` (with a test); B4 does not.
+
+**Sign-out and referrer (rev. 3.3, F16):** the API runs the CSRF check on `/sign-out` and
+`/sign-in/email-otp` even without a cookie. So the web must sign out with `fetch()` (it sends
+`Origin`), not a plain form navigation, and must not set `Referrer-Policy: no-referrer`: some
+browsers then send `Origin: null`, which Better Auth answers with 403.
 
 **Phase 0 exit:** the live checks above pass; CI green on `main`; the final adversarial review
 (section 7) is closed.
@@ -564,9 +600,17 @@ acceptable."
 - **Session tokens are stored unhashed** (Better Auth 1.7.19 has no option). The old app stored a
   SHA-256. Mitigations: DB reachable only on the Docker network, 30-day expiry, revocation by row
   delete, backups encrypted. Revisit when Better Auth offers hashed session tokens.
-- **The global cap of 50 codes per 24 h can be exhausted** by an attacker using 50 addresses from
-  many IPs (carried-over rule). Mitigations: the built-in per-IP limit (5/60 s), the Cloudflare
-  per-IP rule and the `otp_global_cap_reached` log event.
+- **The global cap of 50 codes per 24 h can be exhausted** (carried-over rule), and **one IP is
+  enough**: with 50 different addresses at the per-IP limit of 5 sends per 60 s, a single IP fills
+  the cap in about 10 minutes, and sign-in by code then stops for every rider until the 24-hour
+  window moves (F15). Many IPs do it faster. Mitigations: the built-in per-IP limit (5/60 s); the
+  Cloudflare rate-limit rule on `POST /api/auth/email-otp/send-verification-otp` — 5 requests per
+  10 s per IP and colo, block 10 s (rule id `4cf84c7a`, live) — which stops bursts but is looser
+  than 5/60 s over a minute; and the `otp_global_cap_reached` log event.
+  **Not added in Phase 0: a per-IP daily share of the cap** (owner decision pending). Trade-off:
+  in Peru many mobile riders share one carrier-grade NAT (CGNAT) address, so a per-IP daily quota
+  would also lock out legitimate riders behind that address; without it, one IP can exhaust the
+  global cap. Google sign-in is not affected by the cap.
 
 - **The staging box runs repo build steps** (B3 final review, opus @ xhigh). `ce-oss-deploy` runs
   no repo file on the host, but the Coolify build runs the Dockerfile `RUN` steps and the build
@@ -623,5 +667,8 @@ acceptable."
 | F11 | e2e entrypoint, client regen, operator steps unowned | accepted | B4 files, B3.8 checklist, B1.12 |
 | F12 | `disabledPaths` is a denylist | accepted | B4.1 allowlist test |
 | F13 | Non-6-digit codes do consume attempts | confirmed | assertion deleted |
+| F14 | Implementation check (B4, 2026-11-10) against the installed 1.7.18: (1) `mapProfileToUser` throwing does not redirect → `user.validateUserInfo`; (2) 1.7.19 blocked by the release-age policy → pin 1.7.18 for `better-auth`, `auth`, `@better-auth/*`, no exclude list; (3) the in-memory rate limiter is module-level and survives a new app → unique `cf-connecting-ip` per request is the only isolation; (4) `/reset-password/:token` cannot be in `disabledPaths` → allowlisted as inert; (5) tokens are rewritten on each sign-in → `account.update.before` too | confirmed (google.mjs:126, oauth2/callback.mjs:39, api/routes/callback.mjs:96 and 152-153, db/internal-adapter.mjs:160-179, utils/validate-user-info.mjs:38-41, link-account.mjs:226 and 242-258, rate-limiter/index.mjs:6, api/index.mjs:168-170) — owner approved | B4.1, B4.4, B4.2, tech stack |
+| F15 | B4 review round (opus 5.5 @ high ∥ gpt-6.1-sol @ high, both approve with changes): (1) a cookie-free cross-site `POST /sign-out` skipped the router origin check and cleared the session cookie; (2) mailer-permit tests did not prove the address match or single use; (3) the success-shape test compared only the content type; (4) a Google token without `email_verified` was not tested; (5) production accepted `http://` auth URLs; (6) an untested schema comment; (7) §8 and G2 understated a single-IP cap drain; (8) early OAuth errors land on `/api/auth/error` | (1) confirmed (origin-check.mjs:108, sign-out.mjs:54); others accepted | (1) hook runs `formCsrfMiddleware` on `/sign-out`; (2)-(5) tests + mutations, https check in `env.ts`; (6) removed; (7) §8, G2; (8) B5 note |
+| F16 | Final B4 review (opus 5.5 @ xhigh, approve with changes): S1 no body limit on `/api/auth` (adapter skips its parsers there, `nestjs-better-auth/dist/index.mjs:676-678`; a 3 MB body reached `/sign-out`, and a sign-up stored a 3,000,000-char `name` and `image='javascript:alert(1)'`); S2 the env https check did not match Better Auth's predicate, and a trailing slash broke the exact origin match; N1 `/sign-in/email-otp` without a cookie had no CSRF check; N2 failed mails were not reported; N3 web sign-out constraints; N4 `BETTER_AUTH_TRUSTED_ORIGINS` widens trusted origins silently (`context/helpers.mjs:83-84`) | confirmed | S1 adapter `middleware`: 413 above 16 KiB or with any Transfer-Encoding (no Content-Length and no Transfer-Encoding = no body, passes), unread body discarded so the client gets the 413; `user.create.before` trims `name` to 100 chars and keeps `image` only if https. S2 raw strings, `startsWith('https://')` in production, `new URL(v).origin === v` everywhere. N1 `formCsrfMiddleware` on `/sign-in/email-otp`. N2 `{event:'auth_background_task_failed', name}` from the mailer — the handler never sees the error, because Better Auth catches it first (`context/create-context.mjs:217-218`). N3 B5 note. N4 production rejects the variable |
 | B3-F1 | Coolify build runs repo `RUN` steps with host networking on the shared box | accepted for staging | §8; Phase 1: CI-built images on GHCR, deploy by digest (owner decision pending) |
 | nits | async hash; `exec node`; Google tokens in `account`; `auth.cli` in `src/`; frozen Date; prerender; memory rate-limit storage | accepted | B4.1, B1.11, B4.4, B4.1, B4.3, B3.1, B4.1 |
