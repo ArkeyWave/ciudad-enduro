@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -29,7 +29,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d ciudad_enduro"
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d ciudad_enduro"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -40,6 +40,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # pnpm must exist before setup-node can use `cache: pnpm`.
       # The version comes from "packageManager" in package.json.

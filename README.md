@@ -37,6 +37,13 @@ pnpm test
 pnpm build
 ```
 
+### Package contract
+
+Every package under `apps/` and `packages/` defines the scripts `lint`, `typecheck`, `test` and
+`build`. Turbo silently skips a package that lacks one, so a missing script means a missing gate.
+A package that lints lists `eslint` and `typescript` in its own `devDependencies` (the shared
+config in `@ciudad-enduro/config` does not link their binaries into other packages).
+
 ## License
 
 MIT
