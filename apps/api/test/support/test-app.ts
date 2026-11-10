@@ -3,12 +3,14 @@ import type { INestApplication, LoggerService } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type pg from 'pg';
 import { AppModule } from '../../src/app.module.js';
+import { TURNSTILE_SITEVERIFY_URL } from '../../src/auth/auth.module.js';
 import { MAIL_TRANSPORT, type MailTransport } from '../../src/auth/mailer.js';
 import { hmacSha256 } from '../../src/auth/otp-hash.js';
 import { ENV, loadEnv } from '../../src/config/env.js';
 import { configureApp } from '../../src/configure-app.js';
 import { testDatabaseUrl } from '../test-db.js';
 import { captureTransport, type CapturedMail } from './capture-mailer.js';
+import { startTurnstileStub, turnstileToken, type TurnstileStub } from './turnstile-stub.js';
 
 export const WEB_ORIGIN = process.env.WEB_ORIGIN ?? 'http://localhost:3000';
 export const OTP_SECRET = process.env.OTP_HMAC_SECRET ?? '';
@@ -17,20 +19,30 @@ export type AuthTestApp = {
   app: INestApplication;
   url: string;
   mails: CapturedMail[];
+  /** The siteverify stub this app verifies captcha tokens against. */
+  turnstile: TurnstileStub;
   post: (path: string, body: unknown, headers?: Record<string, string>) => Promise<Response>;
   get: (path: string, headers?: Record<string, string>) => Promise<Response>;
 };
 
-/** Boots the real AppModule on the test database with a capturing (or given) mail transport. */
+let sharedStub: Promise<TurnstileStub> | undefined;
+
+/**
+ * Boots the real AppModule on the test database with a capturing (or given) mail transport. The
+ * captcha plugin verifies against a local siteverify stub (shared, or the given one), never Cloudflare.
+ */
 export async function createAuthTestApp(
-  options: { transport?: MailTransport; logger?: LoggerService | false } = {},
+  options: { transport?: MailTransport; logger?: LoggerService | false; turnstile?: TurnstileStub } = {},
 ): Promise<AuthTestApp> {
   const capture = captureTransport();
+  const turnstile = options.turnstile ?? (await (sharedStub ??= startTurnstileStub()));
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(ENV)
     .useValue(loadEnv({ ...process.env, DATABASE_URL: testDatabaseUrl() }))
     .overrideProvider(MAIL_TRANSPORT)
     .useValue(options.transport ?? capture.transport)
+    .overrideProvider(TURNSTILE_SITEVERIFY_URL)
+    .useValue(turnstile.url)
     .compile();
   const app = configureApp(moduleRef.createNestApplication({ logger: options.logger ?? false, bodyParser: false }));
   await app.listen(0, '127.0.0.1');
@@ -39,6 +51,7 @@ export async function createAuthTestApp(
     app,
     url,
     mails: capture.mails,
+    turnstile,
     post: (path, body, headers = {}) =>
       fetch(`${url}${path}`, {
         method: 'POST',
@@ -80,8 +93,11 @@ export function cookieHeader(res: Response): string {
     .join('; ');
 }
 
+export const SEND_PATH = '/api/auth/email-otp/send-verification-otp';
+
+/** A send as the web makes it: with a fresh captcha token the stub accepts once. */
 export async function sendOtp(t: AuthTestApp, email: string, type = 'sign-in', headers: Record<string, string> = {}) {
-  return t.post('/api/auth/email-otp/send-verification-otp', { email, type }, headers);
+  return t.post(SEND_PATH, { email, type }, { 'x-captcha-response': turnstileToken(), ...headers });
 }
 
 export function lastOtp(t: AuthTestApp, email: string): string {

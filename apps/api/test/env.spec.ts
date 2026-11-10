@@ -3,7 +3,13 @@ import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env.js';
 
-const SECRET_KEYS = ['BETTER_AUTH_SECRET', 'OTP_HMAC_SECRET', 'RESEND_API_KEY', 'GOOGLE_CLIENT_SECRET'] as const;
+const SECRET_KEYS = ['BETTER_AUTH_SECRET', 'OTP_HMAC_SECRET', 'RESEND_API_KEY', 'GOOGLE_CLIENT_SECRET', 'TURNSTILE_SECRET_KEY'] as const;
+// Cloudflare's Turnstile test secrets: always pass, always fail, already spent.
+const TURNSTILE_DUMMY_SECRETS = [
+  '1x0000000000000000000000000000000AA',
+  '2x0000000000000000000000000000000AA',
+  '3x0000000000000000000000000000000AA',
+];
 
 const valid = {
   NODE_ENV: 'development',
@@ -16,6 +22,7 @@ const valid = {
   GOOGLE_CLIENT_ID: 'client-id',
   GOOGLE_CLIENT_SECRET: 'GOCSPX-real',
   OTP_HMAC_SECRET: 'b'.repeat(32),
+  TURNSTILE_SECRET_KEY: '0x4AAAAAAAreal-turnstile-secret',
 };
 
 const example = parseEnv(readFileSync(new URL('../.env.example', import.meta.url), 'utf8'));
@@ -41,6 +48,10 @@ describe('loadEnv', () => {
     const value = 'z'.repeat(31);
     expect(() => loadEnv({ ...valid, OTP_HMAC_SECRET: value })).toThrow(/OTP_HMAC_SECRET/);
     expect(() => loadEnv({ ...valid, OTP_HMAC_SECRET: value })).not.toThrow(new RegExp(value));
+  });
+
+  it('rejects a missing TURNSTILE_SECRET_KEY', () => {
+    expect(() => loadEnv({ ...valid, TURNSTILE_SECRET_KEY: undefined })).toThrow(/TURNSTILE_SECRET_KEY/);
   });
 
   it('rejects a missing NODE_ENV', () => {
@@ -78,6 +89,10 @@ describe('loadEnv in production', () => {
     expect(() => loadEnv({ ...prod, GOOGLE_CLIENT_SECRET: value })).not.toThrow(new RegExp(value));
   });
 
+  it.each(TURNSTILE_DUMMY_SECRETS)('rejects the Cloudflare test secret %s', (value) => {
+    expect(() => loadEnv({ ...prod, TURNSTILE_SECRET_KEY: value })).toThrow(/TURNSTILE_SECRET_KEY: must be a real secret in production/);
+  });
+
   it.each(['BETTER_AUTH_URL', 'WEB_ORIGIN'])('rejects an http:// %s', (key) => {
     expect(() => loadEnv({ ...prod, [key]: 'http://enduro.example' })).toThrow(new RegExp(`${key}: must be https`));
   });
@@ -101,6 +116,10 @@ describe('loadEnv in production', () => {
 
   it('allows http:// URLs outside production', () => {
     expect(() => loadEnv({ ...valid, WEB_ORIGIN: 'http://localhost:3000', BETTER_AUTH_URL: 'http://localhost:3000' })).not.toThrow();
+  });
+
+  it.each(TURNSTILE_DUMMY_SECRETS)('allows the Cloudflare test secret %s outside production', (value) => {
+    expect(() => loadEnv({ ...valid, TURNSTILE_SECRET_KEY: value })).not.toThrow();
   });
 
   it('allows dev- values outside production', () => {

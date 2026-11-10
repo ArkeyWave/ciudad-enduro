@@ -9,13 +9,18 @@ export const MESSAGES = {
   accountNotLinked: 'Esta cuenta ingresa con código por correo.',
   googleUnverified: 'Tu correo de Google no está verificado.',
   googleFailed: 'No pudimos ingresar con Google. Intenta de nuevo.',
+  captcha: 'No pudimos verificar que eres una persona. Intenta de nuevo.',
 } as const;
 
 export type AuthFailure = { status: number; code?: string | undefined };
 
 const RATE_LIMITED = 429;
+// The captcha plugin's codes for a missing or refused Turnstile token. UNKNOWN_ERROR (siteverify
+// unreachable) stays generic. By code: the same statuses also mean a bad body or a refused origin.
+const CAPTCHA_CODES = new Set(['MISSING_RESPONSE', 'VERIFICATION_FAILED']);
 
-export function sendErrorMessage({ status }: AuthFailure): string {
+export function sendErrorMessage({ status, code }: AuthFailure): string {
+  if (code !== undefined && CAPTCHA_CODES.has(code)) return MESSAGES.captcha;
   return status === RATE_LIMITED ? MESSAGES.rateLimited : MESSAGES.generic;
 }
 

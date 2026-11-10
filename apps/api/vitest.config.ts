@@ -26,6 +26,7 @@ export default defineConfig({
       GOOGLE_CLIENT_ID: 'test-google-client-id',
       GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
       OTP_HMAC_SECRET: 'test-otp-hmac-secret-0123456789abcdef',
+      TURNSTILE_SECRET_KEY: 'test-turnstile-secret-key',
     },
   },
 });

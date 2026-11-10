@@ -4,10 +4,12 @@ import { useState, type SubmitEvent } from 'react';
 import { sendCode, startGoogleSignIn, verifyCode } from '../../lib/auth-client';
 import { MESSAGES, sendErrorMessage, verifyErrorMessage } from '../../lib/auth-errors';
 import { input, primaryButton, secondaryButton } from './styles';
+import { TurnstileWidget, useTurnstile } from './Turnstile';
 
 const column = { display: 'flex', flexDirection: 'column', gap: 12 } as const;
 
-export function SignInForm({ initialMessage }: { initialMessage: string | null }) {
+export function SignInForm({ initialMessage, siteKey }: { initialMessage: string | null; siteKey: string }) {
+  const turnstile = useTurnstile();
   const [email, setEmail] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [message, setMessage] = useState(initialMessage);
@@ -23,12 +25,20 @@ export function SignInForm({ initialMessage }: { initialMessage: string | null }
     }
   }
 
+  // Every send, the resend and a retry included, uses its own token: the API refuses a used one.
   const requestCode = () =>
     run(async () => {
-      const result = await sendCode(email);
+      if (!turnstile.token) return setMessage(MESSAGES.captcha);
+      let result;
+      try {
+        result = await sendCode(email, turnstile.token);
+      } finally {
+        turnstile.reset();
+      }
       if (!result.ok) return setMessage(sendErrorMessage(result));
       setCodeSent(true);
     });
+  const canSend = !busy && turnstile.token !== null;
 
   const submitCode = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -69,7 +79,7 @@ export function SignInForm({ initialMessage }: { initialMessage: string | null }
           <button type="submit" disabled={busy} style={primaryButton}>
             Ingresar
           </button>
-          <button type="button" disabled={busy} onClick={() => void requestCode()} style={secondaryButton}>
+          <button type="button" disabled={!canSend} onClick={() => void requestCode()} style={secondaryButton}>
             Enviar otro código
           </button>
         </form>
@@ -93,11 +103,13 @@ export function SignInForm({ initialMessage }: { initialMessage: string | null }
               style={input}
             />
           </label>
-          <button type="submit" disabled={busy} style={primaryButton}>
+          <button type="submit" disabled={!canSend} style={primaryButton}>
             Enviar código
           </button>
         </form>
       )}
+      {/* Mounted once for both steps, so the resend gets a fresh token from the same widget. */}
+      <TurnstileWidget siteKey={siteKey} onToken={turnstile.setToken} widgetId={turnstile.widgetId} />
       <button type="button" disabled={busy} onClick={() => void google()} style={secondaryButton}>
         Continuar con Google
       </button>

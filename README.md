@@ -50,11 +50,30 @@ Endpoints: `GET /api/health`, `GET /api/trails?city=`, `GET /api/trails/:slug`, 
 | `OTP_HMAC_SECRET` | HMAC key for stored OTP codes and the throttle's address hashes; 32+ characters |
 | `RESEND_API_KEY`, `EMAIL_FROM` | Sender of the OTP mails |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client; redirect URI `<BETTER_AUTH_URL>/api/auth/callback/google` |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret of the widget for this host (see Turnstile below) |
 
 `BETTER_AUTH_URL` and `WEB_ORIGIN` must be bare origins (`https://enduro-next.vops.pe`, no path
 and no trailing slash). Production refuses example and `dev-`/`test-` secrets, `http://` values for
-those two, and any `BETTER_AUTH_TRUSTED_ORIGINS`. Auth request bodies are limited to 16 KiB. The client IP comes from `cf-connecting-ip`
+those two, any `BETTER_AUTH_TRUSTED_ORIGINS`, and Cloudflare's Turnstile test secrets
+(`1x`/`2x`/`3x…AA`). Auth request bodies are limited to 16 KiB. The client IP comes from `cf-connecting-ip`
 only (Cloudflare sets it), so rate limits are per client behind the proxy.
+
+#### Turnstile (e-mail code send)
+
+`POST /api/auth/email-otp/send-verification-otp` needs a Cloudflare Turnstile token in the
+`x-captcha-response` header (Better Auth `captcha` plugin, this path only). The API accepts a token
+only for the hostname of `WEB_ORIGIN` and the action `send_code`, and each token once. A missing
+token gets 400 `MISSING_RESPONSE`, a refused one 403 `VERIFICATION_FAILED`; when siteverify is
+unreachable (10 s timeout) the API answers 500 `UNKNOWN_ERROR` and sends nothing. The check runs
+before the CSRF check and the throttle, so a refused send uses no cooldown slot and no cap row.
+No environment variable turns the check off or points it at another siteverify URL.
+
+Use one widget per host (`enduro-next.vops.pe`, `enduro.vops.pe`): the API secret is
+`TURNSTILE_SECRET_KEY`, the web site key is `TURNSTILE_SITE_KEY`. The `.env.example` files hold
+Cloudflare's always-pass test keys. Cloudflare reports hostname `example.com` and no action for
+their tokens, so the local API refuses them: to send a code locally, create a dev widget for
+`localhost` and put its keys in `apps/api/.env` and `apps/web/.env.local`. Google sign-in needs no
+token.
 
 After a Better Auth upgrade, regenerate the auth tables and review the diff:
 
@@ -76,8 +95,11 @@ TEST_DB_SUFFIX=<worktree> pnpm --filter api exec vitest run test/auth/   # the a
 
 The auth tests (`apps/api/test/auth/`) run the real API on the test database. Mail goes to a
 capturing transport (`test/support/capture-mailer.ts`); Google's token endpoint and Resend are
-stubbed with undici `MockAgent`. Each request sends its own `cf-connecting-ip`, because Better
-Auth's in-memory rate limiter is shared by every app in the process.
+stubbed with undici `MockAgent`. Captcha tokens are checked against a local siteverify stub
+(`test/support/turnstile-stub.ts`, injected through the `TURNSTILE_SITEVERIFY_URL` provider); it
+accepts `stub~<action>~<hostname>~<nonce>` once and refuses a token it has seen. Each request
+sends its own `cf-connecting-ip`, because Better Auth's in-memory rate limiter is shared by every
+app in the process.
 
 ### API client (`packages/api-client`)
 
@@ -93,7 +115,7 @@ Commit both files. CI fails when they differ from what the API emits.
 ### Web (`apps/web`)
 
 ```bash
-cp apps/web/.env.example apps/web/.env.local   # API_INTERNAL_URL=http://localhost:3001
+cp apps/web/.env.example apps/web/.env.local   # API_INTERNAL_URL, TURNSTILE_SITE_KEY
 pnpm --filter api-client build                 # the web imports its runtime from dist/
 pnpm --filter api dev                          # the web reads trails from the API
 pnpm --filter web dev                          # http://localhost:3000
@@ -102,7 +124,10 @@ pnpm --filter web dev                          # http://localhost:3000
 `pnpm dev` from the root builds `api-client` first (the `dev` task depends on `^build`).
 In development, `next dev` rewrites `/api/*` to the API. In production Traefik routes `/api`.
 
-Pages: `/` (trail list) and `/ingresar` (sign-in by e-mail code or Google). The web calls the auth
+Pages: `/` (trail list) and `/ingresar` (sign-in by e-mail code or Google). `/ingresar` reads
+`TURNSTILE_SITE_KEY` per request (not `NEXT_PUBLIC_`, so one image serves every host) and fails
+without it. The Turnstile widget stays mounted for both steps; every send, "Enviar otro código"
+and a retry included, uses a new token, and the widget resets after each send. The web calls the auth
 API with `fetch()` on the same origin and must not set `Referrer-Policy: no-referrer` (some browsers
 then send `Origin: null`, which the API refuses).
 
@@ -114,7 +139,9 @@ E2E tests (Playwright) start the e2e API from source on port 3101, the web produ
 port 3102, and a front proxy on port 3100 that routes `/api` to the API and the rest to the web,
 like Traefik. The browser uses port 3100 only. Ports 3103 and 3104 hold a second web server and an
 API that never answers, for the error-page test. The tests read OTP codes from the file in
-`e2e/codes.ts` and send their own `cf-connecting-ip` per auth request. They recreate and seed
+`e2e/codes.ts` and send their own `cf-connecting-ip` per auth request. `e2e/turnstile.ts` routes
+Cloudflare's widget script to a stub widget, and the e2e API checks its tokens against the
+in-process siteverify stub, so the suite never calls Cloudflare. They recreate and seed
 `ciudad_enduro_test_<TEST_DB_SUFFIX>` on localhost.
 
 ```bash

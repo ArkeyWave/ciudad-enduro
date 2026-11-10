@@ -1,6 +1,6 @@
 import type { BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { emailOTP } from 'better-auth/plugins';
+import { captcha, emailOTP } from 'better-auth/plugins';
 import type { Env } from '../config/env.js';
 import type { Database } from '../db/db.provider.js';
 import * as authSchema from '../db/schema/auth.js';
@@ -10,9 +10,18 @@ import { hmacSha256 } from './otp-hash.js';
 import { authBeforeHook, SEND_OTP_PATH } from './otp-throttle.hook.js';
 import type { OtpThrottle } from './otp-throttle.js';
 
-export type AuthDeps = { env: Env; db: Database; mailer: OtpMailer; throttle: OtpThrottle };
+export type AuthDeps = {
+  env: Env;
+  db: Database;
+  mailer: OtpMailer;
+  throttle: OtpThrottle;
+  /** Tests only: a local siteverify stub. Null or absent means Cloudflare. */
+  siteVerifyUrl?: string | null;
+};
 
 export const USER_NAME_MAX = 100;
+/** The widget's `action` on /ingresar (apps/web SignInForm); Cloudflare reports it back. */
+export const TURNSTILE_ACTION = 'send_code';
 
 // Sign-up input (email-code body or Google profile) is stored as given otherwise.
 function httpsUrlOrNull(value: string | null | undefined): string | null {
@@ -30,7 +39,7 @@ const withoutProviderTokens = <T extends object>(account: T) => ({
 });
 
 /** The full Better Auth configuration. Pure: no I/O, so the CLI and the tests can build it. */
-export function buildAuthOptions({ env, db, mailer, throttle }: AuthDeps) {
+export function buildAuthOptions({ env, db, mailer, throttle, siteVerifyUrl }: AuthDeps) {
   return {
     basePath: '/api/auth',
     baseURL: env.BETTER_AUTH_URL, // https in staging/prod → Secure + __Secure- cookies
@@ -81,6 +90,17 @@ export function buildAuthOptions({ env, db, mailer, throttle }: AuthDeps) {
     },
     hooks: { before: authBeforeHook(throttle, mailer) },
     plugins: [
+      // Runs in the router's onRequest, after the per-IP limiter and before the origin check and
+      // hooks.before (dist/api/index.mjs:167-183): a refused token uses no cooldown slot, no cap
+      // row and no mail. Fails closed (500) when siteverify is unreachable.
+      captcha({
+        provider: 'cloudflare-turnstile',
+        secretKey: env.TURNSTILE_SECRET_KEY,
+        endpoints: [SEND_OTP_PATH],
+        allowedHostnames: [new URL(env.WEB_ORIGIN).hostname],
+        expectedAction: TURNSTILE_ACTION,
+        siteVerifyURLOverride: siteVerifyUrl ?? undefined,
+      }),
       emailOTP({
         otpLength: 6,
         expiresIn: 600,

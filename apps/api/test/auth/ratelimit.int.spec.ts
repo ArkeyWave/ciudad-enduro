@@ -1,7 +1,8 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { openTestClient } from '../test-db.js';
-import { createAuthTestApp, truncateAuth, uniqueIp, type AuthTestApp } from '../support/test-app.js';
+import { createAuthTestApp, SEND_PATH, truncateAuth, uniqueIp, type AuthTestApp } from '../support/test-app.js';
+import { turnstileToken } from '../support/turnstile-stub.js';
 
 // Each test takes fresh IPs from uniqueIp(): the limiter's memory is module-level and survives apps.
 let t: AuthTestApp;
@@ -20,7 +21,7 @@ beforeEach(async () => {
 });
 
 const send = (ip: string, n: number, headers: Record<string, string> = {}) =>
-  t.post('/api/auth/email-otp/send-verification-otp', { email: `rl${n}@x.pe`, type: 'sign-in' }, { 'cf-connecting-ip': ip, ...headers });
+  t.post(SEND_PATH, { email: `rl${n}@x.pe`, type: 'sign-in' }, { 'cf-connecting-ip': ip, 'x-captcha-response': turnstileToken(), ...headers });
 const verify = (ip: string, headers: Record<string, string> = {}) =>
   t.post('/api/auth/sign-in/email-otp', { email: 'rl@x.pe', otp: '000000' }, { 'cf-connecting-ip': ip, ...headers });
 

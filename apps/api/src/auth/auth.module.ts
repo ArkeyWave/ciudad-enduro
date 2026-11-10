@@ -7,14 +7,22 @@ import { authBodyLimit } from './body-limit.js';
 import { MAIL_TRANSPORT, OtpMailer, resendTransport } from './mailer.js';
 import { OtpThrottle } from './otp-throttle.js';
 
-/** Providers the Better Auth instance needs. Tests replace MAIL_TRANSPORT only. */
+/**
+ * Cloudflare's siteverify URL override. Null (Cloudflare) in every runtime; only the test
+ * entrypoints replace it with a local stub. Deliberately not an env variable: no deployment can
+ * point captcha checks elsewhere.
+ */
+export const TURNSTILE_SITEVERIFY_URL = Symbol('TURNSTILE_SITEVERIFY_URL');
+
+/** Providers the Better Auth instance needs. Tests replace MAIL_TRANSPORT and TURNSTILE_SITEVERIFY_URL only. */
 @Module({
   providers: [
     { provide: MAIL_TRANSPORT, inject: [ENV], useFactory: (env: Env) => resendTransport(env) },
+    { provide: TURNSTILE_SITEVERIFY_URL, useValue: null },
     OtpMailer,
     OtpThrottle,
   ],
-  exports: [OtpMailer, OtpThrottle],
+  exports: [OtpMailer, OtpThrottle, TURNSTILE_SITEVERIFY_URL],
 })
 export class AuthDepsModule {}
 
@@ -22,9 +30,9 @@ export class AuthDepsModule {}
 // session unless it carries @AllowAnonymous().
 export const appAuthModule = AuthModule.forRootAsync({
   imports: [AuthDepsModule],
-  inject: [DB, ENV, OtpMailer, OtpThrottle],
-  useFactory: (db: Database, env: Env, mailer: OtpMailer, throttle: OtpThrottle) => ({
-    auth: createAuth({ db, env, mailer, throttle }),
+  inject: [DB, ENV, OtpMailer, OtpThrottle, TURNSTILE_SITEVERIFY_URL],
+  useFactory: (db: Database, env: Env, mailer: OtpMailer, throttle: OtpThrottle, siteVerifyUrl: string | null) => ({
+    auth: createAuth({ db, env, mailer, throttle, siteVerifyUrl }),
     // Same origin behind Traefik: no CORS. The adapter would otherwise answer the trusted origins.
     disableTrustedOriginsCors: true,
     bodyParser: { json: { limit: '1mb' } },

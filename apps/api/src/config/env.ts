@@ -4,8 +4,10 @@ const secret = z.string().min(32);
 const required = z.string().min(1);
 
 // Secrets that production must never run with an example or dev/test value.
-const SECRET_KEYS = ['BETTER_AUTH_SECRET', 'OTP_HMAC_SECRET', 'RESEND_API_KEY', 'GOOGLE_CLIENT_SECRET'] as const;
+const SECRET_KEYS = ['BETTER_AUTH_SECRET', 'OTP_HMAC_SECRET', 'RESEND_API_KEY', 'GOOGLE_CLIENT_SECRET', 'TURNSTILE_SECRET_KEY'] as const;
 const NON_PRODUCTION_PREFIXES = ['dev-', 'test-'];
+// Cloudflare's Turnstile test secrets (1x/2x/3x0…0AA) accept only a dummy token.
+const TURNSTILE_TEST_SECRET = /^\dx0+AA$/;
 const HTTPS_KEYS = ['BETTER_AUTH_URL', 'WEB_ORIGIN'] as const;
 
 const envSchema = z
@@ -24,6 +26,7 @@ const envSchema = z
     GOOGLE_CLIENT_ID: required,
     GOOGLE_CLIENT_SECRET: required,
     OTP_HMAC_SECRET: secret,
+    TURNSTILE_SECRET_KEY: required,
     // An unset Docker build arg arrives as an empty string; treat it like a missing value.
     BUILD_SHA: z.preprocess((v) => (v === '' ? undefined : v), required.default('unknown')),
   })
@@ -39,6 +42,9 @@ const envSchema = z
       if (NON_PRODUCTION_PREFIXES.some((prefix) => env[key].startsWith(prefix))) {
         ctx.addIssue({ code: 'custom', path: [key], message: 'must be a real secret in production' });
       }
+    }
+    if (TURNSTILE_TEST_SECRET.test(env.TURNSTILE_SECRET_KEY)) {
+      ctx.addIssue({ code: 'custom', path: ['TURNSTILE_SECRET_KEY'], message: 'must be a real secret in production' });
     }
     // Better Auth's own predicate for Secure, __Secure- cookies (cookies/index.mjs:23).
     for (const key of HTTPS_KEYS) {

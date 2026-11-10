@@ -618,6 +618,9 @@ acceptable."
   in Peru many mobile riders share one carrier-grade NAT (CGNAT) address, so a per-IP daily quota
   would also lock out legitimate riders behind that address; without it, one IP can exhaust the
   global cap. Google sign-in is not affected by the cap.
+  **Phase 1a (P1a-2):** Cloudflare Turnstile now guards the send path, so each send needs a solved
+  challenge. This **reduces, not closes**, cap exhaustion: captcha-solving services exist. Still no
+  per-IP daily share (owner decision 2026-11-10).
 
 - **The staging box runs repo build steps** (B3 final review, opus @ xhigh). `ce-oss-deploy` runs
   no repo file on the host, but the Coolify build runs the Dockerfile `RUN` steps and the build

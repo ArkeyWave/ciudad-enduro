@@ -8,12 +8,12 @@ export const AUTH_TIMEOUT_MS = 10_000;
 
 export type AuthResult<T = unknown> = ({ ok: true } & T) | ({ ok: false } & AuthFailure);
 
-async function post<T>(path: string, body: object): Promise<AuthResult<{ data: T }>> {
+async function post<T>(path: string, body: object, headers: Record<string, string> = {}): Promise<AuthResult<{ data: T }>> {
   let response: Response;
   try {
     response = await fetch(`/api/auth${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
       credentials: 'same-origin',
       signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
@@ -26,8 +26,12 @@ async function post<T>(path: string, body: object): Promise<AuthResult<{ data: T
   return { ok: true, data: json as T };
 }
 
-/** Always answers success for a valid address (the API never tells whether it has an account). */
-export const sendCode = (email: string) => post('/email-otp/send-verification-otp', { email, type: 'sign-in' });
+/**
+ * Always answers success for a valid address (the API never tells whether it has an account).
+ * `captchaToken` is a Turnstile token; the API accepts each token once.
+ */
+export const sendCode = (email: string, captchaToken: string) =>
+  post('/email-otp/send-verification-otp', { email, type: 'sign-in' }, { 'x-captcha-response': captchaToken });
 
 export const verifyCode = (email: string, otp: string) => post('/sign-in/email-otp', { email, otp });
 

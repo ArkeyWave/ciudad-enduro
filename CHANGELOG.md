@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] - Phase 1a
+
+### Security
+- Cloudflare Turnstile on the e-mail code send (P1a-2): Better Auth `captcha` plugin on `/email-otp/send-verification-otp` only, `allowedHostnames` = the `WEB_ORIGIN` hostname, `expectedAction` `send_code`. The plugin runs before the origin check and the throttle hook (better-auth `dist/api/index.mjs:167-183`): a missing (400 `MISSING_RESPONSE`) or refused (403 `VERIFICATION_FAILED`) token writes no `otp_send_log` row and sends no mail; an unreachable siteverify fails closed (500 `UNKNOWN_ERROR`, 10 s timeout). `TURNSTILE_SECRET_KEY` is required; production refuses Cloudflare's test secrets and `dev-`/`test-` values. The siteverify URL override exists only as a Nest provider for test entrypoints, never as env. Reduces, does not close, global-cap exhaustion (Phase 0 plan §8).
+
+### Added
+- `/ingresar` reads `TURNSTILE_SITE_KEY` at runtime (one image for every host) and renders the widget (managed, Spanish, action `send_code`) once for both steps; each send, "Enviar otro código" and a retry included, uses a fresh token, and the widget resets after each send; an expired or failed widget disables the send. "No pudimos verificar que eres una persona. Intenta de nuevo." for `MISSING_RESPONSE` and `VERIFICATION_FAILED`, mapped by code, not status.
+- Tests: a siteverify stub (`apps/api/test/support/turnstile-stub.ts`) that refuses a token it has seen; HTTP ordering proofs (missing, refused, reused, wrong host, wrong action → 0 rows and no mail; accepted → 1 row, 1 mail; provider down or hanging → 500, 0 rows); e2e with a stubbed widget script, including a real resend with a fresh token.
+- CI: the image smoke run passes a random `TURNSTILE_SECRET_KEY` and `TURNSTILE_SITE_KEY`.
+
 ## [Unreleased] - 2026-11-10
 
 Phase 0 complete: API, auth, web sign-in and staging deploy live at https://enduro-next.vops.pe; all live checks passed (plan §11).
