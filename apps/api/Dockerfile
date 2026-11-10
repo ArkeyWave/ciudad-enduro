@@ -5,7 +5,7 @@ WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm turbo run build --filter=api
-RUN pnpm --filter api deploy --prod --legacy /out
+RUN pnpm --filter api deploy --prod /out
 
 FROM node:24-alpine
 # Coolify passes SOURCE_COMMIT; CI passes BUILD_SHA. Empty counts as "unknown" (env.ts).

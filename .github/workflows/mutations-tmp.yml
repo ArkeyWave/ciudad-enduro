@@ -1,0 +1,36 @@
+name: verify-image mutations (temporary)
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  mutant:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        m: [copy-all-with-tests, env-in-runtime, env-in-deleted-layer]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Apply mutation ${{ matrix.m }}
+        run: |
+          canary="CANARY_$(openssl rand -hex 16)"; echo "CANARY=$canary" >> "$GITHUB_ENV"
+          printf 'BETTER_AUTH_SECRET=%s\n' "$canary" > apps/api/.env
+          case "${{ matrix.m }}" in
+            copy-all-with-tests)
+              sed -i '/^\*\*\/test\/$/d;/^\*\*\/e2e\/$/d' .dockerignore
+              sed -i 's#^USER node#COPY . .\nUSER node#' apps/api/Dockerfile ;;
+            env-in-runtime)
+              sed -i '/^\*\*\/\.env\*$/d' .dockerignore
+              sed -i 's#^USER node#COPY apps/api/.env ./.env\nUSER node#' apps/api/Dockerfile ;;
+            env-in-deleted-layer)
+              sed -i '/^\*\*\/\.env\*$/d' .dockerignore
+              sed -i 's#^USER node#COPY apps/api/.env /tmp/leak\nRUN rm /tmp/leak\nUSER node#' apps/api/Dockerfile ;;
+          esac
+          git diff
+      - run: docker build -f apps/api/Dockerfile -t mutant .
+      - name: verify-image.sh must go red
+        run: |
+          if scripts/verify-image.sh mutant "$CANARY"; then echo "MUTANT SURVIVED"; exit 1; fi
+          echo "RED as expected"
