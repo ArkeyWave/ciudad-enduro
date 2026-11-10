@@ -15,11 +15,20 @@ project `ciudad-enduro-oss`, environment `staging`.
    - refuses anything that is not one 40-hex SHA;
    - fetches `main` of the public repo into `/var/cache/ce-oss-deploy/repo.git` and refuses a SHA
      that is not an ancestor of `origin/main` (a fork or branch commit cannot deploy);
-   - holds `flock /run/lock/ce-oss-deploy.lock`, sets that commit on both Coolify apps and deploys
-     them one after the other, **api first** (the api container migrates the database on start);
-   - runs `scripts/verify-image.sh` from that commit on both images Coolify built;
+   - holds `flock /var/cache/ce-oss-deploy/lock` (directory `700`);
+   - refuses the commit, **before any deploy**, when its `scripts/verify-image.sh` differs from
+     the reviewed copy installed at `/usr/local/lib/ce-oss/verify-image.sh` (nothing from the
+     repo runs as root on the box);
+   - sets that commit on both Coolify apps and deploys them one after the other, **api first**
+     (the api container migrates the database on start);
+   - requires the running api and web containers to be exactly `<app-uuid>:<sha>`;
+   - runs the installed verifier on both images; when one fails, it stops that app through the
+     Coolify API and exits 1;
    - fails unless `https://enduro-next.vops.pe/api/health` answers `revision` = the SHA and `/`
      answers 200.
+
+The Coolify token goes into the `coolify` container on stdin and into a curl config file there;
+it never appears in a process argv (`/root/ce-oss/capi` does the same for manual API calls).
 
 There is no `workflow_run` trigger and no Coolify webhook: auto-deploy is off on both apps.
 
@@ -32,6 +41,8 @@ There is no `workflow_run` trigger and no Coolify webhook: auto-deploy is off on
 | Database | `ciudad-enduro-oss-postgres-staging` (`zsr9gmrfd3sfdthyxxaikmoc`), Docker network only |
 | Revision | Coolify passes `SOURCE_COMMIT` (setting "include source commit in build"); the API Dockerfile bakes it as `BUILD_SHA` |
 | Deploy script | `/usr/local/bin/ce-oss-deploy` (root 755) |
+| Image verifier | `/usr/local/lib/ce-oss/verify-image.sh` (root 755), the reviewed copy of `scripts/verify-image.sh` |
+| State | `/var/cache/ce-oss-deploy/` (root 700): `repo.git` (main only), `lock` |
 | Deploy key | `ci-deploy@ciudad-enduro-oss` in `/root/.ssh/authorized_keys` |
 | API env | Coolify runtime env on the api app; `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET` were generated on the box |
 
@@ -49,6 +60,9 @@ router, and both carry `cloudflare-only@file` (the Cloudflare `ipAllowList` in
 
 `PathPrefix(`/api/`)` with the trailing slash keeps `/apiary` and `/apifoo` on the web app.
 The prefix is not stripped: the API serves under `/api`.
+
+**Never set a domain on these apps and never use "Reset to default labels"**: Coolify would
+generate a router without the `cloudflare-only` middleware and open the origin.
 
 To change a label, PATCH the complete set (base64) in `custom_labels`, then redeploy and run the
 live checks. A `domains` change regenerates labels when the read-only setting is on; leave it off.
@@ -91,6 +105,25 @@ ssh -i $K -o IdentitiesOnly=yes root@104.152.209.8 '<main sha>; id'   # refused 
 ssh -i $K -o IdentitiesOnly=yes root@104.152.209.8 <branch sha>       # refused: <sha> is not on main
 ssh -i $K -o IdentitiesOnly=yes -N -L 15999:127.0.0.1:8000 root@...   # forward: administratively prohibited
 ```
+
+## Roll out a new image verifier
+
+A change to `scripts/verify-image.sh` blocks every deploy until the box has the same file. This is
+on purpose: the deploy key must not be able to run new code as root.
+
+1. Review the change in its PR, then merge it. The deploy job of that merge fails with
+   `differs from the installed /usr/local/lib/ce-oss/verify-image.sh`.
+2. On the box, install the reviewed file from `main` and check it:
+   ```bash
+   C=/var/cache/ce-oss-deploy/repo.git
+   git -C $C fetch -q https://github.com/ArkeyWave/ciudad-enduro.git '+refs/heads/main:refs/remotes/origin/main'
+   git -C $C show origin/main:scripts/verify-image.sh > /tmp/verify-image.sh
+   less /tmp/verify-image.sh            # read it: it runs as root
+   install -o root -g root -m 755 /tmp/verify-image.sh /usr/local/lib/ce-oss/verify-image.sh
+   ```
+3. Re-run the failed deploy job in GitHub Actions.
+
+A change to `docs/operations/ce-oss-deploy` is installed the same way at `/usr/local/bin/ce-oss-deploy`.
 
 ## Seed data
 
