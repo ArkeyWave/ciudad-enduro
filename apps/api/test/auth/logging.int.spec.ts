@@ -72,6 +72,9 @@ describe('auth writes no secrets to the logs', () => {
     await new Promise((resolve) => setTimeout(resolve, 100)); // let background logging settle
 
     expect(codes).toHaveLength(2);
+    // The failed send is reported by error name only.
+    const event = JSON.stringify({ event: 'auth_background_task_failed', name: 'Error' });
+    expect(lines.filter((line) => line.startsWith(event))).toHaveLength(1);
     expect(lines.length).toBeGreaterThan(0);
     const secrets = [...codes, token, 'logs@x.pe', 'fails@x.pe'];
     const leaks = lines.filter((line) => secrets.some((secret) => line.includes(secret)));

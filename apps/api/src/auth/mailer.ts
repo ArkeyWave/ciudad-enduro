@@ -40,10 +40,19 @@ export class OtpMailer {
       this.logger.warn(JSON.stringify({ event: 'otp_send_without_permit' }));
       return;
     }
-    await this.transport({
-      to: email,
-      subject: 'Tu código para ingresar a Ciudad Enduro',
-      text: `Tu código es ${otp}. Vence en 10 minutos. Si no lo pediste, ignora este correo.`,
-    });
+    try {
+      await this.transport({
+        to: email,
+        subject: 'Tu código para ingresar a Ciudad Enduro',
+        text: `Tu código es ${otp}. Vence en 10 minutos. Si no lo pediste, ignora este correo.`,
+      });
+    } catch (error) {
+      // Logged here, not in advanced.backgroundTasks.handler: Better Auth catches the send promise
+      // before the handler sees it (create-context.mjs:217-218). Name only: the message could
+      // carry the recipient.
+      const name = error instanceof Error ? error.name : 'unknown';
+      this.logger.warn(JSON.stringify({ event: 'auth_background_task_failed', name }));
+      throw error;
+    }
   }
 }
