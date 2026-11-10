@@ -192,7 +192,7 @@ check (the column typmod enforces it), no extra indexes (no Phase 0 query needs 
 with the first distance query in Phase 1).
 
 **B1.6 Test database.** `global-setup.ts` (Vitest `globalSetup`, runs once per run):
-1. **Refuse** a `TEST_DB_SUFFIX` that does not match `^[a-z0-9_]{1,32}$`.
+1. **Refuse** a `TEST_DB_SUFFIX` that does not match `^[a-z0-9_]{1,26}$`.
 2. **Refuse** unless the host of `DATABASE_URL` is `localhost`, `127.0.0.1` or `postgres` (the CI
    service name). The check runs before any connection is opened.
 3. Build the test URL with database `ciudad_enduro_test_${TEST_DB_SUFFIX ?? 'main'}`.
