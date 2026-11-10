@@ -3,6 +3,9 @@
 // needs (also on /sign-out; a form navigation is not a substitute).
 import type { AuthFailure } from './auth-errors';
 
+/** A browser auth call that takes longer is aborted and counts as a network failure (status 0). */
+export const AUTH_TIMEOUT_MS = 10_000;
+
 export type AuthResult<T = unknown> = ({ ok: true } & T) | ({ ok: false } & AuthFailure);
 
 async function post<T>(path: string, body: object): Promise<AuthResult<{ data: T }>> {
@@ -13,9 +16,10 @@ async function post<T>(path: string, body: object): Promise<AuthResult<{ data: T
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
       credentials: 'same-origin',
+      signal: AbortSignal.timeout(AUTH_TIMEOUT_MS),
     });
   } catch {
-    return { ok: false, status: 0 }; // network failure
+    return { ok: false, status: 0 }; // network failure or timeout
   }
   const json = (await response.json().catch(() => null)) as (T & { code?: string }) | null;
   if (!response.ok) return { ok: false, status: response.status, code: json?.code };

@@ -6,6 +6,7 @@ import { ORIGIN_PORT } from './ports.ts';
 const INVALID = 'Código inválido o vencido.';
 const LOCKED = 'Demasiados intentos con este código. Pide un código nuevo.';
 const RATE_LIMITED = 'Demasiados intentos. Espera un minuto.';
+const GENERIC = 'No pudimos completar la solicitud. Intenta de nuevo.';
 
 // Better Auth's per-IP limiter (3 sign-in attempts per 10 s) is shared by every test in the API
 // process, and the client IP comes from cf-connecting-ip only. So each request that must not be
@@ -26,6 +27,7 @@ async function requestCode(page: Page) {
   await freshIp(page);
   await page.getByRole('button', { name: 'Enviar código' }).click();
   await expect(page.getByText(`Te enviamos un código a ${email}.`)).toBeVisible();
+  await expect(page.getByLabel('Código')).toBeFocused();
   await expect.poll(() => codesFor(email).length).toBe(1);
   return { email, code: codesFor(email)[0] as string };
 }
@@ -99,8 +101,13 @@ test('Continuar con Google starts the redirect flow at Google', async ({ page })
   await page.route('https://accounts.google.com/**', (route) => route.fulfill({ body: 'google stub' }));
   await page.goto('/ingresar');
   await freshIp(page);
+  const start = page.waitForRequest((request) => request.url().endsWith('/api/auth/sign-in/social'));
   const google = page.waitForRequest((request) => request.url().startsWith('https://accounts.google.com/'));
   await page.getByRole('button', { name: 'Continuar con Google' }).click();
+  const body = (await start).postDataJSON() as { callbackURL?: string; errorCallbackURL?: string };
+  expect(body.callbackURL).toBe(`http://127.0.0.1:${ORIGIN_PORT}/`);
+  // Without it, Google errors would land on Better Auth's own page instead of /ingresar.
+  expect(body.errorCallbackURL).toBe(`http://127.0.0.1:${ORIGIN_PORT}/ingresar`);
   const consent = new URL((await google).url());
   expect(consent.searchParams.get('redirect_uri')).toBe(`http://127.0.0.1:${ORIGIN_PORT}/api/auth/callback/google`);
   expect(consent.searchParams.get('state')).toBeTruthy();
@@ -114,4 +121,12 @@ test('the web never sets Referrer-Policy: no-referrer', async ({ page }) => {
     expect(response?.headers()['referrer-policy'] ?? '').not.toMatch(/no-referrer(?!-)/);
     await expect(page.locator('meta[name="referrer"][content="no-referrer"]')).toHaveCount(0);
   }
+});
+
+test('a code check that never answers ends after 10 s with the generic message', async ({ page }) => {
+  const { code } = await requestCode(page);
+  await page.route('**/api/auth/sign-in/email-otp', () => {}); // never answered
+  await page.getByLabel('Código').fill(code);
+  await page.getByRole('button', { name: 'Ingresar', exact: true }).click();
+  await expect(formAlert(page)).toHaveText(GENERIC, { timeout: 15_000 });
 });

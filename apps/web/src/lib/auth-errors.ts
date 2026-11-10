@@ -21,6 +21,8 @@ export function sendErrorMessage({ status }: AuthFailure): string {
 
 export function verifyErrorMessage({ status, code }: AuthFailure): string {
   if (status === RATE_LIMITED) return MESSAGES.rateLimited;
+  // Status 0 is a network failure or timeout: the code was never checked.
+  if (status === 0 || status >= 500) return MESSAGES.generic;
   if (code === 'TOO_MANY_ATTEMPTS') return MESSAGES.codeLocked;
   return MESSAGES.invalidCode;
 }

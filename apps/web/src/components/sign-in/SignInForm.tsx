@@ -58,6 +58,7 @@ export function SignInForm({ initialMessage }: { initialMessage: string | null }
             <input
               name="otp"
               required
+              autoFocus
               inputMode="numeric"
               autoComplete="one-time-code"
               pattern="\d{6}"

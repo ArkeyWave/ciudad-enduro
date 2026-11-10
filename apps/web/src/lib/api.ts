@@ -25,12 +25,15 @@ export async function listTrails(): Promise<TrailSummary[]> {
 export async function getMe(cookie: string): Promise<Me | null> {
   if (!cookie) return null;
   try {
-    const { data } = await apiClient().GET('/api/me', {
+    const { data, response } = await apiClient().GET('/api/me', {
       headers: { cookie },
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
+    if (!data && response.status !== 401) console.warn(JSON.stringify({ event: 'api_me_failed', status: response.status }));
     return data ?? null;
-  } catch {
+  } catch (error) {
+    const name = error instanceof Error ? error.name : 'unknown';
+    console.warn(JSON.stringify({ event: 'api_me_failed', name }));
     return null;
   }
 }

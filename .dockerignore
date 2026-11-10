@@ -4,6 +4,8 @@
 **/.env*
 **/test/
 **/e2e/
+# Imports e2e/ (removed above); next build would type-check it.
+**/playwright.config.ts
 **/dist/
 **/.next/
 **/.turbo/

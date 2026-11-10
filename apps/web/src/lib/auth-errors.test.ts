@@ -6,13 +6,17 @@ describe('verifyErrorMessage', () => {
     ['INVALID_OTP', 400],
     ['OTP_EXPIRED', 400],
     [undefined, 400],
-    ['SOMETHING_NEW', 500],
-  ])('maps %s (%i) to the generic message', (code, status) => {
+    ['SOMETHING_NEW', 400],
+  ])('maps %s (%i) to the invalid-code message', (code, status) => {
     expect(verifyErrorMessage({ status, code })).toBe('Código inválido o vencido.');
   });
 
   it('never shows the raw API message', () => {
     expect(verifyErrorMessage({ status: 400, code: 'INVALID_OTP' })).not.toMatch(/OTP|Invalid/i);
+  });
+
+  it.each([0, 500, 503])('maps status %i (network failure, server error) to the generic message', (status) => {
+    expect(verifyErrorMessage({ status, code: 'INVALID_OTP' })).toBe(MESSAGES.generic);
   });
 
   it('maps 429 to the rate-limit message', () => {
