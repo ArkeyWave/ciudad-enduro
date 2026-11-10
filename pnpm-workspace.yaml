@@ -4,3 +4,10 @@ packages:
 
 # Fail the install on a Node version outside root package.json "engines".
 engineStrict: true
+
+# Install scripts stay off. The native binaries of @swc/core and esbuild come from
+# their optional platform packages; @scarf/scarf is telemetry.
+allowBuilds:
+  "@scarf/scarf": false
+  "@swc/core": false
+  esbuild: false

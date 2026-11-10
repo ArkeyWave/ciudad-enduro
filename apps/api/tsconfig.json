@@ -1,0 +1,10 @@
+{
+  "extends": "@ciudad-enduro/config/tsconfig.base.json",
+  "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "types": ["node"],
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "drizzle.config.ts"]
+}
