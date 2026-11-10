@@ -113,6 +113,14 @@ describe('Google e-mail must be verified (user.validateUserInfo)', () => {
     expect(await count('account')).toBe(0);
   });
 
+  it('(e) treats a token without the email_verified claim as unverified', async () => {
+    const { location, cookies } = await signInGoogle({ sub: 'G7', email: 'g7@x.pe' });
+    expect(location.searchParams.get('error')).toBe('google_email_unverified');
+    expect(hasSession(cookies)).toBe(false);
+    expect(await count('"user"')).toBe(0);
+    expect(await count('account')).toBe(0);
+  });
+
   it('(b) creates the user when the e-mail is verified', async () => {
     await signInGoogle(verified('G4', 'g4@x.pe'));
     expect(await count('"user"')).toBe(1);

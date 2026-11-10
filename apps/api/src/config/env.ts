@@ -6,6 +6,7 @@ const required = z.string().min(1);
 // Secrets that production must never run with an example or dev/test value.
 const SECRET_KEYS = ['BETTER_AUTH_SECRET', 'OTP_HMAC_SECRET', 'RESEND_API_KEY', 'GOOGLE_CLIENT_SECRET'] as const;
 const NON_PRODUCTION_PREFIXES = ['dev-', 'test-'];
+const HTTPS_KEYS = ['BETTER_AUTH_URL', 'WEB_ORIGIN'] as const;
 
 const envSchema = z
   .object({
@@ -28,6 +29,12 @@ const envSchema = z
     for (const key of SECRET_KEYS) {
       if (NON_PRODUCTION_PREFIXES.some((prefix) => env[key].startsWith(prefix))) {
         ctx.addIssue({ code: 'custom', path: [key], message: 'must be a real secret in production' });
+      }
+    }
+    // https makes Better Auth set Secure, __Secure- cookies; the trusted origin must match the site.
+    for (const key of HTTPS_KEYS) {
+      if (!env[key].startsWith('https://')) {
+        ctx.addIssue({ code: 'custom', path: [key], message: 'must be https in production' });
       }
     }
   });

@@ -33,7 +33,6 @@ export const trails = pgTable('trails', {
   path: lineStringGeom('path'),
   distanceM: integer('distance_m'),
   elevationGainM: integer('elevation_gain_m'),
-  // A trail outlives its author's account.
   authorId: text('author_id').references(() => user.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

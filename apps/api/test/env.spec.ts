@@ -49,7 +49,7 @@ describe('loadEnv', () => {
 });
 
 describe('loadEnv in production', () => {
-  const prod = { ...valid, NODE_ENV: 'production' };
+  const prod = { ...valid, NODE_ENV: 'production', WEB_ORIGIN: 'https://enduro.example', BETTER_AUTH_URL: 'https://enduro.example' };
 
   it('accepts real secrets', () => {
     expect(() => loadEnv(prod)).not.toThrow();
@@ -63,6 +63,14 @@ describe('loadEnv in production', () => {
     const value = `${prefix}${'x'.repeat(32)}`;
     expect(() => loadEnv({ ...prod, GOOGLE_CLIENT_SECRET: value })).toThrow(/GOOGLE_CLIENT_SECRET/);
     expect(() => loadEnv({ ...prod, GOOGLE_CLIENT_SECRET: value })).not.toThrow(new RegExp(value));
+  });
+
+  it.each(['BETTER_AUTH_URL', 'WEB_ORIGIN'])('rejects an http:// %s', (key) => {
+    expect(() => loadEnv({ ...prod, [key]: 'http://enduro.example' })).toThrow(new RegExp(`${key}: must be https`));
+  });
+
+  it('allows http:// URLs outside production', () => {
+    expect(() => loadEnv({ ...valid, WEB_ORIGIN: 'http://localhost:3000', BETTER_AUTH_URL: 'http://localhost:3000' })).not.toThrow();
   });
 
   it('allows dev- values outside production', () => {

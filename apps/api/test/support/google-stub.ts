@@ -3,7 +3,8 @@ import { getGlobalDispatcher, MockAgent, setGlobalDispatcher, type Dispatcher } 
 // Stubs Google's token endpoint. The redirect flow only decodes the ID token it receives there
 // (google.mjs:118-126), so an unsigned JWT is enough.
 
-export type GoogleClaims = { sub: string; email: string; email_verified: boolean; name?: string };
+// `email_verified` is optional so a test can send a token without the claim.
+export type GoogleClaims = { sub: string; email: string; email_verified?: boolean; name?: string };
 
 const b64url = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
 
