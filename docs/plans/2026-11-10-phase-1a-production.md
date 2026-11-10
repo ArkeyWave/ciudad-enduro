@@ -1,4 +1,4 @@
-# Phase 1a — CI-built images, OTP abuse protection, production cutover — Implementation Plan (rev. 2)
+# Phase 1a — CI-built images, OTP abuse protection, production cutover — Implementation Plan (rev. 3, gate closed)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (inside the
 > orchestrated-delivery loop) to implement this plan batch by batch.
@@ -187,7 +187,7 @@ live checks pass; backup restorable; the old app stopped with a rehearsed rollba
 
 | Stage | Reviewers |
 |-------|-----------|
-| This plan | rev. 1: opus @ high ∥ gpt-6.1-sol @ high (done). rev. 2: final claude-fable-5.2 @ high |
+| This plan | rev. 1: opus @ high ∥ gpt-6.1-sol @ high (done). rev. 2: final claude-fable-5.2 @ high (approve with changes → rev. 3). Gate CLOSED. |
 | P1a-1, P1a-2, P1a-3 | opus @ high + gpt-6.1-sol @ high → fixes → final opus @ xhigh |
 
 ## 6. Gate ledger (rev. 1 → rev. 2)
@@ -209,3 +209,63 @@ live checks pass; backup restorable; the old app stopped with a rehearsed rollba
 | Credential separation explicit; Google client shared by decision | gpt | P1a-3.2 |
 | Cut: tag lookup, internal host, typed confirm, second script, self-digest label | both | removed |
 | Verifier `--network none --cap-drop ALL` | opus nit | follow-up (needs verifier roll-out) |
+
+## 7. Rev. 3 amendments — BINDING (they replace any conflicting text above)
+
+From the final review (claude-fable-5.2 @ high, approve with changes, 3 blocking).
+
+**A1 (blocking) — attestation credential (G2, P1a-1.5).** `gh attestation verify` requires auth even for
+public repos (only `--bundle` skips it: cli `pkg/cmd/attestation/verify/verify.go:245`). Use a
+fine-grained GitHub token with **zero permissions** (public read only), stored root 600 at
+`/root/.secrets/ce-oss-gh-attest.env`, exported as `GH_TOKEN` for the verify call only. Record its expiry
+as a named trigger in deploy.md and the vops-infra skill. Add `--deny-self-hosted-runners`. A GitHub or
+Sigstore outage blocks every deploy including `ROLLBACK=1` (fail closed, accepted, documented).
+
+**A2 (blocking) — private first prod deploy (P1a-3.3-4).** Add an operator-only `PRIVATE=1` (same pattern
+as `ROLLBACK=1`; the CI key cannot set env). It requires `traefik.enable=false` on both containers and
+replaces the public revision/home/origin checks with the same checks against the container IPs (host
+`curl`, no `curlimages/curl`). Step 5c then runs the normal script.
+
+**A3 (blocking) — rollback is `docker stop` / `docker start` of the old container (P1a-3.5).** A Coolify
+start queues a deployment that resolves `master@HEAD` and builds from source
+(`ApplicationsController.php:4942-4966`, `ApplicationDeploymentJob.php:1753-1800`). Cutover:
+`docker stop <old container>` (not a Coolify stop). Rollback: stop the new apps, then
+`docker start <old container>` (labels, env and image are kept; exited app containers survive cleanup,
+`CleanupDocker.php:252-254`). Rehearse once before the window. Disable the old repo's remaining
+workflows at the cutover (its router rule would take every non-/api path).
+
+**A4 — non-circular identity (P1a-1.2).** `images` emits the checked image ID as a job output; `publish`
+compares the loaded image ID to that output **before** pushing. Build with `--provenance=false` (single
+manifest, no index); assert the runner's image store type and use the config digest (classic store) or the
+manifest digest (containerd store) accordingly. No artifact upload on PR runs.
+
+**A5 — first v2 deploy procedure (§2 freeze).** (1) Confirm no main run is active. (2) After the first
+publish, set both GHCR packages public (web UI), then re-run the deploy job. (3) The running images have
+no revision label: the guard treats "no running container" as pass and "running container without the
+label" as refuse unless `ROLLBACK=1`; the operator runs the first v2 deploy with it. (4) Release the
+flock before the merge, so no queued v1 run continues with the old script.
+
+**A6 — protect `main` (before P1a-1).** Ruleset: no force push, no deletion, pull request required, CI
+checks `check`, `contract`, `e2e`, `images` required. The attestation policy trusts `ci.yml` on
+`refs/heads/main`, so main must not be pushable around CI.
+
+**A7 — Turnstile proof against Cloudflare (P1a-2).** Dummy secrets return hostname `example.com` and no
+action, so stubs never prove `allowedHostnames` or `expectedAction`. Add a staging live check: a real
+widget send passes; a request without a token gets 400 and writes 0 rows. The siteverify stub refuses a
+token it has already seen (otherwise the resend mutation stays green). P1a-2 is done when these live
+checks pass, CI is green and the mutation table is complete. Ownership adds `apps/api/test/**`,
+`apps/web/playwright.config.ts` and the `.env.example` files.
+
+**A8 — backup off-box (P1a-3.1).** The Coolify backup is local and plain. Add an S3-compatible off-box
+target on Cloudflare R2 (a dedicated bucket, not `cde-media`; R2 encrypts at rest) for the prod DB, and
+prove a restore from R2 into a scratch DB. Correct Phase 0 §8 ("backups encrypted") to the real state.
+
+**A9 — small items.** Pin `actions/attest-build-provenance` by SHA and grant `artifact-metadata: write`
+(or set `create-storage-record: false`). `deploy-production.yml` passes the SHA input via `env` and checks
+its regex before the secret is used. One lock per target; write the promotion record via rename. The
+host check matches the router rule for enduro.vops.pe as a fixed string.
+
+**A10 — cut.** The box-side verify-image run and the "installed verifier == repo verifier" rule are
+removed: the digest identity plus the attestation already bind the checked image (CI still runs
+verify-image before publish). The verifier `--network none` follow-up is therefore closed. No
+`curlimages/curl`; no artifact upload on PR runs.
