@@ -13,6 +13,14 @@ describe('prepareTestDatabase guards', () => {
     expect(connect).not.toHaveBeenCalled();
   });
 
+  it('refuses a ?host= override before opening any connection', async () => {
+    const connect = vi.fn(realConnect);
+    await expect(
+      prepareTestDatabase('postgres://u:p@localhost:5432/x?host=db.example.com', 'guard', connect),
+    ).rejects.toThrow(/query parameters/);
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   it('refuses an unsafe suffix before opening any connection', async () => {
     const connect = vi.fn(realConnect);
     await expect(prepareTestDatabase(process.env.DATABASE_URL, 'x; drop', connect)).rejects.toThrow(

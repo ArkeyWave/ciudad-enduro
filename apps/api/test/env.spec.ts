@@ -28,6 +28,11 @@ describe('loadEnv', () => {
     expect(env.BUILD_SHA).toBe('unknown');
   });
 
+  it('treats an empty BUILD_SHA as unknown', () => {
+    expect(loadEnv({ ...valid, BUILD_SHA: '' }).BUILD_SHA).toBe('unknown');
+    expect(loadEnv({ ...valid, BUILD_SHA: 'abc123' }).BUILD_SHA).toBe('abc123');
+  });
+
   it('accepts the .env.example values outside production', () => {
     expect(() => loadEnv(example)).not.toThrow();
   });

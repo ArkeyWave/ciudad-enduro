@@ -36,6 +36,9 @@ export async function prepareTestDatabase(
   if (!SUFFIX.test(suffix)) throw new Error(`TEST_DB_SUFFIX must match ${SUFFIX}`);
   if (!databaseUrl) throw new Error('DATABASE_URL is required');
   const url = new URL(databaseUrl);
+  // pg-connection-string lets query parameters such as ?host= override the URL host, so a
+  // query string could point the DROP DATABASE below at a remote server.
+  if (url.search) throw new Error('DATABASE_URL for tests must not have query parameters');
   if (!ALLOWED_HOSTS.has(url.hostname)) {
     throw new Error(`Refusing to use a test database on host ${url.hostname}`);
   }

@@ -20,7 +20,8 @@ const envSchema = z
     GOOGLE_CLIENT_ID: required,
     GOOGLE_CLIENT_SECRET: required,
     OTP_HMAC_SECRET: secret,
-    BUILD_SHA: required.default('unknown'),
+    // An unset Docker build arg arrives as an empty string; treat it like a missing value.
+    BUILD_SHA: z.preprocess((v) => (v === '' ? undefined : v), required.default('unknown')),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== 'production') return;

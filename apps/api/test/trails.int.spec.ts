@@ -91,6 +91,11 @@ describe('GET /api/trails', () => {
   it('rejects an unknown city with 400', async () => {
     expect((await get('/trails?city=Lima')).status).toBe(400);
   });
+
+  it('rejects an unknown query parameter with 400 and accepts the known one', async () => {
+    expect((await get('/trails?city=Chimbote&foo=1')).status).toBe(400);
+    expect((await get('/trails?city=Chimbote')).status).toBe(200);
+  });
 });
 
 describe('GET /api/trails/:slug', () => {

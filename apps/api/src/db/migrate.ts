@@ -5,7 +5,7 @@ import pg from 'pg';
 import { loadEnv } from '../config/env.js';
 
 // Applies pending migrations and exits. The container entrypoint runs it before the API.
-const pool = new pg.Pool({ connectionString: loadEnv().DATABASE_URL });
+const pool = new pg.Pool({ connectionString: loadEnv().DATABASE_URL, connectionTimeoutMillis: 5_000 });
 try {
   await migrate(drizzle(pool), { migrationsFolder: fileURLToPath(new URL('../../drizzle', import.meta.url)) });
 } finally {
