@@ -61,3 +61,19 @@ describe('no CORS (same origin behind Traefik)', () => {
     }
   });
 });
+
+describe('sign-out CSRF (no cookie: the router origin check skips, origin-check.mjs:108)', () => {
+  it('refuses a cross-site sign-out without a cookie and sends no cookie deletion', async () => {
+    const res = await fetch(`${t.url}/api/auth/sign-out`, { method: 'POST', redirect: 'manual', headers: { origin: EVIL } });
+    expect(res.status).toBe(403);
+    expect(res.headers.getSetCookie()).toEqual([]);
+  });
+
+  it('signs out a session from the web origin', async () => {
+    const cookie = await signInWithOtp(t, 'out@x.pe');
+    const res = await t.post('/api/auth/sign-out', {}, { origin: WEB_ORIGIN, cookie });
+    expect(res.status).toBe(200);
+    expect(res.headers.getSetCookie().some((c) => c.startsWith('better-auth.session_token=;') || /Max-Age=0/i.test(c))).toBe(true);
+    expect((await client.query<{ n: number }>('select count(*)::int as n from session')).rows[0]?.n).toBe(0);
+  });
+});

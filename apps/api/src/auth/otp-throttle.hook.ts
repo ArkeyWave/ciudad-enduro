@@ -14,12 +14,19 @@ const sendBody = z.object({
 /**
  * `hooks.before` for the whole auth router:
  * - `/sign-in/social` refuses an `idToken` body (Phase 0 supports only the redirect flow).
+ * - `/sign-out` runs the CSRF check (a cookie-free cross-site POST would otherwise clear the cookie).
  * - the OTP send path runs the CSRF check, then the cooldown and cap, then grants a send permit.
  */
 export function authBeforeHook(throttle: OtpThrottle, mailer: OtpMailer) {
   return createAuthMiddleware(async (ctx) => {
     if (ctx.path === '/sign-in/social') {
       if (isRecord(ctx.body) && ctx.body.idToken !== undefined) throw new APIError('BAD_REQUEST', { message: 'Bad request' });
+      return;
+    }
+    if (ctx.path === '/sign-out') {
+      // Without a cookie the router skips its origin check (origin-check.mjs:108), so a cross-site
+      // POST could still clear the session cookie.
+      await formCsrfMiddleware(ctx);
       return;
     }
     if (ctx.path !== SEND_OTP_PATH) return;

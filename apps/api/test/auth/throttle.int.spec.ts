@@ -32,8 +32,10 @@ const insertOthers = (count: number, age: string) =>
     [count, age],
   );
 
+// Status, every header except `date`, and the body: a throttled reply must be indistinguishable.
 async function snapshot(res: Response) {
-  return { status: res.status, contentType: res.headers.get('content-type'), body: await res.text() };
+  const headers = [...res.headers.entries()].filter(([name]) => name !== 'date');
+  return { status: res.status, headers, body: await res.text() };
 }
 
 describe('CSRF runs before the throttle', () => {
@@ -60,6 +62,23 @@ describe('the mailer is the enforcement point', () => {
     await mailer.sendOtp('nopermit@x.pe', '123456');
     expect(mailsTo('nopermit@x.pe')).toBe(0);
     expect(warn).toHaveBeenCalledWith(JSON.stringify({ event: 'otp_send_without_permit' }));
+  });
+
+  it('sends nothing when the permit is for another address', async () => {
+    const mailer = t.app.get(OtpMailer);
+    const request = new Request('http://localhost/x');
+    mailer.grantPermit(request, 'a@x.pe');
+    await mailer.sendOtp('b@x.pe', '123456', { request });
+    expect(t.mails).toHaveLength(0);
+  });
+
+  it('uses a permit once', async () => {
+    const mailer = t.app.get(OtpMailer);
+    const request = new Request('http://localhost/x');
+    mailer.grantPermit(request, 'a@x.pe');
+    await mailer.sendOtp('a@x.pe', '123456', { request });
+    await mailer.sendOtp('a@x.pe', '654321', { request });
+    expect(t.mails).toHaveLength(1);
   });
 });
 
