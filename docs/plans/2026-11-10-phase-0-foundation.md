@@ -1,4 +1,4 @@
-# Phase 0 Foundation — Implementation Plan (rev. 3, gate closed)
+# Phase 0 Foundation — Implementation Plan (rev. 3.1, gate closed)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (inside the
 > orchestrated-delivery loop) to implement this plan batch by batch.
@@ -14,7 +14,8 @@ first-party and there is no CORS.
 
 **Tech stack (verified on npm 2026-11-10):** Node 24.18, pnpm 12.18, turbo 2.11, TypeScript
 **6.0.3** (pinned, D13), @nestjs/core 12.4, @nestjs/swagger 12.1, drizzle-orm 0.45.4, drizzle-kit
-0.31.11, better-auth 1.7.19, **auth 1.7.19** (the CLI; a separate package — better-auth has no bin),
+0.31.11, better-auth **1.7.18**, **auth 1.7.18** (the CLI; a separate package — better-auth has no bin;
+1.7.19 was published on 2026-11-10 and is blocked by pnpm's minimum release age — see F14),
 @thallesp/nestjs-better-auth 2.8.0, next 16.4, vitest 5.1, unplugin-swc 2.0 + @swc/core 1.16,
 @playwright/test 1.65, zod 4.6, pg 8.23, resend 6.37, openapi-typescript 7.13, openapi-fetch 0.17.
 
@@ -348,13 +349,17 @@ Options (the full set; anything not listed stays default):
   database: drizzleAdapter(db, { provider: 'pg', schema: authSchema }),
   user: { additionalFields: { role: { type: 'string', defaultValue: 'rider', input: false } } },
   account: { accountLinking: { enabled: false } },                         // G1
-  socialProviders: { google: { clientId, clientSecret,
-    mapProfileToUser: (p) => { if (p.email_verified !== true) throw new APIError('FORBIDDEN'); return {}; } } },
+  user: { validateUserInfo: ({ source }) =>                              // F14: replaces mapProfileToUser
+    source.method === 'oauth' && source.oauth?.providerId === 'google' && source.oauth.profile?.email_verified !== true
+      ? { error: 'google_email_unverified' } : undefined },
+  socialProviders: { google: { clientId, clientSecret } },
+  databaseHooks: { account: { create: { before: dropTokens }, update: { before: dropTokens } } },  // B4.4
   disabledPaths: [
     '/email-otp/request-password-reset', '/forget-password/email-otp', '/email-otp/reset-password',
     '/email-otp/verify-email', '/email-otp/check-verification-otp',
     '/email-otp/change-email', '/email-otp/request-email-change',
     '/sign-up/email', '/sign-in/email', '/update-user', '/change-email', '/delete-user',
+    // … and every other literal path not in the allowlist (src/auth/auth-paths.ts, 30 in total)
   ],
   rateLimit: { enabled: true, storage: 'memory',                            // one container, windows ≤ 60 s
     customRules: { '/email-otp/send-verification-otp': { window: 60, max: 5 } } }, // per IP, before our throttle
@@ -373,14 +378,21 @@ Options (the full set; anything not listed stays default):
 
 The hook also rejects (400, generic body) any `/sign-in/social` request whose body carries
 `idToken`: Phase 0 supports only the redirect flow, where the token is merely decoded.
-The `email_verified` rejection from `mapProfileToUser` must end as a **redirect** to
+The `email_verified` rejection must end as a **redirect** to
 `/ingresar?error=google_email_unverified` (via the provider's `errorCallbackURL`), not raw JSON at
-the callback URL; the implementer verifies how the callback maps a thrown `APIError` and STOPS if
-it cannot redirect.
+the callback URL. **Rev. 3.1 (F14):** in 1.7.18 an `APIError` thrown by `mapProfileToUser` is not
+caught — `google.mjs:126` (core) calls it inside `getUserInfo`, `oauth2/callback.mjs:39` and
+`api/routes/callback.mjs:96` have no try/catch — so the user gets JSON 403. The rule therefore lives
+in `user.validateUserInfo`: it runs in `createUser` before the insert, inside the transaction
+(`db/internal-adapter.mjs:160-179`), and again on each later sign-in of a linked Google user
+(`oauth2/link-account.mjs:226`); the callback maps its `APIError` with `body.code` to
+`redirectOnError` (`api/routes/callback.mjs:152-153`, `utils/validate-user-info.mjs:38-41`).
 
 **Allowlist, not denylist.** `auth-paths.ts` exports the explicit set of enabled auth paths
 (`/sign-in/social`, `/callback/:id`, `/get-session`, `/sign-out`, `/email-otp/send-verification-otp`,
-`/sign-in/email-otp`, `/ok`, `/error`, …). A test reads every endpoint path from `auth.api` and
+`/sign-in/email-otp`, `/ok`, `/error`, and `/reset-password/:token`). The last one is an exception:
+`disabledPaths` matches exact paths only (`api/index.mjs:168-170`), so a parametric path cannot be
+disabled; it is inert, because every path that issues a reset token is disabled. A test reads every endpoint path from `auth.api` and
 asserts `enabled = all − disabledPaths` equals that set exactly. A library upgrade that adds an
 endpoint turns the test red until someone decides about it.
 
@@ -415,7 +427,8 @@ The success shape is **captured from the real endpoint** in the test, not hard-c
 Tests `throttle.int.spec.ts` (HTTP level, real DB; quota windows simulated by inserting backdated
 rows with SQL, e.g. `now() - interval '59 seconds'`; **every request sets a unique
 `cf-connecting-ip`** so the per-IP limiter never interferes; `beforeEach` truncates
-`otp_send_log` and resets the in-memory limiter by building a fresh app):
+`otp_send_log`. **Rev. 3.1 (F14):** a fresh app does **not** reset the limiter — its memory store is a
+module-level `Map` (`api/rate-limiter/index.mjs:6`) — so unique IPs are the only isolation):
 - hostile `Origin` (no cookie) → 403 and **zero rows** in `otp_send_log`; `WEB_ORIGIN` → 200.
 - a direct call of `mailer.sendOtp` without a permit → no mail, `otp_send_without_permit` logged.
 - first send → mailer called; repeat with a row at −59 s → not called, status + content-type +
@@ -464,6 +477,11 @@ undici `MockAgent`; it returns an ID token (an unsigned-checked JWT is fine, bec
 flow only decodes it). Drive the real flow: `POST /api/auth/sign-in/social` → take `state` from the
 redirect URL → `GET /api/auth/callback/google?code=…&state=…`.
 - verified email, new `sub=G1` → user created, `account.accountId = 'G1'`, redirect to the web.
+- `validateUserInfo` both sides (rev. 3.1): (a) `email_verified: false` → redirect with
+  `error=google_email_unverified`, zero user/account rows; (b) verified → user created; (c) must
+  not fire: an email-code sign-up still creates a user; (d) an existing Google user whose next
+  profile has `email_verified: false` is rejected on that sign-in. Mutations: remove the check →
+  (a) and (d) red; reject every source → (c) red.
 - same `sub`, changed email → same user.
 - `email_verified: false` → **redirect** to `/ingresar?error=google_email_unverified`, no user,
   no account row.
@@ -477,7 +495,9 @@ redirect URL → `GET /api/auth/callback/google?code=…&state=…`.
 - Google OAuth tokens: `account` stores Google's access/ID tokens in plain text; Phase 0 never
   calls Google APIs after sign-in, so a `databaseHooks.account.create.before` drops
   `accessToken`, `refreshToken` and `idToken` before insert. Test: after sign-in those columns are
-  null. Mutation: remove the hook → red.
+  null. Mutation: remove the hook → red. **Rev. 3.1:** each later sign-in writes fresh tokens
+  through `updateAccount` (`oauth2/link-account.mjs:242-258`), so `account.update.before` drops
+  them too. Test: null after a **second** sign-in; mutation: remove the update hook → red.
 
 **B4.5 Guard + `/api/me`** (`guard.int.spec.ts`): `/api/me` 401 without cookie, 200 with one;
 `/api/trails` and `/api/health` 200 anonymous; deleted session row → 401; expired session → 401;
@@ -501,6 +521,12 @@ the plaintext email. Mutation: log the OTP in the mailer → red.
 `apps/api/test/support/`; `tsconfig.build.json` excludes `test/`; nothing in `src/` imports them.
 B3's `verify-image.sh` proves no `/test/` path is in the image. (There is no capture endpoint in the
 API; e2e in B5 reads codes through a test-only entrypoint `test/support/e2e-main.ts`.)
+**Rev. 3.1 (as built):** `e2e-main.ts` runs as its own process (Playwright's TypeScript transform
+cannot run Nest decorators in-process), so it appends `{"to","otp"}` lines to `E2E_CODES_FILE`
+instead of an in-process store; codes still never travel over HTTP. No `scripts/seed-e2e.ts`: the
+sign-in e2e needs no auth seed, and `apps/web/e2e/prepare-db.ts` already recreates and migrates the
+database (auth tables included). The Google stub is `test/support/google-stub.ts` (no JWKS: the
+redirect flow only decodes the ID token).
 
 ---
 
@@ -615,4 +641,5 @@ acceptable."
 | F11 | e2e entrypoint, client regen, operator steps unowned | accepted | B4 files, B3.8 checklist, B1.12 |
 | F12 | `disabledPaths` is a denylist | accepted | B4.1 allowlist test |
 | F13 | Non-6-digit codes do consume attempts | confirmed | assertion deleted |
+| F14 | Implementation check (B4, 2026-11-10) against the installed 1.7.18: (1) `mapProfileToUser` throwing does not redirect → `user.validateUserInfo`; (2) 1.7.19 blocked by the release-age policy → pin 1.7.18 for `better-auth`, `auth`, `@better-auth/*`, no exclude list; (3) the in-memory rate limiter is module-level and survives a new app → unique `cf-connecting-ip` per request is the only isolation; (4) `/reset-password/:token` cannot be in `disabledPaths` → allowlisted as inert; (5) tokens are rewritten on each sign-in → `account.update.before` too | confirmed (google.mjs:126, oauth2/callback.mjs:39, api/routes/callback.mjs:96 and 152-153, db/internal-adapter.mjs:160-179, utils/validate-user-info.mjs:38-41, link-account.mjs:226 and 242-258, rate-limiter/index.mjs:6, api/index.mjs:168-170) — owner approved | B4.1, B4.4, B4.2, tech stack |
 | nits | async hash; `exec node`; Google tokens in `account`; `auth.cli` in `src/`; frozen Date; prerender; memory rate-limit storage | accepted | B4.1, B1.11, B4.4, B4.1, B4.3, B3.1, B4.1 |
