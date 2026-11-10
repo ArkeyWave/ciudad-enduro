@@ -175,3 +175,27 @@ jobs:
       - name: Container logs
         if: failure()
         run: docker logs api; docker logs web
+
+  # Push to main only, after every gate. The key in the `staging` Environment (restricted to
+  # main) can run one command on the box: ce-oss-deploy <sha> (docs/operations/deploy.md).
+  # Pull requests, including fork PRs, never reach this job or its secret.
+  deploy-staging:
+    needs: [check, contract, e2e, images]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Deploy ${{ github.sha }} to enduro-next.vops.pe
+        env:
+          DEPLOY_KEY: ${{ secrets.CE_OSS_DEPLOY_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo '104.152.209.8 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGroYXrLr2Jn8Rfj9IMmw161mTAN3C404FChVhYl3bju' > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            root@104.152.209.8 '${{ github.sha }}'
