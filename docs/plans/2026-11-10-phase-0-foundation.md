@@ -1,4 +1,4 @@
-# Phase 0 Foundation — Implementation Plan (rev. 3.1, gate closed)
+# Phase 0 Foundation — Implementation Plan (rev. 3.2, gate closed)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (inside the
 > orchestrated-delivery loop) to implement this plan batch by batch.
@@ -76,7 +76,7 @@ ledger is in section 9.
 | # | Question | Decision | Why |
 |---|----------|----------|-----|
 | G1 | Account linking | **Off.** Google sign-in additionally requires `email_verified === true`. An email-code user who taps Google gets a clear "Ingresa con tu código de correo" message. | Linking with trusted providers skips the verification check (takeover). Without the `email_verified` rule, an attacker pre-creates the user with Google and keeps access after the owner signs in by code — this applies even with linking off. Google warns a verified third-party address may no longer belong to the account holder. |
-| G2 | Throttle placement | `hooks.before` runs the CSRF check, then the per-address cooldown and global cap, and issues a one-use send permit; the **mailer refuses to send without a permit**; unused paths disabled via an allowlist test; the built-in per-IP limiter stays on the send path (5/60 s); mail is sent in the background. | Round 1 reproduced the bypass and the limiter ordering; the final review showed a cross-origin request could burn a slot with no mail, and that removing the per-IP limit let one IP drain the global cap. |
+| G2 | Throttle placement | `hooks.before` runs the CSRF check, then the per-address cooldown and global cap, and issues a one-use send permit; the **mailer refuses to send without a permit**; unused paths disabled via an allowlist test; the built-in per-IP limiter stays on the send path (5/60 s); mail is sent in the background. | Round 1 reproduced the bypass and the limiter ordering; the final review showed a cross-origin request could burn a slot with no mail, and that removing the per-IP limit let one IP drain the global cap at once. **Correction (F15):** the per-IP limit only slows that drain — one IP still fills the 50/24 h cap in about 10 minutes (5 per 60 s); see §8. |
 | G3 | Test runner | **Vitest + unplugin-swc**. | Both reviewers; ESM-only better-auth is the usual Jest pain. |
 | G4 | Parallelism | Auth and the web list do **not** run in parallel (they share `apps/api/package.json` and the contract). **Staging deploy (B3) and auth (B4) run in parallel worktrees**: disjoint files, separate databases. | Removes the real collisions, keeps real parallelism. |
 | G5 | Deploy access | Migrations run in the **API container entrypoint**. The GitHub secret is an SSH key restricted by `command=` to one deploy script that takes a commit SHA. | A public repo must not hold a general shell key to the shared box. |
@@ -556,6 +556,11 @@ sets its own `cf-connecting-ip` header.
 - **Self-cleaning:** create a user through the real flow, assert rows, delete them, assert zero
   residual in `user`, `session`, `account`, `verification`, `otp_send_log`.
 
+**OAuth errors before the callback has a state (rev. 3.1, F15):** errors such as `state_not_found`
+or `invalid_callback_request` happen before Better Auth knows the client's `errorCallbackURL`, so
+they redirect to Better Auth's own page `/api/auth/error`, not to `/ingresar`. If the UI must show
+them, B5 sets `onAPIError.errorURL` to `${WEB_ORIGIN}/ingresar` (with a test); B4 does not.
+
 **Phase 0 exit:** the live checks above pass; CI green on `main`; the final adversarial review
 (section 7) is closed.
 
@@ -590,9 +595,17 @@ acceptable."
 - **Session tokens are stored unhashed** (Better Auth 1.7.19 has no option). The old app stored a
   SHA-256. Mitigations: DB reachable only on the Docker network, 30-day expiry, revocation by row
   delete, backups encrypted. Revisit when Better Auth offers hashed session tokens.
-- **The global cap of 50 codes per 24 h can be exhausted** by an attacker using 50 addresses from
-  many IPs (carried-over rule). Mitigations: the built-in per-IP limit (5/60 s), the Cloudflare
-  per-IP rule and the `otp_global_cap_reached` log event.
+- **The global cap of 50 codes per 24 h can be exhausted** (carried-over rule), and **one IP is
+  enough**: with 50 different addresses at the per-IP limit of 5 sends per 60 s, a single IP fills
+  the cap in about 10 minutes, and sign-in by code then stops for every rider until the 24-hour
+  window moves (F15). Many IPs do it faster. Mitigations: the built-in per-IP limit (5/60 s); the
+  Cloudflare rate-limit rule on `POST /api/auth/email-otp/send-verification-otp` — 5 requests per
+  10 s per IP and colo, block 10 s (rule id `4cf84c7a`, live) — which stops bursts but is looser
+  than 5/60 s over a minute; and the `otp_global_cap_reached` log event.
+  **Not added in Phase 0: a per-IP daily share of the cap** (owner decision pending). Trade-off:
+  in Peru many mobile riders share one carrier-grade NAT (CGNAT) address, so a per-IP daily quota
+  would also lock out legitimate riders behind that address; without it, one IP can exhaust the
+  global cap. Google sign-in is not affected by the cap.
 
 ## 9. Gate ledger (round 1)
 
@@ -642,4 +655,5 @@ acceptable."
 | F12 | `disabledPaths` is a denylist | accepted | B4.1 allowlist test |
 | F13 | Non-6-digit codes do consume attempts | confirmed | assertion deleted |
 | F14 | Implementation check (B4, 2026-11-10) against the installed 1.7.18: (1) `mapProfileToUser` throwing does not redirect → `user.validateUserInfo`; (2) 1.7.19 blocked by the release-age policy → pin 1.7.18 for `better-auth`, `auth`, `@better-auth/*`, no exclude list; (3) the in-memory rate limiter is module-level and survives a new app → unique `cf-connecting-ip` per request is the only isolation; (4) `/reset-password/:token` cannot be in `disabledPaths` → allowlisted as inert; (5) tokens are rewritten on each sign-in → `account.update.before` too | confirmed (google.mjs:126, oauth2/callback.mjs:39, api/routes/callback.mjs:96 and 152-153, db/internal-adapter.mjs:160-179, utils/validate-user-info.mjs:38-41, link-account.mjs:226 and 242-258, rate-limiter/index.mjs:6, api/index.mjs:168-170) — owner approved | B4.1, B4.4, B4.2, tech stack |
+| F15 | B4 review round (opus 5.5 @ high ∥ gpt-6.1-sol @ high, both approve with changes): (1) a cookie-free cross-site `POST /sign-out` skipped the router origin check and cleared the session cookie; (2) mailer-permit tests did not prove the address match or single use; (3) the success-shape test compared only the content type; (4) a Google token without `email_verified` was not tested; (5) production accepted `http://` auth URLs; (6) an untested schema comment; (7) §8 and G2 understated a single-IP cap drain; (8) early OAuth errors land on `/api/auth/error` | (1) confirmed (origin-check.mjs:108, sign-out.mjs:54); others accepted | (1) hook runs `formCsrfMiddleware` on `/sign-out`; (2)-(5) tests + mutations, https check in `env.ts`; (6) removed; (7) §8, G2; (8) B5 note |
 | nits | async hash; `exec node`; Google tokens in `account`; `auth.cli` in `src/`; frozen Date; prerender; memory rate-limit storage | accepted | B4.1, B1.11, B4.4, B4.1, B4.3, B3.1, B4.1 |

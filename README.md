@@ -51,7 +51,8 @@ Endpoints: `GET /api/health`, `GET /api/trails?city=`, `GET /api/trails/:slug`, 
 | `RESEND_API_KEY`, `EMAIL_FROM` | Sender of the OTP mails |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client; redirect URI `<BETTER_AUTH_URL>/api/auth/callback/google` |
 
-Production refuses example and `dev-`/`test-` secrets. The client IP comes from `cf-connecting-ip`
+Production refuses example and `dev-`/`test-` secrets, and `http://` values for `BETTER_AUTH_URL`
+and `WEB_ORIGIN`. The client IP comes from `cf-connecting-ip`
 only (Cloudflare sets it), so rate limits are per client behind the proxy.
 
 After a Better Auth upgrade, regenerate the auth tables and review the diff:

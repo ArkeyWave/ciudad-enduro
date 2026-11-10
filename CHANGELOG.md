@@ -8,6 +8,8 @@
 - OTP codes stored as HMAC-SHA256 with `OTP_HMAC_SECRET`, not Better Auth's unsalted SHA-256.
 - Google: account linking off; the e-mail must be verified on every sign-in (`user.validateUserInfo`, error `google_email_unverified`); `idToken` sign-in bodies refused; Google tokens are never stored (create and update hooks).
 - Auth paths are an allowlist: 30 unused Better Auth endpoints answer 404; a test fails when a library upgrade adds one.
+- `POST /api/auth/sign-out` runs the CSRF check even without a cookie (a cross-site form could otherwise clear the session cookie).
+- Production refuses `http://` values for `BETTER_AUTH_URL` and `WEB_ORIGIN`; a Google token without the `email_verified` claim counts as unverified.
 - Origin check on in every environment (Better Auth turns it off under `NODE_ENV=test`); no CORS headers; `role` cannot be set by the client; no OTP, session token or address in the logs.
 
 ### Added
