@@ -1,0 +1,275 @@
+{
+  "components": {
+    "schemas": {
+      "City": {
+        "enum": [
+          "Chimbote",
+          "Nuevo Chimbote",
+          "Trujillo"
+        ],
+        "type": "string"
+      },
+      "CoordinatesDto": {
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ],
+        "type": "object"
+      },
+      "Difficulty": {
+        "enum": [
+          "facil",
+          "intermedio",
+          "dificil"
+        ],
+        "type": "string"
+      },
+      "TrailDetailDto": {
+        "properties": {
+          "city": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/City"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "difficulty": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              }
+            ]
+          },
+          "distanceM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationGainM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "end": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CoordinatesDto"
+              }
+            ],
+            "nullable": true,
+            "type": "object"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "description": "[lng, lat] pairs",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "start": {
+            "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "city",
+          "difficulty",
+          "type",
+          "start",
+          "distanceM",
+          "description",
+          "end",
+          "path",
+          "elevationGainM"
+        ],
+        "type": "object"
+      },
+      "TrailSummaryDto": {
+        "properties": {
+          "city": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/City"
+              }
+            ]
+          },
+          "difficulty": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              }
+            ]
+          },
+          "distanceM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "start": {
+            "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "city",
+          "difficulty",
+          "type",
+          "start",
+          "distanceM"
+        ],
+        "type": "object"
+      },
+      "TrailType": {
+        "enum": [
+          "descenso",
+          "cross_country",
+          "urbano"
+        ],
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "contact": {},
+    "description": "",
+    "title": "Ciudad Enduro API",
+    "version": "0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/trails": {
+      "get": {
+        "operationId": "TrailsController_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "city",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/City"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TrailSummaryDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "trails"
+        ]
+      }
+    },
+    "/api/trails/{slug}": {
+      "get": {
+        "operationId": "TrailsController_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrailDetailDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "No published trail has this slug"
+          }
+        },
+        "tags": [
+          "trails"
+        ]
+      }
+    }
+  },
+  "servers": [],
+  "tags": []
+}
