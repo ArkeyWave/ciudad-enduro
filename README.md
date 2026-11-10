@@ -63,10 +63,12 @@ Commit both files. CI fails when they differ from what the API emits.
 
 ```bash
 cp apps/web/.env.example apps/web/.env.local   # API_INTERNAL_URL=http://localhost:3001
+pnpm --filter api-client build                 # the web imports its runtime from dist/
 pnpm --filter api dev                          # the web reads trails from the API
 pnpm --filter web dev                          # http://localhost:3000
 ```
 
+`pnpm dev` from the root builds `api-client` first (the `dev` task depends on `^build`).
 In development, `next dev` rewrites `/api/*` to the API. In production Traefik routes `/api`.
 
 E2E tests (Playwright) start the API from source on port 3101 and the web production build on
