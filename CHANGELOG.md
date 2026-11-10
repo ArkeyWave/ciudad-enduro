@@ -2,6 +2,8 @@
 
 ## [Unreleased] - 2026-11-10
 
+Phase 0 complete: API, auth, web sign-in and staging deploy live at https://enduro-next.vops.pe; all live checks passed (plan §11).
+
 ### Security
 - OTP send throttle on the database clock: 60-second cooldown per address and 50 mails per 24 h overall, under an advisory lock; addresses stored only as an HMAC. The send hook runs the CSRF check first (a cross-origin request uses no slot) and grants a one-use permit; the mailer refuses to send without it. Non-sign-in OTP types send nothing. Mail is sent in the background, so the response time reveals nothing.
 - Per-IP rate limit keyed on `cf-connecting-ip` (5 sends per 60 s; 3 code checks per 60 s); a spoofed `X-Forwarded-For` is ignored.

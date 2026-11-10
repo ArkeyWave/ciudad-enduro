@@ -679,3 +679,26 @@ acceptable."
 | F16 | Final B4 review (opus 5.5 @ xhigh, approve with changes): S1 no body limit on `/api/auth` (adapter skips its parsers there, `nestjs-better-auth/dist/index.mjs:676-678`; a 3 MB body reached `/sign-out`, and a sign-up stored a 3,000,000-char `name` and `image='javascript:alert(1)'`); S2 the env https check did not match Better Auth's predicate, and a trailing slash broke the exact origin match; N1 `/sign-in/email-otp` without a cookie had no CSRF check; N2 failed mails were not reported; N3 web sign-out constraints; N4 `BETTER_AUTH_TRUSTED_ORIGINS` widens trusted origins silently (`context/helpers.mjs:83-84`) | confirmed | S1 adapter `middleware`: 413 above 16 KiB or with any Transfer-Encoding (no Content-Length and no Transfer-Encoding = no body, passes), unread body discarded so the client gets the 413; `user.create.before` trims `name` to 100 chars and keeps `image` only if https. S2 raw strings, `startsWith('https://')` in production, `new URL(v).origin === v` everywhere. N1 `formCsrfMiddleware` on `/sign-in/email-otp`. N2 `{event:'auth_background_task_failed', name}` from the mailer — the handler never sees the error, because Better Auth catches it first (`context/create-context.mjs:217-218`). N3 B5 note. N4 production rejects the variable |
 | B3-F1 | Coolify build runs repo `RUN` steps with host networking on the shared box | accepted for staging | §8; Phase 1: CI-built images on GHCR, deploy by digest (owner decision pending) |
 | nits | async hash; `exec node`; Google tokens in `account`; `auth.cli` in `src/`; frozen Date; prerender; memory rate-limit storage | accepted | B4.1, B1.11, B4.4, B4.1, B4.3, B3.1, B4.1 |
+
+## 11. Phase 0 — DONE (2026-11-10)
+
+All batches merged (B0 #1, B1 #2, B2 #3, B3 #4, B4 #5, B5 #6) and deployed by the CI deploy job to
+https://enduro-next.vops.pe (revision 263302e). Live checks, run with the owner:
+
+| Check | Result |
+|-------|--------|
+| Real Resend e-mail code → sign-in | pass |
+| Session cookie `__Secure-better-auth.session_token`: HttpOnly, Secure, SameSite=Lax, Path=/ | pass |
+| "Salir" ends the session in the browser and on the server (0 session rows) | pass |
+| Google sign-in (test user on the consent screen), Google tokens null in `account` | pass |
+| `otp_send_log` holds no plaintext address | pass |
+| verify-image on both deployed images (`<uuid>:263302e`) | pass |
+| Cloudflare rule 4cf84c7a active on the send path | pass |
+| Per-IP limit: 4th code check from one network → 429; a second network (mobile data) got its own bucket | pass |
+| No `Referrer-Policy: no-referrer` on the live stack | pass |
+| Self-cleaning: both test users removed, 0 residual rows in user/session/account/verification/otp_send_log | pass |
+
+Open follow-ups (Phase 1 backlog): B3-F1 CI-built images on GHCR (owner decision), the per-IP daily
+share for the global OTP cap (owner decision, CGNAT trade-off), verify-image pattern for web e2e files
+(needs the verifier roll-out), early OAuth errors → `onAPIError.errorURL`, the code step's "back" action,
+the consent screen still in Testing, Cloudflare Email Obfuscation on this host.
