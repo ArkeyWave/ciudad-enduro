@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { prepareTestDatabase } from './global-setup.js';
 
 const realConnect = (url: string) => new pg.Client({ connectionString: url });
+// Derived from this run's suffix, so parallel worktrees never create the same database.
+const guardSuffix = `${process.env.TEST_DB_SUFFIX ?? 'main'}_guard`;
 
 describe('prepareTestDatabase guards', () => {
   it('refuses a remote host before opening any connection', async () => {
@@ -31,8 +33,8 @@ describe('prepareTestDatabase guards', () => {
 
   it('creates and migrates the database on localhost', async () => {
     const connect = vi.fn(realConnect);
-    const url = await prepareTestDatabase(process.env.DATABASE_URL, 'guard_check', connect);
-    expect(new URL(url).pathname).toBe('/ciudad_enduro_test_guard_check');
+    const url = await prepareTestDatabase(process.env.DATABASE_URL, guardSuffix, connect);
+    expect(new URL(url).pathname).toBe(`/ciudad_enduro_test_${guardSuffix}`);
 
     const client = realConnect(url);
     await client.connect();
@@ -45,7 +47,7 @@ describe('prepareTestDatabase guards', () => {
 
     const admin = realConnect(Object.assign(new URL(url), { pathname: '/postgres' }).href);
     await admin.connect();
-    await admin.query('DROP DATABASE ciudad_enduro_test_guard_check WITH (FORCE)');
+    await admin.query(`DROP DATABASE ciudad_enduro_test_${guardSuffix} WITH (FORCE)`);
     await admin.end();
   });
 });
