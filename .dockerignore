@@ -1,0 +1,13 @@
+# Build context for apps/api/Dockerfile and apps/web/Dockerfile (context = repo root).
+.git
+**/node_modules
+**/.env*
+**/test/
+**/e2e/
+**/dist/
+**/.next/
+**/.turbo/
+**/coverage/
+**/playwright-report/
+**/test-results/
+docs/
