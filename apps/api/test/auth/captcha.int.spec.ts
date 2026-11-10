@@ -57,14 +57,13 @@ describe('the send path needs a Turnstile token', () => {
     expect(t.turnstile.calls.at(-1)).toEqual({ secret: process.env.TURNSTILE_SECRET_KEY, response: token, remoteip: ip });
   });
 
-  // Better Auth's getIP groups IPv6 by /64 (@better-auth/core utils/ip.mjs:105, ipv6Subnet
-  // default 64), and the captcha plugin sends that value as `remoteip`. Cloudflare documents
-  // remoteip as optional, with no IP-related error code; accepted deviation (plan §7, A11).
-  it('sends an IPv6 client as its /64 prefix in remoteip, and the send passes', async () => {
+  // remoteip is "the visitor's IP address" (Cloudflare): the full IPv6, although Better Auth's
+  // limiter keys IPv6 by /64 (ratelimit.int.spec.ts; plan §7, A11).
+  it('sends an IPv6 client as its full address in remoteip, and the send passes', async () => {
     const token = turnstileToken();
     const res = await send('v6@x.pe', { ...withToken(token), 'cf-connecting-ip': '2001:db8:abcd:12:1:2:3:4' });
     expect(res.status).toBe(200);
-    expect(t.turnstile.calls.at(-1)?.remoteip).toBe('2001:0db8:abcd:0012:0000:0000:0000:0000');
+    expect(t.turnstile.calls.at(-1)?.remoteip).toBe('2001:0db8:abcd:0012:0001:0002:0003:0004');
   });
 
   it('a refused send uses no cooldown slot: a valid send for the same address right after mails', async () => {

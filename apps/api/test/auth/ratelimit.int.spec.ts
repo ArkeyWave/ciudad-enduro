@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { openTestClient } from '../test-db.js';
@@ -31,6 +32,17 @@ describe('send path: 5 per 60 s per cf-connecting-ip', () => {
     for (let i = 0; i < 5; i += 1) expect((await send(a, i)).status).toBe(200);
     expect((await send(a, 5)).status).toBe(429);
     expect((await send(uniqueIp(), 6)).status).toBe(200);
+  });
+
+  // Better Auth keys IPv6 by /64 (@better-auth/core utils/ip.mjs:105): one subscriber's /64 is
+  // one bucket, even when the captcha plugin sees each full address (plan §7, A11).
+  it('counts two IPv6 addresses in one /64 as one client', async () => {
+    const prefix = `2001:db8:${randomBytes(2).toString('hex')}:${randomBytes(2).toString('hex')}`;
+    const a = `${prefix}::1`;
+    const b = `${prefix}:1:2:3:4`;
+    for (let i = 0; i < 3; i += 1) expect((await send(a, i)).status).toBe(200);
+    for (let i = 3; i < 5; i += 1) expect((await send(b, i)).status).toBe(200);
+    expect((await send(b, 5)).status).toBe(429);
   });
 
   it('ignores a spoofed x-forwarded-for', async () => {

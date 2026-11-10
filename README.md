@@ -78,8 +78,15 @@ Cloudflare advises separate widgets per environment and no local hostnames on pr
 [testing](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)), and put its keys in
 `apps/api/.env` and `apps/web/.env.local`. Google sign-in needs no token.
 
-The API sends the client IP to siteverify as `remoteip`; for IPv6 that is the /64 prefix (Better
-Auth groups IPv6 by /64 for its rate limits). Cloudflare documents `remoteip` as optional.
+The API sends the client IP (`cf-connecting-ip`) to siteverify as `remoteip`, IPv6 as the full
+address: Cloudflare defines it as
+["the visitor's IP address"](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/).
+Only Better Auth's per-IP rate limiter groups IPv6 by /64. In local development the request has no
+`cf-connecting-ip`, so Better Auth falls back to `127.0.0.1` (`@better-auth/core` `utils/ip.mjs:217`)
+and sends that as `remoteip`.
+
+`/ingresar` must stay a full page load (a plain `<a href>`, not `next/link`): `next/script` does not
+retry a failed `api.js` load on a client-side re-mount (plan §7, A11 follow-up).
 
 After a Better Auth upgrade, regenerate the auth tables and review the diff:
 

@@ -40,6 +40,14 @@ const withoutProviderTokens = <T extends object>(account: T) => ({
 
 /** The full Better Auth configuration. Pure: no I/O, so the CLI and the tests can build it. */
 export function buildAuthOptions({ env, db, mailer, throttle, siteVerifyUrl }: AuthDeps) {
+  const turnstile = captcha({
+    provider: 'cloudflare-turnstile',
+    secretKey: env.TURNSTILE_SECRET_KEY,
+    endpoints: [SEND_OTP_PATH],
+    allowedHostnames: [new URL(env.WEB_ORIGIN).hostname],
+    expectedAction: TURNSTILE_ACTION,
+    siteVerifyURLOverride: siteVerifyUrl ?? undefined,
+  });
   return {
     basePath: '/api/auth',
     baseURL: env.BETTER_AUTH_URL, // https in staging/prod → Secure + __Secure- cookies
@@ -93,14 +101,15 @@ export function buildAuthOptions({ env, db, mailer, throttle, siteVerifyUrl }: A
       // Runs in the router's onRequest, after the per-IP limiter and before the origin check and
       // hooks.before (dist/api/index.mjs:167-183): a refused token uses no cooldown slot, no cap
       // row and no mail. Fails closed (500) when siteverify is unreachable.
-      captcha({
-        provider: 'cloudflare-turnstile',
-        secretKey: env.TURNSTILE_SECRET_KEY,
-        endpoints: [SEND_OTP_PATH],
-        allowedHostnames: [new URL(env.WEB_ORIGIN).hostname],
-        expectedAction: TURNSTILE_ACTION,
-        siteVerifyURLOverride: siteVerifyUrl ?? undefined,
-      }),
+      {
+        ...turnstile,
+        // remoteip is "the visitor's IP address" (Cloudflare): the full IPv6, not the limiter's /64.
+        onRequest: (request: Request, ctx: Parameters<typeof turnstile.onRequest>[1]) =>
+          turnstile.onRequest(request, {
+            ...ctx,
+            options: { ...ctx.options, advanced: { ...ctx.options.advanced, ipAddress: { ...ctx.options.advanced?.ipAddress, ipv6Subnet: 128 } } },
+          }),
+      },
       emailOTP({
         otpLength: 6,
         expiresIn: 600,

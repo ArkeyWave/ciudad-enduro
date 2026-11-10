@@ -265,13 +265,22 @@ prove a restore from R2 into a scratch DB. Correct Phase 0 §8 ("backups encrypt
 its regex before the secret is used. One lock per target; write the promotion record via rename. The
 host check matches the router rule for enduro.vops.pe as a fixed string.
 
-**A11 — IPv6 `remoteip` is the /64 prefix (P1a-2 fix round, accepted deviation).** Better Auth's
-`getIP` normalizes IPv6 to its /64 (`@better-auth/core` `dist/utils/ip.mjs:105`, `ipv6Subnet`
-default 64), and the captcha plugin sends that value as siteverify `remoteip`. Cloudflare documents
-`remoteip` as optional ("The visitor's IP address") and lists no IP-related error code
-(https://developers.cloudflare.com/turnstile/get-started/server-side-validation/), so the prefix cannot
-fail a valid token. The /64 grouping stays: it is the right key for the per-IP limiter. A test
-documents the sent value (`captcha.int.spec.ts`, IPv6).
+**A11 — fixed: the captcha gets the full IPv6; the limiter keeps /64 (P1a-2 fix round 2).** Better
+Auth's `getIP` normalizes IPv6 to its /64 (`@better-auth/core` `dist/utils/ip.mjs:105`, `ipv6Subnet`
+default 64), and the captcha plugin sent that network address as siteverify `remoteip`. Cloudflare
+defines `remoteip` as "The visitor's IP address"
+(https://developers.cloudflare.com/turnstile/get-started/server-side-validation/), and community
+reports (Jan 2025) tie `invalid-input-response` to a wrong `remoteip`; a /64 network address is
+never the rider's address. The first proposal (keep /64, accepted deviation) is withdrawn. Fix: the
+plugin's `onRequest` gets a copy of the options with `ipv6Subnet: 128`
+(`apps/api/src/auth/auth.options.ts`), so `remoteip` is the full address; the per-IP limiter still
+keys IPv6 by /64. Tests: `captcha.int.spec.ts` (IPv6 → full address), `ratelimit.int.spec.ts` (two
+addresses in one /64 share one bucket).
+
+**Follow-up — `/ingresar` must stay a full page load.** `Turnstile.tsx:72`: `next/script` does not
+cache a failed script load, so a client-side re-mount of `/ingresar` after a failed `api.js` load
+would show neither the widget nor the alert. Until an e2e covers client-side navigation to
+`/ingresar`, every link to it is a plain `<a href>` (no `next/link`, no `router.push`).
 
 **A10 — cut.** The box-side verify-image run and the "installed verifier == repo verifier" rule are
 removed: the digest identity plus the attestation already bind the checked image (CI still runs
