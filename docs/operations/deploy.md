@@ -16,16 +16,26 @@ project `ciudad-enduro-oss`, environment `staging`.
    - fetches `main` of the public repo into `/var/cache/ce-oss-deploy/repo.git` and refuses a SHA
      that is not an ancestor of `origin/main` (a fork or branch commit cannot deploy);
    - holds `flock /var/cache/ce-oss-deploy/lock` (directory `700`);
+   - refuses a SHA that is a strict ancestor of the running api commit (a rollback) unless an
+     operator on the box sets `ROLLBACK=1` (see [Rollback](#rollback));
    - refuses the commit, **before any deploy**, when its `scripts/verify-image.sh` differs from
-     the reviewed copy installed at `/usr/local/lib/ce-oss/verify-image.sh` (nothing from the
-     repo runs as root on the box);
-   - sets that commit on both Coolify apps and deploys them one after the other, **api first**
-     (the api container migrates the database on start);
-   - requires the running api and web containers to be exactly `<app-uuid>:<sha>`;
-   - runs the installed verifier on both images; when one fails, it stops that app through the
-     Coolify API and exits 1;
-   - fails unless `https://enduro-next.vops.pe/api/health` answers `revision` = the SHA and `/`
-     answers 200.
+     the reviewed copy installed at `/usr/local/lib/ce-oss/verify-image.sh`;
+   - deploys **api first** (the api container migrates the database on start), then web. Right
+     after each app's own deploy, it requires the running container to be exactly
+     `<app-uuid>:<sha>` and runs the installed verifier on that image; when the image check
+     fails, it stops that app through the Coolify API and exits 1. A failed web deploy therefore
+     never leaves an unchecked api image live;
+   - re-checks the origin lock: direct requests to the box for `/` and `/api/health` answer 403,
+     every `traefik.http.routers.*.rule` label on both running containers has a `.middlewares`
+     label with `cloudflare-only@file`, and `docker port` is empty for both. On failure it stops
+     both apps and exits 1;
+   - fails unless, within 3 minutes, `https://enduro-next.vops.pe/api/health` answers `revision`
+     = the SHA and `/` answers 200 (both retried in the same loop).
+
+What runs where: `ce-oss-deploy` itself runs no file from the repo on the host. The Coolify build
+does run repo code: the Dockerfile `RUN` steps and the build tools (pnpm, turbo, tsc, next) run in
+a BuildKit container with host networking (`--network host`, `--add-host` entries for the box
+databases). This risk is accepted for staging and recorded in the plan (section 8).
 
 The Coolify token goes into the `coolify` container on stdin and into a curl config file there;
 it never appears in a process argv (`/root/ce-oss/capi` does the same for manual API calls).
@@ -136,8 +146,31 @@ docker exec -i zsr9gmrfd3sfdthyxxaikmoc psql -U ciudadenduro_staging -d ciudad_e
 
 ## Rollback
 
-Deploy an earlier `main` SHA by hand on the box: `SSH_ORIGINAL_COMMAND=<sha> ce-oss-deploy`.
-The image `<app-uuid>:<sha>` is reused when it still exists.
+The CI key cannot roll back: `ce-oss-deploy` refuses a SHA that is a strict ancestor of the running
+api commit, and sshd passes no `ROLLBACK` variable from the key (`PermitUserEnvironment no`,
+`AcceptEnv LANG LC_*`). A redeploy of the running SHA and a newer SHA pass. A running commit that
+was never on `main` (a hand deploy of a branch) cannot be ordered, so the guard lets any SHA pass.
+
+Operator procedure, as root on the box:
+
+```bash
+# 1. Pick the main commit to go back to and read what it changes in apps/api/drizzle:
+#    the database is NOT rolled back; older code must work on the newer schema.
+# 2. Its scripts/verify-image.sh must equal /usr/local/lib/ce-oss/verify-image.sh, or the
+#    script refuses (install that commit's verifier first, see above, and put it back after).
+ROLLBACK=1 SSH_ORIGINAL_COMMAND=<sha> /usr/local/bin/ce-oss-deploy
+```
+
+The image `<app-uuid>:<sha>` is reused when it still exists on the box. The next push to `main`
+deploys forward again.
+
+## Follow-ups
+
+- `verify-image.sh`: the "empty /app" check never fails in practice (`find /app` prints `/app`
+  itself). Require `/app/package.json` instead. This changes the verifier, so it needs a verifier
+  roll-out (section above) in the same change.
+- Build images in CI, push them to GHCR, and deploy by digest, so the box never runs repo build
+  steps (plan section 8; Phase 1, owner decision pending).
 
 ## Operator checklist — merge gate for B4
 
