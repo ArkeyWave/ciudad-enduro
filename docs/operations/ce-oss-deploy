@@ -5,22 +5,27 @@
 #
 # Input: SSH_ORIGINAL_COMMAND = a 40-hex commit SHA that is on origin/main.
 # Effect: builds and deploys that commit to staging (api, then web), then proves it is live.
+# Nothing from the repo runs on the host: the image check is the reviewed copy in VERIFY.
 set -euo pipefail
 umask 077
 
 REPO_URL=https://github.com/ArkeyWave/ciudad-enduro.git
-CACHE=/var/cache/ce-oss-deploy/repo.git
-LOCK=/run/lock/ce-oss-deploy.lock
+STATE=/var/cache/ce-oss-deploy
+CACHE=$STATE/repo.git
+LOCK=$STATE/lock
+VERIFY=/usr/local/lib/ce-oss/verify-image.sh
 API_UUID=c6mm7pwdmoysv0eg2vgwo4bi
 WEB_UUID=whfatie8ek3wh09ite3mnqn0
 HOST=enduro-next.vops.pe
 
 refuse() { echo "refused: $1" >&2; exit 2; }
+die() { echo "FAIL $*" >&2; exit 1; }
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
 sha=${SSH_ORIGINAL_COMMAND:-}
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || refuse "expected one 40-hex commit SHA"
 
+install -d -m 700 "$STATE"
 exec 9>"$LOCK"
 flock -w 1800 9 || refuse "another deploy held the lock for 30 min"
 
@@ -31,56 +36,80 @@ git -C "$CACHE" fetch -q --prune "$REPO_URL" '+refs/heads/main:refs/remotes/orig
 git -C "$CACHE" cat-file -e "$sha^{commit}" 2>/dev/null || refuse "$sha is not on main"
 git -C "$CACHE" merge-base --is-ancestor "$sha" refs/remotes/origin/main || refuse "$sha is not on main"
 
-# Coolify API on loopback inside the coolify container; the token travels on stdin.
+# The commit must carry exactly the verifier installed on the box. A new verifier is
+# reviewed and installed by an operator first (docs/operations/deploy.md).
+git -C "$CACHE" show "$sha:scripts/verify-image.sh" 2>/dev/null | cmp -s - "$VERIFY" ||
+  die "scripts/verify-image.sh at $sha differs from the installed $VERIFY; install the reviewed verifier first"
+
+# Coolify API on loopback inside the coolify container. The token goes in on stdin and
+# into a curl config file there, never into any argv.
 capi() { # METHOD PATH [json]
   local token
   token=$(grep '^COOLIFY_API_TOKEN=' /root/.secrets/coolify-vops-infra.env | cut -d= -f2-)
   { printf '%s\n' "$token"; printf '%s' "${3:-}"; } | docker exec -i coolify sh -c '
-    read -r T
+    umask 077; read -r T; cfg=$(mktemp); trap "rm -f \"\$cfg\"" EXIT
+    printf "header = \"Authorization: Bearer %s\"\n" "$T" > "$cfg"; unset T
     if [ -n "$2" ]; then data="--data-binary @-"; else data=""; fi
-    curl -sS --fail-with-body -X "$0" -H "Authorization: Bearer $T" -H "Accept: application/json" \
+    curl -sS --fail-with-body -K "$cfg" -X "$0" -H "Accept: application/json" \
       -H "Content-Type: application/json" $data "http://127.0.0.1:8080/api/v1$1"' "$1" "$2" "${3:+1}"
 }
 
 deploy() { # APP_UUID NAME
-  local uuid=$1 name=$2 dep status
+  local uuid=$1 name=$2 dep status=queued
   capi PATCH "/applications/$uuid" "{\"git_commit_sha\":\"$sha\"}" >/dev/null
   dep=$(capi POST "/deploy?uuid=$uuid" | jq -r '.deployments[0].deployment_uuid // empty')
-  [ -n "$dep" ] || { echo "FAIL $name: Coolify queued no deployment" >&2; exit 1; }
+  [ -n "$dep" ] || die "$name: Coolify queued no deployment"
   log "$name: deployment $dep queued"
   for _ in $(seq 180); do
     status=$(docker exec coolify-db psql -U coolify -d coolify -tAc \
       "select status from application_deployment_queues where deployment_uuid='$dep'")
     case "$status" in
       finished) log "$name: finished"; return 0 ;;
-      failed|cancelled*|error) echo "FAIL $name: deployment $dep $status" >&2; exit 1 ;;
+      failed|cancelled*|error) die "$name: deployment $dep $status" ;;
     esac
     sleep 10
   done
-  echo "FAIL $name: deployment $dep still '$status' after 30 min" >&2
-  exit 1
+  die "$name: deployment $dep still '$status' after 30 min"
+}
+
+# The running container must be the image built from this commit (a failed rolling update
+# leaves the old one running).
+running_image() { # APP_UUID
+  docker ps --filter "name=^$1-" --filter status=running --format '{{.Image}}'
 }
 
 log "deploying $sha"
 deploy "$API_UUID" api
 deploy "$WEB_UUID" web
 
-# The image Coolify built must pass the same path check as CI, with the script from this commit.
-verify=$(mktemp)
-trap 'rm -f "$verify"' EXIT
-git -C "$CACHE" show "$sha:scripts/verify-image.sh" > "$verify"
-bash "$verify" "$API_UUID:$sha"
-bash "$verify" "$WEB_UUID:$sha"
+for app in "api $API_UUID" "web $WEB_UUID"; do
+  set -- $app
+  img=$(running_image "$2")
+  [ "$img" = "$2:$sha" ] || die "$1: running image is '${img:-none}', expected $2:$sha"
+done
+log "running images: $API_UUID:$sha, $WEB_UUID:$sha"
+
+# A failed image check stops that app, so a bad image does not stay live.
+bad=()
+bash "$VERIFY" "$API_UUID:$sha" || bad+=("api $API_UUID")
+bash "$VERIFY" "$WEB_UUID:$sha" || bad+=("web $WEB_UUID")
+if [ "${#bad[@]}" -gt 0 ]; then
+  for app in "${bad[@]}"; do
+    set -- $app
+    log "$1: image check failed, stopping $2"
+    capi POST "/applications/$2/stop" >/dev/null || echo "FAIL $1: could not stop $2, stop it by hand" >&2
+  done
+  die "image check failed: ${bad[*]}"
+fi
 
 # A crashed new container behind an old one would still answer: compare the revision.
 for _ in $(seq 18); do
   revision=$(curl -fsS --max-time 10 "https://$HOST/api/health" | jq -r '.revision // empty' || true)
   if [ "$revision" = "$sha" ]; then
-    curl -fsS --max-time 10 -o /dev/null "https://$HOST/" || { echo "FAIL web: home page did not answer 200" >&2; exit 1; }
+    curl -fsS --max-time 10 -o /dev/null "https://$HOST/" || die "web: home page did not answer 200"
     log "live: https://$HOST/api/health revision=$revision, home 200"
     exit 0
   fi
   sleep 10
 done
-echo "FAIL live revision is '${revision:-none}', expected $sha" >&2
-exit 1
+die "live revision is '${revision:-none}', expected $sha"
