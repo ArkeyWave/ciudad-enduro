@@ -1,4 +1,4 @@
-# Phase 0 Foundation — Implementation Plan (rev. 2)
+# Phase 0 Foundation — Implementation Plan (rev. 3, gate closed)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (inside the
 > orchestrated-delivery loop) to implement this plan batch by batch.
@@ -20,9 +20,10 @@ first-party and there is no CORS.
 
 Design reference: `docs/architecture/phase-0-foundation.md`.
 
-**Revision 2** folds in the plan gate (opus 5.5 @ high ∥ gpt-6.1-sol @ high, 2026-11-10). Every
-claim below marked *verified* was read in the published package source by at least one reviewer
-and spot-checked by the orchestrator. The gate ledger is in section 9.
+**Revision 3** folds in the plan gate: round 1 (opus 5.5 @ high ∥ gpt-6.1-sol @ high) and the final
+adversarial review (claude-fable-5.2 @ high), 2026-11-10. Every fact in section 0 was read in the
+published package source by at least one reviewer and spot-checked by the orchestrator. The gate
+ledger is in section 9.
 
 ---
 
@@ -47,13 +48,22 @@ and spot-checked by the orchestrator. The gate ledger is in section 9.
   (cookies/index.mjs:23). We do not set it.
 - **Sessions** store the raw token (internal-adapter.mjs:300); 1.7.19 has no option to hash it.
   → Accepted deviation (section 8).
-- **Google provider** verifies a signed ID token against Google's JWKS (google.mjs:113-155).
-  Account linking with `trustedProviders` skips the `email_verified` check (link-account.mjs).
+- **Google provider:** the **redirect flow only decodes** the ID token returned by Google's token
+  endpoint (google.mjs:118-121, callback.mjs:28-47); JWKS verification applies only to an `idToken`
+  posted in the body of `/sign-in/social` or `/link-social` (sign-in.mjs:154-163). We use the
+  redirect flow and **reject `idToken` bodies**. Account linking with `trustedProviders` skips the
+  `email_verified` check (link-account.mjs). `mapProfileToUser` throwing `APIError` leaves no rows.
+- **Origin check** in the router runs only when the request carries a `Cookie` header
+  (origin-check.mjs:101-108); `formCsrfMiddleware` (exported from `better-auth/api`) validates
+  unconditionally. The send-OTP endpoint runs its own origin middleware **after** `hooks.before`.
 - **CLI** (`auth@1.7.19`) needs a config file that **exports an instance** (`auth` or default); it
   emits a Drizzle schema that drizzle-kit 0.31.11 accepts (gpt-6.1-sol generated it end to end).
   With `rateLimit.storage: 'database'` it also emits a `rateLimit` table.
-- **Drizzle 0.45** has native `geometry(point, srid)`; no geography, no LineString. The migration
-  journal lives in schema **`drizzle`** (`drizzle.__drizzle_migrations`), not `public`.
+- **Drizzle 0.45** `geometry()` is **hard-coded to `geometry(point)`**: the builder discards
+  `type` and `srid`, and writes `point(x y)` with SRID 0 (geometry.js:20-47). No geography, no
+  LineString. → **All geo columns use `customType`** with an explicit SRID and EWKT writes. The
+  migration journal lives in schema **`drizzle`** (`drizzle.__drizzle_migrations`), not `public`.
+  (Rev. 1 and rev. 2 called the native type SRID-aware; that was wrong — found by the final review.)
 - **Swagger in preview mode** (`NestFactory.create(AppModule, { preview: true })`) skips DI
   instantiation but **not** import-time code; it reads the global prefix from the app instance;
   response schemas need `@ApiOkResponse({ type })` — `@ApiProperty` alone does not attach them.
@@ -65,7 +75,7 @@ and spot-checked by the orchestrator. The gate ledger is in section 9.
 | # | Question | Decision | Why |
 |---|----------|----------|-----|
 | G1 | Account linking | **Off.** Google sign-in additionally requires `email_verified === true`. An email-code user who taps Google gets a clear "Ingresa con tu código de correo" message. | Linking with trusted providers skips the verification check (takeover). Without the `email_verified` rule, an attacker pre-creates the user with Google and keeps access after the owner signs in by code — this applies even with linking off. Google warns a verified third-party address may no longer belong to the account holder. |
-| G2 | Throttle placement | `hooks.before`, on **every** remaining mail path; unused mail paths disabled; built-in limiter **off for the send path only** (our throttle replaces it with success-shaped answers); mail sent in the background so every path returns before email I/O. | Both reviewers reproduced the bypass and the limiter ordering. |
+| G2 | Throttle placement | `hooks.before` runs the CSRF check, then the per-address cooldown and global cap, and issues a one-use send permit; the **mailer refuses to send without a permit**; unused paths disabled via an allowlist test; the built-in per-IP limiter stays on the send path (5/60 s); mail is sent in the background. | Round 1 reproduced the bypass and the limiter ordering; the final review showed a cross-origin request could burn a slot with no mail, and that removing the per-IP limit let one IP drain the global cap. |
 | G3 | Test runner | **Vitest + unplugin-swc**. | Both reviewers; ESM-only better-auth is the usual Jest pain. |
 | G4 | Parallelism | Auth and the web list do **not** run in parallel (they share `apps/api/package.json` and the contract). **Staging deploy (B3) and auth (B4) run in parallel worktrees**: disjoint files, separate databases. | Removes the real collisions, keeps real parallelism. |
 | G5 | Deploy access | Migrations run in the **API container entrypoint**. The GitHub secret is an SSH key restricted by `command=` to one deploy script that takes a commit SHA. | A public repo must not hold a general shell key to the shared box. |
@@ -163,10 +173,13 @@ forbidNonWhitelisted: true })`. `main.ts` and `emit-openapi.ts` both call it.
 **B1.3 Metadata smoke.** `metadata.spec.ts`: a two-file provider/consumer pair resolves through Nest
 DI under Vitest. Mutation: disable `emitDecoratorMetadata` in the test tsconfig → red.
 
-**B1.4 Geo types.** Points: native `geometry('start_point', { type: 'point', mode: 'xy', srid: 4326 })`
-(`x` = lng). Path: `customType` with `dataType() = 'geometry(LineString, 4326)'` and a **write-only**
-`toDriver` (`SRID=4326;LINESTRING(lng lat, …)`); its `data` type documents writes only. Reads always
-select `ST_AsGeoJSON(path)::json`.
+**B1.4 Geo types.** Two `customType`s in `types/geo.ts`, both write-only on the driver side:
+`pointGeom` → `dataType() = 'geometry(Point, 4326)'`, `toDriver({lng,lat}) = 'SRID=4326;POINT(lng lat)'`;
+`lineStringGeom` → `'geometry(LineString, 4326)'`, `toDriver([[lng,lat],…]) = 'SRID=4326;LINESTRING(…)'`.
+Reads always select `ST_X/ST_Y` or `ST_AsGeoJSON(col)::json`, never the raw driver value (hex EWKB).
+Test: after migration, `Find_SRID('public','trails','start_point') = 4326` and a written point has
+`ST_SRID = 4326`; inserting `ST_SetSRID(ST_MakePoint(-78.5,-9.1), 0)` is rejected by the typmod.
+Mutation: switch `start_point` to Drizzle's native `geometry()` → the SRID tests go red.
 
 **B1.5 Schema.** `trails`: `id uuid pk`, `slug unique`, `name`, `description default ''`, enums
 `city` (`Chimbote | Nuevo Chimbote | Trujillo`), `department` (`Ancash | La Libertad`),
@@ -179,13 +192,15 @@ check (the column typmod enforces it), no extra indexes (no Phase 0 query needs 
 with the first distance query in Phase 1).
 
 **B1.6 Test database.** `global-setup.ts` (Vitest `globalSetup`, runs once per run):
-1. Build the URL from `DATABASE_URL` + `ciudad_enduro_test_${TEST_DB_SUFFIX ?? 'main'}`.
-2. **Refuse** unless the host is `localhost`/`127.0.0.1`/the CI service host and the database
-   name starts with `ciudad_enduro_test_`.
-3. `DROP DATABASE IF EXISTS … WITH (FORCE)`, `CREATE DATABASE`, `CREATE EXTENSION postgis`, run all
+1. **Refuse** a `TEST_DB_SUFFIX` that does not match `^[a-z0-9_]{1,32}$`.
+2. **Refuse** unless the host of `DATABASE_URL` is `localhost`, `127.0.0.1` or `postgres` (the CI
+   service name). The check runs before any connection is opened.
+3. Build the test URL with database `ciudad_enduro_test_${TEST_DB_SUFFIX ?? 'main'}`.
+4. `DROP DATABASE IF EXISTS … WITH (FORCE)`, `CREATE DATABASE`, `CREATE EXTENSION postgis`, run all
    migrations. (A fresh database removes the `drizzle` journal too.)
 Spec files truncate their tables in `beforeEach`; `fileParallelism: false` for `*.int.spec.ts`.
-Test: pointing `DATABASE_URL` at a non-test name makes global setup throw before any statement.
+Tests, both sides: host `db.example.com` → throws and no connection is attempted (spy on the `pg`
+client constructor); host `localhost` → runs; suffix `x; drop` → throws.
 
 **B1.7 Constraints test.** Valid Peru point → ok; swapped axes → `trails_start_in_peru`; end
 outside Peru → `trails_end_in_peru`; end null → ok. Mutation: delete the start CHECK, re-run (fresh
@@ -200,7 +215,8 @@ Tests: 2 published + 1 draft → list has 2; `city=Chimbote` → 1; `city=Lima` 
 404 equal to unknown slug; `start` = `{ lat: -9.09, lng: -78.52 }`. Mutations: drop the published
 filter; swap x/y in the mapper.
 
-**B1.9 Health.** `GET /api/health` → `{status:'ok', db:'ok'}`; DB down → 503 `db:'down'`. Both sides.
+**B1.9 Health.** `GET /api/health` → `{status:'ok', db:'ok', revision: <BUILD_SHA>}`; DB down →
+503 `db:'down'`. `BUILD_SHA` is a build arg baked into the image (`unknown` in dev). Both sides.
 
 **B1.10 Contract emitter.** `emit-openapi.ts`: `NestFactory.create(AppModule, { preview: true,
 logger: false })` → `configureApp` → `SwaggerModule.createDocument` → write
@@ -210,7 +226,13 @@ DTOs, and `city` is an enum of the three cities. Test that emission opens no DB 
 an unreachable `DATABASE_URL`).
 
 **B1.11 Migrate entrypoint.** `src/db/migrate.ts` runs drizzle `migrate()` and exits;
-`package.json` script `db:migrate`. Used by the container entrypoint in B3.
+`package.json` script `db:migrate`. `docker-entrypoint.sh` (owned by B1): `set -e; node
+dist/db/migrate.js; exec node dist/main.js` — a failed migration stops the container.
+
+**B1.12 Production refuses example secrets.** `env.ts` rejects, when `NODE_ENV=production`, any
+secret equal to its `.env.example` value or starting with `dev-`/`test-`. Both sides tested. The B3
+skeleton deploy therefore needs real random values for every secret (generated on the box), even
+before auth exists.
 
 ---
 
@@ -243,16 +265,18 @@ an unreachable `DATABASE_URL`).
 `.github/workflows/deploy-staging.yml`, `docs/operations/deploy.md`, `scripts/verify-image.sh`,
 box: `/usr/local/bin/ce-oss-deploy`, `authorized_keys` entry.
 
-1. **Dockerfiles** (multi-stage, `node:24-alpine`): build with Turbo, `pnpm deploy --filter <app>
-   --prod /out`; runtime stage copies `/out` only, runs as `USER node`. API `CMD`:
-   `node dist/db/migrate.js && node dist/main.js`. Web: Next standalone output.
-   `.dockerignore` excludes `.git`, `**/node_modules`, `**/.env*`, `CLAUDE.md`, `AGENTS.md`,
-   `.claude/`, `.codex/`, `docs/`, `**/test/`, `**/e2e/`.
-2. **`verify-image.sh <image>`**: `docker create` + `docker export | tar -t` → fail if any path
-   matches `CLAUDE.md|AGENTS.md|\.claude/|\.env|/test/|\.spec\.|\.e2e`; also fail if the image
-   **history** contains a canary string planted in a dummy `.env` at build time. Runs in CI on both
-   images. Mutation: remove `CLAUDE.md` from `.dockerignore` (with a dummy `CLAUDE.md` present) →
-   the script fails.
+1. **Dockerfiles** (multi-stage, `node:24-alpine`, build arg `BUILD_SHA`): build with Turbo,
+   `pnpm deploy --filter <app> --prod /out`; runtime stage copies `/out` only (plus
+   `docker-entrypoint.sh` for the API), runs as `USER node`, `ENTRYPOINT ["/app/docker-entrypoint.sh"]`.
+   Web: Next standalone output; the home page is dynamic (`export const dynamic = 'force-dynamic'`)
+   so the build never calls the API. `.dockerignore` excludes `.git`, `**/node_modules`, `**/.env*`,
+   `**/test/`, `**/e2e/`.
+2. **`verify-image.sh <image>`** checks the **app directory** (`/app`, not `node_modules`):
+   - no path matching `test/support|capture-mailer|e2e-main|auth\.cli|\.spec\.|\.e2e\.`;
+   - a canary: CI writes `CANARY_<random>` into a dummy `apps/api/.env` before the build;
+     `docker save` + grep of **every layer tar** must not find it.
+   Runs in CI on both images and on the deployed digest. Mutations: make the runtime stage
+   `COPY . .` → the path check goes red; `COPY apps/api/.env` → the canary check goes red.
 3. **Coolify** (project `ciudad-enduro-oss`): PostGIS 17-3.5 DB (Docker network only, no public
    port), apps `api` and `web` from the repo with a read-only deploy key, auto-deploy **off**.
    Host `enduro-next.vops.pe`.
@@ -262,11 +286,18 @@ box: `/usr/local/bin/ce-oss-deploy`, `authorized_keys` entry.
    sslip.io host) that lacks the middleware.
 5. **Deploy access (G5):** a dedicated ed25519 key; its `authorized_keys` line is
    `command="/usr/local/bin/ce-oss-deploy",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding`.
-   `ce-oss-deploy` reads `SSH_ORIGINAL_COMMAND`, accepts only a 40-hex SHA, sets that commit on both
-   Coolify apps, triggers the deploys **serially (api first)** under `flock`, polls to `finished`.
-   GitHub secret: that key only. Workflow: on `workflow_run` of CI **success** on `main`, deploy
-   `github.event.workflow_run.head_sha` (the exact tested revision). `concurrency:` one staging
-   deploy at a time.
+   `ce-oss-deploy` reads `SSH_ORIGINAL_COMMAND` and:
+   - accepts only a 40-hex SHA;
+   - `git fetch` of the public repo into a cache, and **refuses a SHA that is not an ancestor of
+     `origin/main`** (a fork commit can never deploy);
+   - sets that commit on both Coolify apps, deploys **serially (api first)** under `flock`, polls
+     to `finished`;
+   - reads `/api/health` and **fails unless `revision` equals the SHA** (a crashed new container
+     behind an old one is caught).
+   **No `workflow_run`** (a fork PR's CI run can trigger it with fork code). The deploy is a job
+   **inside `ci.yml`**: `needs:` every gate job, `if: github.event_name == 'push' && github.ref ==
+   'refs/heads/main'`, deploys `github.sha`, uses a GitHub **Environment `staging`** restricted to
+   `main` that holds the key, `concurrency: staging-deploy`. Fork PRs never receive secrets.
 6. **DNS:** `enduro-next` CNAME, proxied, in Cloudflare.
 7. **Live checks (scripted in `docs/operations/deploy.md`, run after each deploy):**
    - `GET https://enduro-next.vops.pe/api/health` → 200; home page lists the seeded trail.
@@ -275,13 +306,23 @@ box: `/usr/local/bin/ce-oss-deploy`, `authorized_keys` entry.
      `/api/health`.
    - On the box: every Traefik router on both containers lists the ipAllowList middleware;
      `docker port` shows no published host port for api, web or db.
-   - `ce-oss-deploy` refuses `ls`, an empty command and a 39-char SHA.
+   - `ce-oss-deploy` refuses `ls`, an empty command, a 39-char SHA, and a valid SHA that is not on
+     `main` (create a throwaway branch commit to prove it); it accepts the current `main` SHA.
+   - A pushed commit to `main` deploys, and `/api/health.revision` equals that SHA.
+8. **Operator checklist — merge gate for B4** (B3 owns it, the owner runs the console steps):
+   Coolify env for `api` with real random `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET`; Google OAuth
+   client with redirect URI `https://enduro-next.vops.pe/api/auth/callback/google`; Resend sender
+   domain verified; Cloudflare rate-limit rule on `POST /api/auth/email-otp/send-verification-otp`.
+   B4 does not merge until every item is ticked, because the merge deploys auth to a public host.
 
 ---
 
 ## B4 — Auth (Better Auth) — security-critical, worktree `wt-auth`, parallel with B3
 
-**Files:** `src/auth/{auth.options.ts,auth.factory.ts,auth.cli.ts,auth.module.ts,mailer.ts,otp-throttle.ts,otp-throttle.hook.ts,otp-hash.ts}`,
+**Files:** `src/auth/{auth.options.ts,auth.factory.ts,auth.module.ts,mailer.ts,otp-throttle.ts,otp-throttle.hook.ts,otp-hash.ts,auth-paths.ts}`,
+`apps/api/scripts/auth-cli.ts` (outside `src/`, never in the image), `test/support/e2e-main.ts` +
+`scripts/seed-e2e.ts` (B4 owns them; B5 consumes them), `packages/api-client/**` regeneration for
+`/api/me`,
 `src/me/me.controller.ts`, `src/db/schema/{auth.ts (CLI-generated, reviewed),otp-send-log.ts}`,
 migrations `0002_auth.sql`, `0003_otp_send_log.sql`; modify `main.ts` (`bodyParser: false`),
 `app.module.ts`, trails + health controllers (`@AllowAnonymous()`), `schema/trails.ts` (FK);
@@ -290,9 +331,9 @@ Tests: `test/auth/{throttle.int,otp.int,mail-paths.int,google.int,guard.int,orig
 `test/support/{test-app.ts,capture-mailer.ts,google-jwks.ts}`.
 
 **B4.1 Options + factory + CLI.** `auth.options.ts` exports `buildAuthOptions(deps)` (pure);
-`auth.factory.ts` exports `createAuth(deps) = betterAuth(buildAuthOptions(deps))`; `auth.cli.ts`
-exports `auth = createAuth(<dummy deps>)` for the CLI only (never imported by `src/`). Generate:
-`pnpm --filter api exec auth generate --config src/auth/auth.cli.ts --output src/db/schema/auth.ts`.
+`auth.factory.ts` exports `createAuth(deps) = betterAuth(buildAuthOptions(deps))`;
+`scripts/auth-cli.ts` exports `auth = createAuth(<dummy deps>)` for the CLI only. Generate:
+`pnpm --filter api exec auth generate --config scripts/auth-cli.ts --output src/db/schema/auth.ts`.
 `AuthModule.forRootAsync({ useFactory: (db, env, mailer, throttle) => ({ auth: createAuth(...),
 disableTrustedOriginsCors: true, bodyParser: { json: { limit: '1mb' } } }) })`.
 
@@ -315,8 +356,8 @@ Options (the full set; anything not listed stays default):
     '/email-otp/change-email', '/email-otp/request-email-change',
     '/sign-up/email', '/sign-in/email', '/update-user', '/change-email', '/delete-user',
   ],
-  rateLimit: { enabled: true, storage: 'database',
-    customRules: { '/email-otp/send-verification-otp': false } },           // our throttle owns it
+  rateLimit: { enabled: true, storage: 'memory',                            // one container, windows ≤ 60 s
+    customRules: { '/email-otp/send-verification-otp': { window: 60, max: 5 } } }, // per IP, before our throttle
   advanced: {
     disableOriginCheck: false,                                              // also in tests
     ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
@@ -325,10 +366,23 @@ Options (the full set; anything not listed stays default):
   },
   hooks: { before: otpThrottleHook(throttle) },
   plugins: [emailOTP({ otpLength: 6, expiresIn: 600, allowedAttempts: 5,
-    storeOTP: { hash: (otp) => hmacSha256(env.OTP_HMAC_SECRET, otp) }, resendStrategy: 'rotate',
-    sendVerificationOTP: ({ email, otp }) => mailer.sendOtp(email, otp) })],
+    storeOTP: { hash: async (otp) => hmacSha256(env.OTP_HMAC_SECRET, otp) }, resendStrategy: 'rotate',
+    sendVerificationOTP: ({ email, otp }, ctx) => mailer.sendOtp(email, otp, ctx) })],
 }
 ```
+
+The hook also rejects (400, generic body) any `/sign-in/social` request whose body carries
+`idToken`: Phase 0 supports only the redirect flow, where the token is merely decoded.
+The `email_verified` rejection from `mapProfileToUser` must end as a **redirect** to
+`/ingresar?error=google_email_unverified` (via the provider's `errorCallbackURL`), not raw JSON at
+the callback URL; the implementer verifies how the callback maps a thrown `APIError` and STOPS if
+it cannot redirect.
+
+**Allowlist, not denylist.** `auth-paths.ts` exports the explicit set of enabled auth paths
+(`/sign-in/social`, `/callback/:id`, `/get-session`, `/sign-out`, `/email-otp/send-verification-otp`,
+`/sign-in/email-otp`, `/ok`, `/error`, …). A test reads every endpoint path from `auth.api` and
+asserts `enabled = all − disabledPaths` equals that set exactly. A library upgrade that adds an
+endpoint turns the test red until someone decides about it.
 
 The implementer verifies each disabled path name and the `backgroundTasks` / `customRules` /
 `mapProfileToUser` signatures against the installed package types **before** writing the tests, and
@@ -344,14 +398,26 @@ the lower-cased email with `OTP_HMAC_SECRET`. **All time comparisons use the dat
 insert → allow.
 
 `otpThrottleHook` (matches `/email-otp/send-verification-otp`):
-1. Validate the body with the **same** schema rules as the endpoint (email format, lowercase, no
+1. Run `formCsrfMiddleware` (from `better-auth/api`) **first**. A hostile origin gets its 403
+   here, before any slot is used. (The endpoint's own origin middleware runs after the hook, so
+   without this step a cross-origin request would burn the victim's 60-second slot and get 403,
+   and no mail would leave.)
+2. Validate the body with the **same** schema rules as the endpoint (email format, lowercase, no
    trim). Invalid → return nothing (the endpoint answers its own 400). Must not consume a slot.
-2. `type !== 'sign-in'` → return the success shape, send nothing.
-3. `tryAcquire` denied → return the success shape.
+3. `type !== 'sign-in'` → return the success shape, send nothing.
+4. `tryAcquire` denied → return the success shape.
+5. Allowed → put a one-use **send permit** for this email on the request context.
+`mailer.sendOtp(email, otp, ctx)` **refuses to send without a matching permit** and logs
+`otp_send_without_permit`. The mailer, not the hook, is the enforcement point: if the hook and the
+endpoint ever disagree about a body, no unthrottled mail can leave.
 The success shape is **captured from the real endpoint** in the test, not hard-coded.
 
 Tests `throttle.int.spec.ts` (HTTP level, real DB; quota windows simulated by inserting backdated
-rows with SQL, e.g. `now() - interval '59 seconds'`):
+rows with SQL, e.g. `now() - interval '59 seconds'`; **every request sets a unique
+`cf-connecting-ip`** so the per-IP limiter never interferes; `beforeEach` truncates
+`otp_send_log` and resets the in-memory limiter by building a fresh app):
+- hostile `Origin` (no cookie) → 403 and **zero rows** in `otp_send_log`; `WEB_ORIGIN` → 200.
+- a direct call of `mailer.sendOtp` without a permit → no mail, `otp_send_without_permit` logged.
 - first send → mailer called; repeat with a row at −59 s → not called, status + content-type +
   body bytes equal to the real success; row at −61 s → called.
 - another address right after → called (per address).
@@ -365,37 +431,53 @@ rows with SQL, e.g. `now() - interval '59 seconds'`):
   2 requests for one address, release T1 → exactly one mail and two success-shaped 200s.
 - `otp_send_log` has no `@` in any column.
 - Mutations: drop the cooldown branch; drop the cap branch; drop the advisory lock (the controlled
-  concurrency test goes red); store the raw email; let invalid bodies consume a slot.
+  concurrency test goes red); store the raw email; let invalid bodies consume a slot; remove the
+  `formCsrfMiddleware` step (the hostile-origin zero-rows test goes red); remove the permit check
+  in the mailer.
 
 `mail-paths.int.spec.ts`: each disabled path → 404. A mailer whose promise never resolves → the
 send still answers 200 within 1 s (background task). Must-not-fire: the hook does not alter
 `/sign-in/email-otp` responses.
 
 `ratelimit.int.spec.ts`: two different `cf-connecting-ip` values get separate buckets on
-`/sign-in/email-otp`; the same value is limited; a spoofed `x-forwarded-for` is ignored.
+`/sign-in/email-otp` and on the send path (6th send from one IP in 60 s → 429; from another IP →
+200); the same value is limited; a spoofed `x-forwarded-for` is ignored. Mutation: remove the send
+`customRules` entry → the 6th-send test goes red.
 
 **B4.3 OTP verification** (`otp.int.spec.ts`, `vi.useFakeTimers({ toFake: ['Date'] })` for Better
-Auth's TTL; capture mailer):
+Auth's TTL, **advanced by at least 1 s between steps** so `createdAt` values differ; every request
+with a unique `cf-connecting-ip`, so the per-IP limiter on `/sign-in/email-otp` never answers 429;
+capture mailer):
 - correct code within 10 min → session cookie (`HttpOnly`, `SameSite=Lax`); at 10 min + 1 s →
   rejected.
-- 4 wrong then correct → accepted; 5 wrong then correct → rejected.
+- 4 wrong then correct → accepted; 5 wrong then correct → rejected **with the `TOO_MANY_ATTEMPTS`
+  error code** (assert the code, not only the status, so a 429 cannot pass the test).
 - stored value == `hmacSha256(secret, code)` (parse the `code:attempts` value) and ≠
   `sha256(code)`. Mutations: `storeOTP: 'hashed'` → red; `'plain'` → red.
 - a code works once: reuse after success → rejected; two concurrent verifications of one code →
   exactly one session.
 - resend rotates: the old code is rejected after a new one is sent.
-- a non-6-digit code → rejected without consuming an attempt (assert attempts unchanged).
 - Mutations: `expiresIn: 6000`; `allowedAttempts: 50`.
 
-**B4.4 Google** (`google.int.spec.ts`): `google-jwks.ts` generates an RSA key, serves a JWKS and
-the token endpoint through undici `MockAgent`, and signs ID tokens.
-- verified email, new `sub=G1` → user created, `account.accountId = 'G1'`.
+**B4.4 Google — redirect flow** (`google.int.spec.ts`): stub Google's **token endpoint** with
+undici `MockAgent`; it returns an ID token (an unsigned-checked JWT is fine, because the redirect
+flow only decodes it). Drive the real flow: `POST /api/auth/sign-in/social` → take `state` from the
+redirect URL → `GET /api/auth/callback/google?code=…&state=…`.
+- verified email, new `sub=G1` → user created, `account.accountId = 'G1'`, redirect to the web.
 - same `sub`, changed email → same user.
-- `email_verified: false` → no user, no account row.
-- email-code user `r2@x.pe` exists; Google `sub=G2`, `r2@x.pe` verified → not linked (Better Auth
-  `account not linked` error) and no new user.
-- bad signature, wrong `aud`, wrong `iss`, mismatched OAuth `state` → rejected, no rows.
-- Mutations: enable `accountLinking` with `trustedProviders`; remove the `email_verified` check.
+- `email_verified: false` → **redirect** to `/ingresar?error=google_email_unverified`, no user,
+  no account row.
+- email-code user `r2@x.pe` exists; Google `sub=G2`, `r2@x.pe` verified → not linked
+  (`account not linked` redirect), no new user.
+- mismatched or reused `state` → rejected, no rows.
+- `POST /sign-in/social` with an `idToken` body → 400, no rows; the same request without
+  `idToken` → normal redirect (both sides).
+- Mutations: enable `accountLinking` with `trustedProviders`; remove the `email_verified` check;
+  remove the `idToken` rejection.
+- Google OAuth tokens: `account` stores Google's access/ID tokens in plain text; Phase 0 never
+  calls Google APIs after sign-in, so a `databaseHooks.account.create.before` drops
+  `accessToken`, `refreshToken` and `idToken` before insert. Test: after sign-in those columns are
+  null. Mutation: remove the hook → red.
 
 **B4.5 Guard + `/api/me`** (`guard.int.spec.ts`): `/api/me` 401 without cookie, 200 with one;
 `/api/trails` and `/api/health` 200 anonymous; deleted session row → 401; expired session → 401;
@@ -403,10 +485,13 @@ OTP sign-in body with `role: 'admin'` → user role `rider`. Mutations: remove `
 from trails; `role.input: true`.
 
 **B4.6 Origin / CSRF** (`origin.int.spec.ts`, `disableOriginCheck: false` in the test app):
-POST `/api/auth/sign-in/email-otp` with `Origin: https://evil.example` → 403; with `WEB_ORIGIN` →
-passes; a `callbackURL` to `https://evil.example` → rejected; `/api/me` with a hostile `Origin`
-returns no `Access-Control-Allow-Origin`. Mutation: `disableOriginCheck: true` → red;
-`disableTrustedOriginsCors: false` → the CORS test red.
+- POST `/api/auth/sign-in/email-otp` **with a `Cookie` header** (the router check only runs with
+  cookies) and `Origin: https://evil.example` → 403; same with `WEB_ORIGIN` → passes.
+- a `callbackURL` to `https://evil.example` on `/sign-in/social` → rejected; to `WEB_ORIGIN` → ok.
+- `/api/me` and `/api/auth/get-session` with `Origin: WEB_ORIGIN` → **no** `Access-Control-Allow-*`
+  header at all (same-origin needs none).
+- Mutations: `disableOriginCheck: true` → the 403 test red; `disableTrustedOriginsCors: false` →
+  the CORS test red (the adapter would answer the trusted origin).
 
 **B4.7 No secrets in logs** (`logging.int.spec.ts`): capture the Nest logger and `console` during a
 send, a failed send (Resend stub 500) and a verify; no line contains the code, the session token or
@@ -426,10 +511,14 @@ client + `emailOTPClient()`, same-origin base URL), `src/components/sign-in/*`,
 `apps/web/e2e/sign-in.spec.ts`.
 
 UI: email → "Enviar código" → 6-digit input → signed in; header shows the email from `/api/me`.
-"Continuar con Google". Errors are generic ("Código inválido o vencido."). On Google's
-`account not linked`: "Esta cuenta ingresa con código por correo." e2e runs against
-`test/support/e2e-main.ts` (API with the capture mailer): sign-in end to end; 5 wrong codes →
-generic error, then the right code is rejected.
+"Continuar con Google". Errors are generic ("Código inválido o vencido."). Error messages:
+`account not linked` → "Esta cuenta ingresa con código por correo."; `google_email_unverified` →
+"Tu correo de Google no está verificado."; 429 → "Demasiados intentos. Espera un minuto.".
+e2e runs against B4's `test/support/e2e-main.ts` (API with the capture mailer; Playwright reads the
+captured code from the test process through the entrypoint's in-process store, never over HTTP) on
+the seed from `scripts/seed-e2e.ts`: sign-in end to end; 5 wrong codes → the
+`TOO_MANY_ATTEMPTS` message (not the 429 message), then the right code is rejected. Each attempt
+sets its own `cf-connecting-ip` header.
 
 **Live checks on staging (after B3 + B4 merge and deploy):**
 - `Set-Cookie` on sign-in has `__Secure-` prefix, `Secure`, `HttpOnly`, `SameSite=Lax`.
@@ -439,7 +528,7 @@ generic error, then the right code is rejected.
 - Cloudflare rate-limit rule on `POST /api/auth/email-otp/send-verification-otp` (per IP) is
   active — the operator signal and first line for the global-cap exhaustion attack.
 - **Self-cleaning:** create a user through the real flow, assert rows, delete them, assert zero
-  residual in `user`, `session`, `account`, `verification`, `otp_send_log`, `rateLimit`.
+  residual in `user`, `session`, `account`, `verification`, `otp_send_log`.
 
 **Phase 0 exit:** the live checks above pass; CI green on `main`; the final adversarial review
 (section 7) is closed.
@@ -460,20 +549,24 @@ Reviewer prompt: "Do not trust the report. Read the code, run the scoped tests, 
 doubt a test, restore. Then try to break one contract nobody tried; three attempts. A plain pass is
 acceptable."
 
-## 7. Plan gate status
+## 7. Plan gate status — CLOSED
 
 - Round 1: opus 5.5 @ high (approve with changes) ∥ gpt-6.1-sol @ high (reject pending revision).
-- This revision answers both. **Final adversarial plan review: claude-fable-5.2 @ high** (owner's
-  choice, 2026-11-10), independent of round 1.
+- Rev. 2 answered both.
+- Final adversarial review: claude-fable-5.2 @ high (owner's choice): approve with changes, two
+  blocking (fork deploy via `workflow_run`; slot burned by a cross-origin send). It stated that a
+  third full review is unnecessary and a check of the revised B3.5, B4.2 and B4.4 is enough.
+- Rev. 3 applies every final-review finding; the orchestrator checked B3.5, B4.2 and B4.4 against
+  the package source (origin-check.mjs:101-108, google.mjs:118-121, geometry.js:20-47).
 
 ## 8. Accepted deviations (recorded, not hidden)
 
 - **Session tokens are stored unhashed** (Better Auth 1.7.19 has no option). The old app stored a
   SHA-256. Mitigations: DB reachable only on the Docker network, 30-day expiry, revocation by row
   delete, backups encrypted. Revisit when Better Auth offers hashed session tokens.
-- **The global cap of 50 codes per 24 h can be exhausted** by an attacker using 50 addresses
-  (carried-over rule). Mitigations: the Cloudflare per-IP rule and the `otp_global_cap_reached` log
-  event.
+- **The global cap of 50 codes per 24 h can be exhausted** by an attacker using 50 addresses from
+  many IPs (carried-over rule). Mitigations: the built-in per-IP limit (5/60 s), the Cloudflare
+  per-IP rule and the `otp_global_cap_reached` log event.
 
 ## 9. Gate ledger (round 1)
 
@@ -504,3 +597,22 @@ acceptable."
 | Cut SRID CHECK + unused indexes | both | accepted | B1.5 |
 | `USER node`, `rateLimit` residual, cap signal | opus | accepted | B3.1, B5, §8 |
 | Jest instead of Vitest | — | rejected by both | G3 |
+
+## 10. Gate ledger (final review, fable 5.2)
+
+| # | Finding | Verdict | Where fixed |
+|---|---------|---------|-------------|
+| F1 | `workflow_run` lets a fork PR deploy fork code with the secret | accepted (GitHub semantics) | B3.5: deploy job in `ci.yml` on push to main, Environment, ancestor-of-main check |
+| F2 | Cross-origin send burns a slot, no mail; hook/endpoint divergence | confirmed (origin-check.mjs:101-108) | B4.2 CSRF first + mailer permit |
+| F3 | Per-IP limiter removed on the send path | accepted | B4.1 customRules 5/60 s |
+| F4 | Per-IP limiter breaks attempt tests | accepted | B4.2/B4.3 unique `cf-connecting-ip`, assert `TOO_MANY_ATTEMPTS` |
+| F5 | Origin test without cookie; decorative CORS test | confirmed | B4.6 |
+| F6 | Redirect flow only decodes the ID token | confirmed (google.mjs:118-121) | §0, B4.1 idToken rejection, B4.4 redirect-flow tests, B5 messages |
+| F7 | Drizzle `geometry()` discards the SRID | confirmed (geometry.js:20-47) | §0, B1.4 customType points + SRID tests |
+| F8 | Image checks decorative | accepted | B3.2 app-dir paths + canary in every layer |
+| F9 | No proof the tested revision is live | accepted | B1.9 revision, B3.5 SHA compare |
+| F10 | DB guard test cannot fire; suffix unvalidated | accepted | B1.6 |
+| F11 | e2e entrypoint, client regen, operator steps unowned | accepted | B4 files, B3.8 checklist, B1.12 |
+| F12 | `disabledPaths` is a denylist | accepted | B4.1 allowlist test |
+| F13 | Non-6-digit codes do consume attempts | confirmed | assertion deleted |
+| nits | async hash; `exec node`; Google tokens in `account`; `auth.cli` in `src/`; frozen Date; prerender; memory rate-limit storage | accepted | B4.1, B1.11, B4.4, B4.1, B4.3, B3.1, B4.1 |
