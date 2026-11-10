@@ -1,156 +1,211 @@
-# Phase 1a — CI-built images, OTP abuse protection, production cutover — Implementation Plan
+# Phase 1a — CI-built images, OTP abuse protection, production cutover — Implementation Plan (rev. 2)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (inside the
 > orchestrated-delivery loop) to implement this plan batch by batch.
 
-**Goal:** Production runs the new app at `https://enduro.vops.pe` from images that CI built and checked,
-deployed by digest, with bot protection on the e-mail code path; staging keeps running at
-`https://enduro-next.vops.pe` the same way. No repo code runs on the shared VPS.
+**Goal:** Production runs the new app at `https://enduro.vops.pe` from images that CI built, checked,
+attested and pushed once, deployed by digest, with Turnstile on the e-mail code path; staging keeps
+running at `https://enduro-next.vops.pe` the same way. **No repository build step executes on the VPS**
+(application code obviously runs there).
 
-**Owner decisions (2026-11-10):**
-1. Build images in CI, push to GHCR, deploy by digest (closes ledger B3-F1).
-2. Global OTP cap exhaustion: avoid a per-IP daily share if possible (CGNAT in Peru). → Cloudflare
-   Turnstile on the send-code endpoint (P1a-2). A per-IP daily share is NOT added.
-3. Google consent screen stays in Testing until the owner publishes it (outside this plan).
-4. Production host = `enduro.vops.pe`. The new app replaces the old private app there (no real users,
-   nothing to migrate). The production DB `ciudad-enduro-oss-postgres` (`k9ysrxe4vuaqge54kkqivfpa`) gets
-   wired to the production api.
+**Owner decisions (2026-11-10):** (1) build images in CI → GHCR → deploy by digest (closes B3-F1);
+(2) no per-IP daily OTP share; Cloudflare Turnstile instead; (3) Google consent screen stays in Testing
+until the owner publishes it; (4) production host = `enduro.vops.pe`, replacing the old private app.
 
-**Verified facts (2026-11-10):**
-- `better-auth@1.7.18` ships `plugins/captcha` with provider `cloudflare-turnstile` and an `endpoints`
-  option (`dist/plugins/captcha/constants.d.mts:3`, `types.d.mts:10,77`). The token travels in the
-  `x-captcha-response` header (to be confirmed against the source in P1a-2.1).
-- Coolify 4.7.3 on vops-infra supports the `dockerimage` build pack (not used on the box yet; all apps
-  are `dockerfile`).
-- The repo is public, so GHCR packages can be public: the box pulls without registry credentials.
-- Current deploy chain: CI `deploy-staging` → forced-command key → `/usr/local/bin/ce-oss-deploy <sha>`
-  → Coolify builds from git on the box (`--network host`). Old prod app on enduro.vops.pe is Coolify app
-  `ugh9axr8jcdphc5wez3xmg5w` (old repo, CI deploy key retired today).
+**Revision 2** applies the plan gate (opus 5.5 @ high ∥ gpt-6.1-sol @ high, both "approve with changes",
+four blocking items each, the same four). Ledger in §6.
 
-**Open questions for the plan gate:**
-1. Deploy by digest: `image@sha256:…` in the Coolify `dockerimage` app, or `image:<git-sha>` plus a
-   digest check after pull? Which one can Coolify 4.7.3 actually express, and which one stops a
-   re-tagged image?
-2. Can `ce-oss-deploy` keep the same security contract (only a SHA on main, rollback guard, revision
-   check, origin-lock check, stop on failure) when it no longer builds, and how does it learn the digest
-   for a SHA without trusting the caller? (Proposal: CI writes the digest into an OCI label/annotation
-   and the script reads the digest from GHCR by tag `sha-<sha>` and checks the image's
-   `org.opencontainers.image.revision` label equals the SHA.)
-3. Turnstile: does the captcha plugin run before our `hooks.before` throttle (so a bot burns no slot)?
-   Does a missing/invalid token still return a response that does not reveal account existence?
-   How do the e2e tests run without Cloudflare (Turnstile test keys `1x00000000000000000000AA` always
-   pass, `2x00000000000000000000AB` always fail)?
-4. Production cutover order: how to switch enduro.vops.pe from the old app to the new one with no window
-   where the host is served without the origin lock, and with a rollback path.
-5. Production deploys: manual `workflow_dispatch` on main with a typed confirmation (as the old Layer 3)
-   or automatic after staging is green? (Proposal: manual, migration-first is already in the entrypoint.)
+## 0. Verified facts
 
----
+- **Coolify 4.7.3 deploys by digest:** set `docker_registry_image_name` = repository and
+  `docker_registry_image_tag` = `sha256-<64hex>`; `generate_image_names()` turns it into
+  `repo@sha256:<hex>` (`ApplicationDeploymentJob.php:845-846, 1677-1679`). Coolify **pulls again at
+  deploy time** (`:1917-1920`), so a "tag + digest check" scheme is unsafe — always digest.
+- The create endpoint stores a digest as name `repo@sha256` + hex tag (`ApplicationsController.php:2690-2696`):
+  use one form only — plain repository name, tag `sha256-<hex>`, PATCHed on every deploy.
+- Images pulled by digest are untagged; Coolify's per-app retention does not remove them
+  (`CleanupDocker.php:313-318`) — slow disk growth, accepted (helps rollback).
+- The box uses the **containerd snapshotter** (`io.containerd.snapshotter.v1`): image IDs differ from
+  the CI runner's classic store. Compare identities with `docker image inspect <repo>@<digest>`.
+- **better-auth 1.7.18 captcha plugin** (`plugins/captcha`): router order is disabledPaths → per-IP
+  limiter → plugin `onRequest` (captcha) → origin middleware → our `hooks.before`
+  (`dist/api/index.mjs:167-183`). A failed token therefore uses **no cooldown slot and no cap row**
+  (one per-IP limiter slot, acceptable). Header `x-captcha-response` (`captcha/index.mjs:36`). Responses
+  are account-independent: 400 `MISSING_RESPONSE`, 403 `VERIFICATION_FAILED`, 500 `UNKNOWN_ERROR` when
+  siteverify is unreachable (**fails closed**, 10 s timeout) (`captcha/index.mjs:38-79`,
+  `verify-handlers/cloudflare-turnstile.mjs:7-44`). Options `allowedHostnames`, `expectedAction`,
+  `siteVerifyURLOverride` exist (`types.d.mts:11,28-39`; `index.mjs:44`).
+- `NEXT_PUBLIC_*` values are inlined at `next build`; a runtime env cannot change them.
+- Cloudflare Turnstile test **secrets**: `1x0000000000000000000000000000000AA` (pass),
+  `2x0000000000000000000000000000000AA` (fail), `3x0000000000000000000000000000000AA` (spent); test
+  secrets accept only `XXXX.DUMMY.TOKEN.XXXX`. With test keys the browser still loads `api.js` and the
+  API still calls siteverify.
+- The production DB `k9ysrxe4vuaqge54kkqivfpa` has **no scheduled backup** (only two other DBs do).
+- The old app's stored `custom_labels` already carry `cloudflare-only@file` on both routers.
+- GitHub Free allows Environment required reviewers on **public** repos.
 
-## Batches
+## 1. Gate decisions
 
-```
-P1a-1 CI images → GHCR, staging deploys by digest ──► P1a-3 production apps + cutover
-P1a-2 Turnstile on send-code (parallel worktree with P1a-1) ─┘
-```
-
-| Batch | Rung | Owns | Parallel |
-|-------|------|------|----------|
-| P1a-1 CI images on GHCR + digest deploy (staging) | Full + Codex (infra, shared box) | `.github/workflows/ci.yml` image + deploy jobs, `docs/operations/**`, box `ce-oss-deploy`, Coolify staging apps | yes, with P1a-2 |
-| P1a-2 Turnstile on the send-code path | Full + Codex (auth) | `apps/api/src/auth/**`, `apps/web/src/app/ingresar/**`, `apps/web/src/lib/auth-client.ts`, e2e | yes, with P1a-1 |
-| P1a-3 Production apps + cutover of enduro.vops.pe | Full + Codex (prod, blast radius) | Coolify prod apps, `deploy-production` workflow, `docs/operations/**`, box | no (needs P1a-1 and P1a-2) |
-
-Load rules (unchanged, see memory feedback-local-load-bsod): one heavy local job at a time; P1a-1 runs no
-local builds (CI builds); only P1a-2 runs local tests.
+| # | Question | Decision |
+|---|----------|----------|
+| G1 | Digest or tag | Digest only (`sha256-<hex>` tag field). |
+| G2 | Where the digest comes from | From the main-only CI deploy job, passed over the forced command (`<sha> <api-digest> <web-digest>`, strict regex). The script never resolves a tag. Plus a **GitHub artifact attestation** (build provenance) per image, verified on the box before anything runs: repo `ArkeyWave/ciudad-enduro`, signer workflow `.github/workflows/ci.yml` on `refs/heads/main`, source digest == `<sha>`. One mechanism only (no cosign). |
+| G3 | Staging → production | Staging, after its live checks pass, writes a root-owned promotion record `<sha> <api-digest> <web-digest>`. Production deploys only a recorded pair; the prod forced command takes only a SHA and reads the digests from that record. |
+| G4 | Production trigger | `workflow_dispatch` on `main`, GitHub Environment `production` with the owner as **required reviewer**, branch policy main only ("prevent self-review" off — single maintainer). No typed confirmation (the Environment approval is the gate). |
+| G5 | Keys | One reviewed script `ce-oss-deploy`; the target is fixed per key in `authorized_keys` (`command="/usr/local/bin/ce-oss-deploy staging"` / `… production"`). The caller can never choose the target. The prod key lives only in Environment `production`. |
+| G6 | Site key | Read `TURNSTILE_SITE_KEY` (no `NEXT_PUBLIC_`) in the dynamic server component of `/ingresar` and pass it as a prop. One image serves both hosts. |
+| G7 | Cutover | Private check on the Docker network, then a bounded maintenance window: stop old → confirm gone → expose new with complete locked labels → verify. Rollback is the exact reverse. No "temporary internal host". |
 
 ---
 
-## P1a-1 — CI images on GHCR, staging deploys by digest
+## 2. Batches and order
 
-1. **Build + push in CI.** The `images` job (already builds and runs `verify-image.sh` + canary + smoke)
-   gains, on push to `main` only: `docker login ghcr.io` with `GITHUB_TOKEN` (`permissions: packages:
-   write` on that job only), push `ghcr.io/arkeywave/ciudad-enduro-api:sha-<sha>` and `…-web:sha-<sha>`,
-   with OCI labels `org.opencontainers.image.revision=<sha>` and `…source=<repo>`. PR runs build and
-   verify but never push. Record the pushed digests as job outputs.
-2. **The checked image is the shipped image.** Push the exact image that passed verify-image + smoke
-   (no rebuild between check and push). Test: the digest pushed equals the digest of the image that the
-   verify step inspected (both printed; a step compares them).
-3. **Package visibility:** both GHCR packages public (the box pulls anonymously). No registry secret on
-   the box.
-4. **Coolify staging apps → `dockerimage` build pack** pointing at the GHCR repo. Labels (custom,
-   read-only regeneration off) and runtime env unchanged. Turn off every git-related setting.
-5. **`ce-oss-deploy` v2** (forced command unchanged; reinstall with review, verifier-style "installed copy"
-   rule kept for any script it runs):
-   - input: 40-hex SHA, ancestor-of-main check, rollback guard (unchanged);
-   - resolve `sha-<sha>` in GHCR → digest (anonymous registry API); refuse if missing;
-   - `docker pull <repo>@<digest>`; refuse unless the image label `revision == <sha>`;
-   - run `/usr/local/lib/ce-oss/verify-image.sh` on the pulled image BEFORE deploy;
-   - set the Coolify app image to `<repo>@<digest>` (or tag + digest check — gate question 1), deploy
-     api then web, each checked right after its deploy (running image digest == expected);
-   - revision + home + origin-lock checks (unchanged); stop on failure (unchanged).
-6. **Remove the git build path:** Coolify no longer clones the repo; `--network host` builds stop for
-   this project. Docs: deploy.md "what runs where" updated; ledger B3-F1 closed.
+```
+P1a-1 CI images + attestations + digest deploy (staging) ─┐
+                                                          ├─► P1a-3 production apps + cutover
+P1a-2 Turnstile (parallel worktree)  ─────────────────────┘
+```
 
-**Done when:** a push to main deploys staging from GHCR by digest; the box never clones/builds the repo
-(Coolify deployment logs show a pull, no `docker build`); all existing live checks still pass; refusal
-proofs: unknown SHA, missing tag, label mismatch, tampered tag (digest differs) — each refused with the
-app left on the previous image.
+| Batch | Rung | Owns |
+|-------|------|------|
+| P1a-1 | Full + Codex | `.github/workflows/ci.yml` (images/publish/deploy jobs **except** env lines owned by P1a-2), `docs/operations/**`, box `ce-oss-deploy`, Coolify staging apps |
+| P1a-2 | Full + Codex | `apps/api/src/auth/**`, `apps/api/src/config/env.ts`, `apps/web/src/app/ingresar/**`, `apps/web/src/components/sign-in/**`, `apps/web/src/lib/auth-client.ts`, `apps/web/src/lib/auth-errors.ts`, `apps/web/e2e/**`, and **only the env lines** in `ci.yml` (smoke-run env, e2e test keys) |
+| P1a-3 | Full + Codex | Coolify prod apps, `.github/workflows/deploy-production.yml`, prod backup schedule, `docs/operations/**` (after P1a-1 merged) |
+
+**Merge order and freeze (both reviewers):** the box script v2, the Coolify switch to `dockerimage`, and
+the new `ci.yml` argument format go live together. Procedure: (1) P1a-2 may merge first only after its
+operator checklist (staging Turnstile keys in Coolify) is done; (2) for P1a-1, freeze merges to main,
+hold the deploy flock on the box, install script v2, switch both staging apps, merge P1a-1, verify its
+deploy, release the freeze. A merge during the freeze is refused by procedure (owner informed).
+
+Load rules: one heavy local job at a time; P1a-1 builds in CI only; agents use `rg`, never `grep -r`.
+
+---
+
+## P1a-1 — CI images, attestations, digest deploy (staging)
+
+1. **Build once, check, push the same bytes.** `images` job (PR + main): plain `docker build` (no
+   buildx export, no `build-push-action`), OCI labels `org.opencontainers.image.revision=<sha>` and
+   `…source` set at build time; record the local image ID; run verify-image, canary, smoke on that ID.
+   PR runs stop here and have **no** `packages: write`.
+2. **`publish` job** (`if: push && main`, `needs: images` and every gate job): the only job with
+   `packages: write`, `attestations: write`, `id-token: write`; runs **no repo code** (no checkout of
+   scripts beyond what is needed, no `pnpm`). It loads the checked images (docker save artifact from
+   `images`, `actions/upload-artifact` → `download-artifact`), tags `ghcr.io/arkeywave/ciudad-enduro-
+   {api,web}:sha-<sha>`, pushes, captures the **manifest digests**, and proves identity: `docker
+   manifest inspect <repo>@<digest> | jq -r .config.digest` == the checked image's config digest (assert
+   the runner's image store type first). Then `actions/attest-build-provenance` on each digest
+   (`push-to-registry: true`). Outputs: both digests.
+3. **Packages public**; the box pulls anonymously.
+4. **Staging apps → `dockerimage`** (same uuids; prove the conversion on staging; git settings off;
+   labels and runtime env unchanged).
+5. **`ce-oss-deploy` v2** (`command="… staging"` fixed in `authorized_keys`; reinstalled with review):
+   - args: `<sha> <api-digest> <web-digest>`, regex `^[0-9a-f]{40} sha256:[0-9a-f]{64} sha256:[0-9a-f]{64}$`;
+     `<sha>` ancestor of `origin/main`;
+   - **preflight both images before touching either app:** `docker pull <repo>@<digest>`; `gh attestation
+     verify oci://<repo>@<digest> --repo ArkeyWave/ciudad-enduro --signer-workflow
+     ArkeyWave/ciudad-enduro/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest <sha>`
+     (gh CLI on the box, read-only token-less public verification; pin gh version); label
+     `revision == <sha>`; installed verifier on the pulled image;
+   - **rollback guard rewritten:** the running revision comes from the running container image's
+     `org.opencontainers.image.revision` label (refuse if absent); strict-ancestor check +
+     `ROLLBACK=1` operator override unchanged;
+   - PATCH `docker_registry_image_tag=sha256-<hex>` per app; deploy api → check (running container's
+     image ID == `docker image inspect <repo>@<digest> -f {{.Id}}`) → verify → stop on failure; then web;
+   - revision + home + origin-lock checks unchanged; stop on failure unchanged;
+   - **on success write the promotion record** `/var/lib/ce-oss/promoted/<sha>` (root 600:
+     `<sha> <api-digest> <web-digest> <utc>`).
+6. **Docs:** deploy.md "what runs where" (no repo build on the box), B3-F1 closed, the attestation trust
+   root (Sigstore public-good / GitHub) recorded.
+
+**Done when:** a push to main deploys staging by digest with a verified attestation; Coolify logs show a
+pull and no build; refusal proofs (all with the apps left on the previous image): unknown SHA, digest
+not matching the attestation, attestation from another workflow/ref, label mismatch, web image invalid
+(api untouched — preflight), running image older than requested (rollback guard).
 
 ## P1a-2 — Cloudflare Turnstile on the send-code path
 
-1. **API:** Better Auth `captcha` plugin, provider `cloudflare-turnstile`, `endpoints:
-   ['/email-otp/send-verification-otp']` only (sign-in with a code is already capped at 5 attempts and
-   per-IP limited). Secret `TURNSTILE_SECRET_KEY` (env, required in production, test key allowed only
-   outside production — same pattern as B1.12).
-2. **Ordering:** prove the captcha check runs before our throttle hook — a request without a valid token
-   uses no cooldown slot and no cap row (test: 0 rows in `otp_send_log`). If the plugin runs after
-   `hooks.before`, STOP and ASK.
-3. **No account oracle:** the captcha failure response is identical for existing and new addresses.
-4. **Web:** Turnstile widget on `/ingresar` step 1 (site key `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, managed
-   mode, Spanish), token sent in `x-captcha-response`. Spanish message on failure: "No pudimos verificar
-   que eres una persona. Intenta de nuevo." CSP/Referrer constraints from B5 unchanged.
-5. **Tests:** unit + e2e with the Turnstile test keys (always-pass / always-fail); both sides; mutation
-   proofs (remove the plugin → the no-token test goes red; widen `endpoints` to all paths → the sign-in
-   e2e goes red because sign-in has no token).
-6. **Operator:** create the Turnstile widget for `enduro.vops.pe` and `enduro-next.vops.pe` in Cloudflare
-   (owner or orchestrator with a token that has Turnstile edit), keys into `~/.secrets/ciudad-enduro-oss.env`
-   and the Coolify runtime env.
-
-**Done when:** staging refuses a send without a valid token (live curl → refused, 0 rows), a browser send
-works, CI green, mutation table complete. Plan §8 cap-exhaustion entry updated: Turnstile is the control;
-no per-IP daily share.
+1. **API:** captcha plugin, `provider: 'cloudflare-turnstile'`, `endpoints: ['/email-otp/send-verification-otp']`,
+   `allowedHostnames: [new URL(WEB_ORIGIN).hostname]`, `expectedAction: 'send_code'`. Env
+   `TURNSTILE_SECRET_KEY` required; production rejects the Cloudflare dummy secrets (1x/2x/3x…AA) — the
+   `dev-`/`test-` prefix rule does not catch them. Tests construct the plugin with
+   `siteVerifyURLOverride` → a local stub (no production bypass exists in env).
+2. **Ordering proof over HTTP** (fresh IP, eligible address): rejected/missing token → 0 rows in
+   `otp_send_log`, no mail; accepted → 1 row, 1 mail. Provider unreachable (stub down) → 500, 0 rows.
+3. **Web:** `/ingresar` server component reads `TURNSTILE_SITE_KEY` and passes it to `SignInForm`
+   (G6). Widget in managed mode, Spanish, `action: 'send_code'`. **A fresh token for every send**,
+   including "Enviar otro código" and retries; reset after each send; handle expire/error. Messages
+   mapped **by `code`**, not status: `MISSING_RESPONSE`/`VERIFICATION_FAILED` → "No pudimos verificar que
+   eres una persona. Intenta de nuevo."; `UNKNOWN_ERROR` → generic.
+4. **Tests:** unit/integration with the siteverify stub (missing, rejected, accepted, timeout); e2e with a
+   stubbed widget script (route interception) so CI does not depend on Cloudflare; an e2e that really
+   resends. Mutations: remove the plugin; widen `endpoints` to all paths (sign-in e2e red); drop
+   `allowedHostnames`; reuse a token on resend.
+5. **`ci.yml` env lines** (owned here): smoke run gets dummy Turnstile values allowed outside production;
+   e2e gets the stub.
+6. **Operator checklist before merge:** two widgets (one per host: `enduro-next.vops.pe`, `enduro.vops.pe`),
+   staging secret + site key in the staging api/web runtime env, prod values stored in
+   `~/.secrets/ciudad-enduro-oss.env` for P1a-3.
+7. **Plan §8 (phase 0) update:** cap exhaustion **reduced, not closed** (captcha-solving services exist);
+   no per-IP daily share.
 
 ## P1a-3 — Production apps and the cutover of enduro.vops.pe
 
-1. **Coolify prod apps** `ce-oss-api-prod`, `ce-oss-web-prod` in the `production` environment of project
-   `ciudad-enduro-oss`, `dockerimage` build pack, the prod DB (`k9ysrxe4vuaqge54kkqivfpa`), runtime-only
-   secrets generated on the box (new values, not staging's), `BETTER_AUTH_URL = WEB_ORIGIN =
-   https://enduro.vops.pe`, Google client (same client; add the prod redirect URI — owner), Resend key,
-   Turnstile prod keys. Custom labels with `cloudflare-only@file`, label regeneration off, no domain field.
-2. **Production deploy:** `.github/workflows/deploy-production.yml`, `workflow_dispatch` on `main` only,
-   typed confirmation `DEPLOY-PROD`, GitHub Environment `production` (main only, holds a SECOND forced-command
-   key bound to `ce-oss-deploy-prod`, or one script with a fixed target per key — gate question), refuses
-   unless the SHA already deployed green to staging. Same checks as staging (digest, label, verifier,
-   revision, origin lock, rollback guard).
-3. **Cutover** (gate question 4; proposal):
-   a. deploy the new prod apps with routers on a temporary internal host only (not public), verify by
-      `curl --resolve` through Traefik with the origin lock;
-   b. in one Coolify/Traefik change, move `Host(enduro.vops.pe)` from the old app's labels to the new
-      apps' labels (old app stopped in the same step); verify public 200 + direct 403 within a minute;
-   c. rollback = start the old app and restore its labels (kept, not deleted, for 7 days);
-   d. after 7 days with no rollback: delete the old Coolify app, its old staging app/DB clone, and the
-      old repo's remaining deploy workflows.
-4. **Live checks on production** (same list as Phase 0 §11, with a new test address; self-cleaning).
+1. **Backup first:** scheduled backup for the prod DB (daily, retention ≥ 7) configured and one backup
+   proven restorable into a scratch DB before the cutover.
+2. **Prod apps** `ce-oss-api-prod`, `ce-oss-web-prod` (`dockerimage`, production environment, prod DB).
+   **Separate credentials:** new DB credentials, `BETTER_AUTH_SECRET`, `OTP_HMAC_SECRET`, Resend key
+   (sending-only, prod), Turnstile prod widget/secret. **Shared by decision:** the Google OAuth client
+   (accepted: shared rotation/compromise scope; add redirect `https://enduro.vops.pe/api/auth/callback/google`
+   — owner). `BETTER_AUTH_URL = WEB_ORIGIN = https://enduro.vops.pe`. Custom labels with
+   `cloudflare-only@file` prepared but **`traefik.enable=false` for the first deploy**.
+3. **Prod deploy workflow** `deploy-production.yml`: `workflow_dispatch` on main, Environment
+   `production` (required reviewer = owner), input = SHA; SSH with the prod key
+   (`command="/usr/local/bin/ce-oss-deploy production"`); the script reads the digests from the
+   promotion record (refuses a SHA without one), re-verifies the attestations, and runs the same checks.
+4. **First deploy, private:** with `traefik.enable=false`, check `/api/health` revision and the home page
+   from the `coolify` network (`docker run --rm --network coolify curlimages/curl …`).
+5. **Cutover (maintenance window, minutes):**
+   a. save the old app's config; verify its routers carry `cloudflare-only@file`;
+   b. stop the old app; confirm its container is gone;
+   c. enable the new apps' locked labels and deploy;
+   d. verify: public 200 + revision, direct origin 403, every router has the middleware, no host ports,
+      and the set of running containers with ``Host(`enduro.vops.pe`)`` == {new api, new web};
+   e. **rollback** (exact reverse): stop the new apps → confirm gone → start the old app with its stored
+      labels → same checks. Rehearse once inside the window (the old repo's pull key must still work;
+      the old images survive on the box).
+6. **Production live checks** = Phase 0 §11 list, with a new test address; self-cleaning.
+7. **Retirement** after 7 days without rollback (named trigger): delete the old Coolify app, the old
+   staging app + DB clone, and the old repo's deploy workflows.
 
-**Done when:** https://enduro.vops.pe serves the new app from GHCR by digest; production live checks pass;
-the old app is stopped with a documented rollback; the production deploy is manual and gated.
+**Done when:** https://enduro.vops.pe serves the new app by digest with verified attestations; production
+live checks pass; backup restorable; the old app stopped with a rehearsed rollback.
 
 ---
 
-## Review plan
+## 5. Review plan
 
 | Stage | Reviewers |
 |-------|-----------|
-| This plan (gate) | opus 5.5 @ high ∥ gpt-6.1-sol @ high, then final claude-fable-5.2 @ high (owner's Phase 0 choice) |
-| P1a-1, P1a-3 | opus @ high + gpt-6.1-sol @ high → fixes → final opus @ xhigh |
-| P1a-2 | opus @ high + gpt-6.1-sol @ high → fixes → final opus @ xhigh |
+| This plan | rev. 1: opus @ high ∥ gpt-6.1-sol @ high (done). rev. 2: final claude-fable-5.2 @ high |
+| P1a-1, P1a-2, P1a-3 | opus @ high + gpt-6.1-sol @ high → fixes → final opus @ xhigh |
+
+## 6. Gate ledger (rev. 1 → rev. 2)
+
+| Finding | Source | Where fixed |
+|---------|--------|-------------|
+| Tag resolution lets a `packages: write` holder ship any image | both (blocking) | G2, P1a-1.1-2, P1a-1.5 |
+| Prod could run a different build than staging checked | both | G3, P1a-3.3 |
+| `NEXT_PUBLIC_*` site key cannot serve one image on two hosts | both | G6, P1a-2.3 |
+| Cutover not executable; dark launch through Traefik only gives 403 | both | G7, P1a-3.4-5 |
+| Rollback guard silently off with digests (`${live##*:}` → 64 hex) | both | P1a-1.5 |
+| Checked-vs-shipped identity compared the wrong values | both | P1a-1.2 |
+| Preflight both images before changing either app | gpt | P1a-1.5 |
+| P1a-2 needs files P1a-1 owned; switch must be atomic | opus (blocking) | §2 ownership + freeze |
+| Fresh token per send incl. resend; map by code | gpt / opus | P1a-2.3 |
+| Turnstile test secrets; tests still call Cloudflare | both | §0, P1a-2.1, 2.4 |
+| Separate widgets/`allowedHostnames`; reject dummy secrets in prod | both | P1a-2.1, 2.6 |
+| Prod DB has no backup | opus | P1a-3.1 |
+| Credential separation explicit; Google client shared by decision | gpt | P1a-3.2 |
+| Cut: tag lookup, internal host, typed confirm, second script, self-digest label | both | removed |
+| Verifier `--network none --cap-drop ALL` | opus nit | follow-up (needs verifier roll-out) |
