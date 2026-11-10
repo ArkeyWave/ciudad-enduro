@@ -265,6 +265,14 @@ prove a restore from R2 into a scratch DB. Correct Phase 0 §8 ("backups encrypt
 its regex before the secret is used. One lock per target; write the promotion record via rename. The
 host check matches the router rule for enduro.vops.pe as a fixed string.
 
+**A11 — IPv6 `remoteip` is the /64 prefix (P1a-2 fix round, accepted deviation).** Better Auth's
+`getIP` normalizes IPv6 to its /64 (`@better-auth/core` `dist/utils/ip.mjs:105`, `ipv6Subnet`
+default 64), and the captcha plugin sends that value as siteverify `remoteip`. Cloudflare documents
+`remoteip` as optional ("The visitor's IP address") and lists no IP-related error code
+(https://developers.cloudflare.com/turnstile/get-started/server-side-validation/), so the prefix cannot
+fail a valid token. The /64 grouping stays: it is the right key for the per-IP limiter. A test
+documents the sent value (`captcha.int.spec.ts`, IPv6).
+
 **A10 — cut.** The box-side verify-image run and the "installed verifier == repo verifier" rule are
 removed: the digest identity plus the attestation already bind the checked image (CI still runs
 verify-image before publish). The verifier `--network none` follow-up is therefore closed. No

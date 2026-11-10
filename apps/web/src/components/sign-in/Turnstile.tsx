@@ -32,13 +32,16 @@ export function useTurnstile() {
   return { token, setToken, widgetId, reset };
 }
 
+/** `onError`: the widget failed, or its script could not load; there is no token until it recovers. */
 export function TurnstileWidget({
   siteKey,
   onToken,
+  onError,
   widgetId,
 }: {
   siteKey: string;
   onToken: (token: string | null) => void;
+  onError: () => void;
   widgetId: RefObject<string | null>;
 }) {
   const container = useRef<HTMLDivElement>(null);
@@ -52,18 +55,21 @@ export function TurnstileWidget({
       language: 'es',
       callback: (token: string) => onToken(token),
       'expired-callback': () => onToken(null),
-      'error-callback': () => onToken(null),
+      'error-callback': () => {
+        onToken(null);
+        onError();
+      },
     });
     widgetId.current = id;
     return () => {
       window.turnstile?.remove(id);
       widgetId.current = null;
     };
-  }, [loaded, siteKey, onToken, widgetId]);
+  }, [loaded, siteKey, onToken, onError, widgetId]);
 
   return (
     <>
-      <Script src={SCRIPT_URL} onReady={() => setLoaded(true)} />
+      <Script src={SCRIPT_URL} onReady={() => setLoaded(true)} onError={onError} />
       <div ref={container} />
     </>
   );

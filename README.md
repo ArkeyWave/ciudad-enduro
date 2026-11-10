@@ -71,9 +71,15 @@ No environment variable turns the check off or points it at another siteverify U
 Use one widget per host (`enduro-next.vops.pe`, `enduro.vops.pe`): the API secret is
 `TURNSTILE_SECRET_KEY`, the web site key is `TURNSTILE_SITE_KEY`. The `.env.example` files hold
 Cloudflare's always-pass test keys. Cloudflare reports hostname `example.com` and no action for
-their tokens, so the local API refuses them: to send a code locally, create a dev widget for
-`localhost` and put its keys in `apps/api/.env` and `apps/web/.env.local`. Google sign-in needs no
-token.
+their tokens, so the local API refuses them: to send a code locally, create a separate dev widget,
+add `localhost` to it under Hostname Management
+([Cloudflare docs](https://developers.cloudflare.com/turnstile/additional-configuration/hostname-management/);
+Cloudflare advises separate widgets per environment and no local hostnames on production keys,
+[testing](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)), and put its keys in
+`apps/api/.env` and `apps/web/.env.local`. Google sign-in needs no token.
+
+The API sends the client IP to siteverify as `remoteip`; for IPv6 that is the /64 prefix (Better
+Auth groups IPv6 by /64 for its rate limits). Cloudflare documents `remoteip` as optional.
 
 After a Better Auth upgrade, regenerate the auth tables and review the diff:
 

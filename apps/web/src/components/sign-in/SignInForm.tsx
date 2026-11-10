@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type SubmitEvent } from 'react';
+import { useCallback, useState, type SubmitEvent } from 'react';
 import { sendCode, startGoogleSignIn, verifyCode } from '../../lib/auth-client';
 import { MESSAGES, sendErrorMessage, verifyErrorMessage } from '../../lib/auth-errors';
 import { input, primaryButton, secondaryButton } from './styles';
@@ -39,6 +39,8 @@ export function SignInForm({ initialMessage, siteKey }: { initialMessage: string
       setCodeSent(true);
     });
   const canSend = !busy && turnstile.token !== null;
+  // Stable, so the widget is not rendered again on every form render.
+  const showCaptchaError = useCallback(() => setMessage(MESSAGES.captcha), []);
 
   const submitCode = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -109,7 +111,7 @@ export function SignInForm({ initialMessage, siteKey }: { initialMessage: string
         </form>
       )}
       {/* Mounted once for both steps, so the resend gets a fresh token from the same widget. */}
-      <TurnstileWidget siteKey={siteKey} onToken={turnstile.setToken} widgetId={turnstile.widgetId} />
+      <TurnstileWidget siteKey={siteKey} onToken={turnstile.setToken} onError={showCaptchaError} widgetId={turnstile.widgetId} />
       <button type="button" disabled={busy} onClick={() => void google()} style={secondaryButton}>
         Continuar con Google
       </button>

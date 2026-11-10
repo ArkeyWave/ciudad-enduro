@@ -3,7 +3,7 @@ import { expect, type Page, type Request } from '@playwright/test';
 import pg from 'pg';
 import { codesFor } from './codes.ts';
 import { ORIGIN_PORT } from './ports.ts';
-import { nextTokenBad, SITE_KEY, test, widgetCall, widgetState } from './turnstile.ts';
+import { BAD_TOKEN, nextTokenBad, SITE_KEY, test, widgetCall, widgetState } from './turnstile.ts';
 
 const INVALID = 'Código inválido o vencido.';
 const LOCKED = 'Demasiados intentos con este código. Pide un código nuevo.';
@@ -184,13 +184,20 @@ test('a refused token shows the captcha message; the retry gets a fresh token an
   const email = uniqueEmail();
   await page.goto('/ingresar');
   await page.getByLabel('Correo').fill(email);
-  await expect(page.getByRole('button', { name: 'Enviar código' })).toBeEnabled();
+  const send = page.getByRole('button', { name: 'Enviar código' });
+  await expect(send).toBeEnabled();
+  // Swap the valid token for a refused one, and wait until the form holds it: the expire disables
+  // the send, and only the refused token (delivered after it) can enable it again.
+  await widgetCall(page, 'expire');
+  await expect(send).toBeDisabled();
   await nextTokenBad(page);
   await widgetCall(page, 'issueAll');
+  await expect.poll(async () => (await widgetState(page)).delivered).toBe(BAD_TOKEN);
+  await expect(send).toBeEnabled();
 
   await freshIp(page);
   const refused = page.waitForResponse((response) => isSend(response.request()));
-  await page.getByRole('button', { name: 'Enviar código' }).click();
+  await send.click();
   expect((await refused).status()).toBe(403);
   await expect(formAlert(page)).toHaveText(CAPTCHA);
   expect(codesFor(email)).toHaveLength(0);
@@ -212,4 +219,23 @@ test('an expired or failed widget disables the send until a new token arrives', 
     await widgetCall(page, 'issueAll');
     await expect(send).toBeEnabled();
   }
+});
+
+test('a widget that fails shows the captcha message and keeps the send disabled', async ({ page }) => {
+  await page.goto('/ingresar');
+  await page.getByLabel('Correo').fill(uniqueEmail());
+  const send = page.getByRole('button', { name: 'Enviar código' });
+  await expect(send).toBeEnabled();
+  await widgetCall(page, 'error');
+  await expect(formAlert(page)).toHaveText(CAPTCHA);
+  await expect(send).toBeDisabled();
+});
+
+test('a blocked Turnstile script shows the captcha message and keeps the send disabled', async ({ page }) => {
+  // A page route wins over the fixture's context route.
+  await page.route('https://challenges.cloudflare.com/turnstile/**', (route) => route.abort());
+  await page.goto('/ingresar');
+  await page.getByLabel('Correo').fill(uniqueEmail());
+  await expect(formAlert(page)).toHaveText(CAPTCHA);
+  await expect(page.getByRole('button', { name: 'Enviar código' })).toBeDisabled();
 });
