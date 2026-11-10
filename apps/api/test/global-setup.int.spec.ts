@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { describe, expect, it, vi } from 'vitest';
-import { prepareTestDatabase } from './test-db.js';
+import { prepareTestDatabase } from './global-setup.js';
 
 const realConnect = (url: string) => new pg.Client({ connectionString: url });
 

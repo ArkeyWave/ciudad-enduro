@@ -13,6 +13,9 @@ export default defineConfig({
     globalSetup: ['test/global-setup.ts'],
     // Integration specs share one test database; run files one at a time.
     fileParallelism: false,
+    // The fs module cache keys on file content only. The SWC transform also depends on
+    // tsconfig.json (decorator metadata), so a cached module can hide a tsconfig change.
+    fsModuleCache: false,
     env: {
       NODE_ENV: 'test',
       WEB_ORIGIN: 'http://localhost:3000',

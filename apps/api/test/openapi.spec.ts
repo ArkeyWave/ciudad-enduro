@@ -1,16 +1,17 @@
 import type { OpenAPIObject } from '@nestjs/swagger';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { createOpenApiDocument } from '../src/openapi.js';
 
 let document: OpenAPIObject;
 
 beforeAll(async () => {
-  // Emission must not run any provider: with no valid env, loadEnv() would throw, and the
-  // database is unreachable.
+  // Emission must not read the env or touch the database, neither at import time nor in a
+  // provider: with no valid env, loadEnv() throws, and the database is unreachable. The
+  // module is imported only after the env is gone.
   vi.stubEnv('NODE_ENV', undefined);
   vi.stubEnv('BETTER_AUTH_SECRET', undefined);
   vi.stubEnv('DATABASE_URL', 'postgres://u:p@127.0.0.1:1/none');
   try {
+    const { createOpenApiDocument } = await import('../src/openapi.js');
     document = await createOpenApiDocument();
   } finally {
     vi.unstubAllEnvs();
