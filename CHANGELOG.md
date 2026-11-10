@@ -3,6 +3,8 @@
 ## [Unreleased] - 2026-11-10
 
 ### Added
+- Typed API client (`packages/api-client`): `openapi-typescript` 7.13 renders the committed OpenAPI contract, `createApiClient` wraps `openapi-fetch` 0.17; a type-checked contract test rejects an unknown city. CI `contract` job fails on a stale client.
+- Web app (`apps/web`, Next.js 16.4.5, React 19.3.1): the home page lists published trails from the API with Spanish labels (an unknown slug throws); `/api` rewrite only in development. Playwright 1.65.0 e2e on a seeded per-worktree test database, run by the CI `e2e` job.
 - The database pool survives a dropped idle connection (no listener made Node exit on a Postgres restart); test-database suffix limited to 26 characters.
 - B1 review fixes: the test-database guard rejects URLs with query parameters (`?host=` could redirect the DROP to a remote server); a test proves unknown query parameters get 400; an empty `BUILD_SHA` counts as `unknown`.
 - API core (`apps/api`, NestJS 12 + Drizzle + PostGIS): fail-fast env validation that rejects example and `dev-`/`test-` secrets in production; `trails` schema with SRID 4326 geometry columns and Peru bounding-box CHECKs; `GET /api/trails` (published only, `city` filter) and `GET /api/trails/:slug` (draft and unknown slugs answer the same 404); `GET /api/health` with DB status and build revision; OpenAPI emitter that builds the contract without env or database; `db:migrate` and a container entrypoint that migrates before start.
