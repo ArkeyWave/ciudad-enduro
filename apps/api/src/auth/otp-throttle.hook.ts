@@ -4,6 +4,7 @@ import type { OtpMailer } from './mailer.js';
 import type { OtpThrottle } from './otp-throttle.js';
 
 export const SEND_OTP_PATH = '/email-otp/send-verification-otp';
+const CSRF_CHECKED_PATHS = new Set(['/sign-out', '/sign-in/email-otp']);
 
 // The send endpoint's own body rules (better-auth email-otp routes): lower-cased, not trimmed.
 const sendBody = z.object({
@@ -14,7 +15,7 @@ const sendBody = z.object({
 /**
  * `hooks.before` for the whole auth router:
  * - `/sign-in/social` refuses an `idToken` body (Phase 0 supports only the redirect flow).
- * - `/sign-out` runs the CSRF check (a cookie-free cross-site POST would otherwise clear the cookie).
+ * - `/sign-out` and `/sign-in/email-otp` run the CSRF check, also without a cookie.
  * - the OTP send path runs the CSRF check, then the cooldown and cap, then grants a send permit.
  */
 export function authBeforeHook(throttle: OtpThrottle, mailer: OtpMailer) {
@@ -23,9 +24,10 @@ export function authBeforeHook(throttle: OtpThrottle, mailer: OtpMailer) {
       if (isRecord(ctx.body) && ctx.body.idToken !== undefined) throw new APIError('BAD_REQUEST', { message: 'Bad request' });
       return;
     }
-    if (ctx.path === '/sign-out') {
-      // Without a cookie the router skips its origin check (origin-check.mjs:108), so a cross-site
-      // POST could still clear the session cookie.
+    if (CSRF_CHECKED_PATHS.has(ctx.path)) {
+      // Without a cookie the router skips its origin check (origin-check.mjs:108): a cross-site
+      // POST could still clear the session cookie (/sign-out) or sign in (defence in depth). A
+      // client that sends no Origin and no Sec-Fetch headers (a mobile app) still passes.
       await formCsrfMiddleware(ctx);
       return;
     }

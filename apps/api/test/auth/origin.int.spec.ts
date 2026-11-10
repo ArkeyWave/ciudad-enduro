@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { openTestClient } from '../test-db.js';
-import { createAuthTestApp, signInWithOtp, truncateAuth, WEB_ORIGIN, type AuthTestApp } from '../support/test-app.js';
+import { createAuthTestApp, rawRequest, signInWithOtp, truncateAuth, WEB_ORIGIN, type AuthTestApp } from '../support/test-app.js';
 
 // NODE_ENV=test turns Better Auth's origin check off unless the options set
 // disableOriginCheck: false (create-context.mjs:211); these tests run with the real options.
@@ -75,5 +75,32 @@ describe('sign-out CSRF (no cookie: the router origin check skips, origin-check.
     expect(res.status).toBe(200);
     expect(res.headers.getSetCookie().some((c) => c.startsWith('better-auth.session_token=;') || /Max-Age=0/i.test(c))).toBe(true);
     expect((await client.query<{ n: number }>('select count(*)::int as n from session')).rows[0]?.n).toBe(0);
+  });
+});
+
+describe('sign-in CSRF without a cookie (defence in depth)', () => {
+  const body = JSON.stringify({ email: 'csrf@x.pe', otp: '000000' });
+  const verify = (headers: Record<string, string>) =>
+    rawRequest(t.url, {
+      method: 'POST',
+      path: '/api/auth/sign-in/email-otp',
+      headers: { 'content-type': 'application/json', 'content-length': String(body.length), ...headers },
+      chunks: [body],
+    });
+
+  it('refuses a hostile Origin', async () => {
+    expect((await verify({ origin: EVIL })).status).toBe(403);
+  });
+
+  it('passes a client that sends no Origin and no Sec-Fetch headers (mobile app)', async () => {
+    const res = await verify({});
+    expect(res.status).toBe(400);
+    expect(JSON.parse(res.body)).toMatchObject({ code: 'INVALID_OTP' });
+  });
+
+  it('passes the web origin', async () => {
+    const res = await verify({ origin: WEB_ORIGIN, 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'cors' });
+    expect(res.status).toBe(400);
+    expect(JSON.parse(res.body)).toMatchObject({ code: 'INVALID_OTP' });
   });
 });
