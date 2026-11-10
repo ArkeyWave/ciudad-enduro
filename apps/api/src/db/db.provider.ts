@@ -1,4 +1,4 @@
-import type { Provider } from '@nestjs/common';
+import { Logger, type Provider } from '@nestjs/common';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { ENV, type Env } from '../config/env.js';
@@ -14,7 +14,13 @@ export const dbProviders: Provider[] = [
   {
     provide: PG_POOL,
     inject: [ENV],
-    useFactory: (env: Env) => new pg.Pool({ connectionString: env.DATABASE_URL, connectionTimeoutMillis: 5_000 }),
+    useFactory: (env: Env) => {
+      const pool = new pg.Pool({ connectionString: env.DATABASE_URL, connectionTimeoutMillis: 5_000 });
+      // An idle client dropped by the server (restart, admin kill) emits 'error' on the pool.
+      // Without a listener Node exits; with it the pool simply opens a new connection.
+      pool.on('error', (err) => new Logger('PgPool').warn(`idle client error: ${err.message}`));
+      return pool;
+    },
   },
   {
     provide: DB,

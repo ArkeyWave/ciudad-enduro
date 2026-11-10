@@ -16,7 +16,8 @@ declare module 'vitest' {
 export type Connect = (url: string) => pg.Client;
 
 const ALLOWED_HOSTS = new Set(['localhost', '127.0.0.1']);
-const SUFFIX = /^[a-z0-9_]{1,32}$/;
+// 26 leaves room for the guard test's `_guard` and the 63-char Postgres identifier limit.
+const SUFFIX = /^[a-z0-9_]{1,26}$/;
 const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url));
 
 export default async function setup(project: TestProject): Promise<void> {
