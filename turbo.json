@@ -1,0 +1,23 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "env": ["API_INTERNAL_URL"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "persistent": true,
+      "cache": false
+    },
+    "lint": {},
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL", "TEST_DB_SUFFIX", "CI"]
+    }
+  }
+}

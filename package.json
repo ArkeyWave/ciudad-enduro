@@ -1,0 +1,20 @@
+{
+  "name": "ciudad-enduro",
+  "private": true,
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:up": "docker compose -f docker-compose.dev.yml up -d --wait"
+  },
+  "devDependencies": {
+    "turbo": "2.11.10",
+    "typescript": "6.0.3"
+  }
+}
