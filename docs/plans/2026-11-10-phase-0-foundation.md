@@ -1,4 +1,4 @@
-# Phase 0 Foundation — Implementation Plan (rev. 3.2, gate closed)
+# Phase 0 Foundation — Implementation Plan (rev. 3.3, gate closed)
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (inside the
 > orchestrated-delivery loop) to implement this plan batch by batch.
@@ -561,6 +561,11 @@ or `invalid_callback_request` happen before Better Auth knows the client's `erro
 they redirect to Better Auth's own page `/api/auth/error`, not to `/ingresar`. If the UI must show
 them, B5 sets `onAPIError.errorURL` to `${WEB_ORIGIN}/ingresar` (with a test); B4 does not.
 
+**Sign-out and referrer (rev. 3.3, F16):** the API runs the CSRF check on `/sign-out` and
+`/sign-in/email-otp` even without a cookie. So the web must sign out with `fetch()` (it sends
+`Origin`), not a plain form navigation, and must not set `Referrer-Policy: no-referrer`: some
+browsers then send `Origin: null`, which Better Auth answers with 403.
+
 **Phase 0 exit:** the live checks above pass; CI green on `main`; the final adversarial review
 (section 7) is closed.
 
@@ -656,4 +661,5 @@ acceptable."
 | F13 | Non-6-digit codes do consume attempts | confirmed | assertion deleted |
 | F14 | Implementation check (B4, 2026-11-10) against the installed 1.7.18: (1) `mapProfileToUser` throwing does not redirect → `user.validateUserInfo`; (2) 1.7.19 blocked by the release-age policy → pin 1.7.18 for `better-auth`, `auth`, `@better-auth/*`, no exclude list; (3) the in-memory rate limiter is module-level and survives a new app → unique `cf-connecting-ip` per request is the only isolation; (4) `/reset-password/:token` cannot be in `disabledPaths` → allowlisted as inert; (5) tokens are rewritten on each sign-in → `account.update.before` too | confirmed (google.mjs:126, oauth2/callback.mjs:39, api/routes/callback.mjs:96 and 152-153, db/internal-adapter.mjs:160-179, utils/validate-user-info.mjs:38-41, link-account.mjs:226 and 242-258, rate-limiter/index.mjs:6, api/index.mjs:168-170) — owner approved | B4.1, B4.4, B4.2, tech stack |
 | F15 | B4 review round (opus 5.5 @ high ∥ gpt-6.1-sol @ high, both approve with changes): (1) a cookie-free cross-site `POST /sign-out` skipped the router origin check and cleared the session cookie; (2) mailer-permit tests did not prove the address match or single use; (3) the success-shape test compared only the content type; (4) a Google token without `email_verified` was not tested; (5) production accepted `http://` auth URLs; (6) an untested schema comment; (7) §8 and G2 understated a single-IP cap drain; (8) early OAuth errors land on `/api/auth/error` | (1) confirmed (origin-check.mjs:108, sign-out.mjs:54); others accepted | (1) hook runs `formCsrfMiddleware` on `/sign-out`; (2)-(5) tests + mutations, https check in `env.ts`; (6) removed; (7) §8, G2; (8) B5 note |
+| F16 | Final B4 review (opus 5.5 @ xhigh, approve with changes): S1 no body limit on `/api/auth` (adapter skips its parsers there, `nestjs-better-auth/dist/index.mjs:676-678`; a 3 MB body reached `/sign-out`, and a sign-up stored a 3,000,000-char `name` and `image='javascript:alert(1)'`); S2 the env https check did not match Better Auth's predicate, and a trailing slash broke the exact origin match; N1 `/sign-in/email-otp` without a cookie had no CSRF check; N2 failed mails were not reported; N3 web sign-out constraints; N4 `BETTER_AUTH_TRUSTED_ORIGINS` widens trusted origins silently (`context/helpers.mjs:83-84`) | confirmed | S1 adapter `middleware`: 413 above 16 KiB or with any Transfer-Encoding (no Content-Length and no Transfer-Encoding = no body, passes), unread body discarded so the client gets the 413; `user.create.before` trims `name` to 100 chars and keeps `image` only if https. S2 raw strings, `startsWith('https://')` in production, `new URL(v).origin === v` everywhere. N1 `formCsrfMiddleware` on `/sign-in/email-otp`. N2 `{event:'auth_background_task_failed', name}` from the mailer — the handler never sees the error, because Better Auth catches it first (`context/create-context.mjs:217-218`). N3 B5 note. N4 production rejects the variable |
 | nits | async hash; `exec node`; Google tokens in `account`; `auth.cli` in `src/`; frozen Date; prerender; memory rate-limit storage | accepted | B4.1, B1.11, B4.4, B4.1, B4.3, B3.1, B4.1 |

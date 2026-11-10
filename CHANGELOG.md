@@ -10,6 +10,8 @@
 - Auth paths are an allowlist: 30 unused Better Auth endpoints answer 404; a test fails when a library upgrade adds one.
 - `POST /api/auth/sign-out` runs the CSRF check even without a cookie (a cross-site form could otherwise clear the session cookie).
 - Production refuses `http://` values for `BETTER_AUTH_URL` and `WEB_ORIGIN`; a Google token without the `email_verified` claim counts as unverified.
+- Auth request bodies are limited to 16 KiB (413; any `Transfer-Encoding` is refused). Sign-up `name` is trimmed and cut to 100 characters; `image` is kept only if it is an `https://` URL.
+- `BETTER_AUTH_URL` and `WEB_ORIGIN` must be exact origins (no path, no trailing slash); production checks `https://` with Better Auth's own predicate and refuses `BETTER_AUTH_TRUSTED_ORIGINS`. `/sign-in/email-otp` also runs the CSRF check without a cookie. A failed OTP mail is logged as `auth_background_task_failed` with the error name only.
 - Origin check on in every environment (Better Auth turns it off under `NODE_ENV=test`); no CORS headers; `role` cannot be set by the client; no OTP, session token or address in the logs.
 
 ### Added

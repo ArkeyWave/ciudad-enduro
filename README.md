@@ -51,8 +51,9 @@ Endpoints: `GET /api/health`, `GET /api/trails?city=`, `GET /api/trails/:slug`, 
 | `RESEND_API_KEY`, `EMAIL_FROM` | Sender of the OTP mails |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client; redirect URI `<BETTER_AUTH_URL>/api/auth/callback/google` |
 
-Production refuses example and `dev-`/`test-` secrets, and `http://` values for `BETTER_AUTH_URL`
-and `WEB_ORIGIN`. The client IP comes from `cf-connecting-ip`
+`BETTER_AUTH_URL` and `WEB_ORIGIN` must be bare origins (`https://enduro-next.vops.pe`, no path
+and no trailing slash). Production refuses example and `dev-`/`test-` secrets, `http://` values for
+those two, and any `BETTER_AUTH_TRUSTED_ORIGINS`. Auth request bodies are limited to 16 KiB. The client IP comes from `cf-connecting-ip`
 only (Cloudflare sets it), so rate limits are per client behind the proxy.
 
 After a Better Auth upgrade, regenerate the auth tables and review the diff:
