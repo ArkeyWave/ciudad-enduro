@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Env and secrets (secrets live outside the repo)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# AI assistant / tooling files: never published
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.claude/
+.codex/
+.cursor/
+.gstack/
+.playwright-mcp/
+.t3/
+
+# Test output
+playwright-report/
+test-results/
+blob-report/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+/nul
+.vscode/*
+!.vscode/extensions.json
+.idea/
