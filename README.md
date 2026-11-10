@@ -102,12 +102,20 @@ pnpm --filter web dev                          # http://localhost:3000
 `pnpm dev` from the root builds `api-client` first (the `dev` task depends on `^build`).
 In development, `next dev` rewrites `/api/*` to the API. In production Traefik routes `/api`.
 
+Pages: `/` (trail list) and `/ingresar` (sign-in by e-mail code or Google). The web calls the auth
+API with `fetch()` on the same origin and must not set `Referrer-Policy: no-referrer` (some browsers
+then send `Origin: null`, which the API refuses).
+
 For the sign-in e2e, `apps/api/test/support/e2e-main.ts` starts the API with OTP codes written to
 `E2E_CODES_FILE` (one JSON line per mail) instead of Resend. It refuses to run unless
 `NODE_ENV=test`.
 
-E2E tests (Playwright) start the API from source on port 3101 and the web production build on
-port 3100. They recreate and seed `ciudad_enduro_test_<TEST_DB_SUFFIX>` on localhost.
+E2E tests (Playwright) start the e2e API from source on port 3101, the web production build on
+port 3102, and a front proxy on port 3100 that routes `/api` to the API and the rest to the web,
+like Traefik. The browser uses port 3100 only. Ports 3103 and 3104 hold a second web server and an
+API that never answers, for the error-page test. The tests read OTP codes from the file in
+`e2e/codes.ts` and send their own `cf-connecting-ip` per auth request. They recreate and seed
+`ciudad_enduro_test_<TEST_DB_SUFFIX>` on localhost.
 
 ```bash
 pnpm --filter web exec playwright install chromium   # once

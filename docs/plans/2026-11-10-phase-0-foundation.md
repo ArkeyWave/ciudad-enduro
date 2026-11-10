@@ -566,6 +566,13 @@ them, B5 sets `onAPIError.errorURL` to `${WEB_ORIGIN}/ingresar` (with a test); B
 `Origin`), not a plain form navigation, and must not set `Referrer-Policy: no-referrer`: some
 browsers then send `Origin: null`, which Better Auth answers with 403.
 
+**Follow-ups from the B5 final review (recorded, not built):**
+- N4: the forbidden-path pattern in `scripts/verify-image.sh` does not list `e2e/`, `front-proxy` or
+  `playwright.config`. `.dockerignore` keeps them out today; adding them to the verifier needs the
+  verifier roll-out procedure in `docs/operations/deploy.md`.
+- N6: the code step has no way back to the e-mail step, and "Enviar otro código" shows no
+  confirmation.
+
 **Phase 0 exit:** the live checks above pass; CI green on `main`; the final adversarial review
 (section 7) is closed.
 

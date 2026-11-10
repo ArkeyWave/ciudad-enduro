@@ -178,8 +178,8 @@ B4 (auth) must not merge until every item is ticked, because the merge deploys a
 
 - [x] Coolify env on the api app: real random `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET` (48 chars,
       generated on the box 2026-11-10), `GOOGLE_CLIENT_ID/SECRET`, `RESEND_API_KEY`, `EMAIL_FROM`.
-- [ ] Google OAuth client has the redirect URI
-      `https://enduro-next.vops.pe/api/auth/callback/google` (owner: check in Google Cloud console).
-- [ ] Resend sender domain of `EMAIL_FROM` is verified (owner: check in the Resend dashboard).
+- [x] Google OAuth client has the redirect URI
+      `https://enduro-next.vops.pe/api/auth/callback/google` — done 2026-11-10 (owner).
+- [x] Resend sender domain of `EMAIL_FROM` is verified — done 2026-11-10 (owner).
 - [x] Cloudflare rate-limit rule on `POST /api/auth/email-otp/send-verification-otp` (rule
       `4cf84c7a…`, 5 requests / 10 s per IP, zone `vops.pe`).
