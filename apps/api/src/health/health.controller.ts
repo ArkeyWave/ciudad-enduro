@@ -1,8 +1,10 @@
+import { AllowAnonymous } from '@thallesp/nestjs-better-auth';
 import { Controller, Get, Inject, ServiceUnavailableException } from '@nestjs/common';
 import { sql } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env.js';
 import { DB, type Database } from '../db/db.provider.js';
 
+@AllowAnonymous()
 @Controller('health')
 export class HealthController {
   constructor(

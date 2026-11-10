@@ -24,7 +24,7 @@ export async function createTestApp(env: Record<string, string> = {}): Promise<I
     .overrideProvider(ENV)
     .useValue(loadEnv({ ...process.env, DATABASE_URL: testDatabaseUrl(), ...env }))
     .compile();
-  const app = configureApp(moduleRef.createNestApplication({ logger: false }));
+  const app = configureApp(moduleRef.createNestApplication({ logger: false, bodyParser: false }));
   await app.listen(0, '127.0.0.1');
   return app;
 }

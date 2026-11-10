@@ -15,6 +15,20 @@
       "when": 1794330065757,
       "tag": "0001_trail_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794338541824,
+      "tag": "0002_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794338543681,
+      "tag": "0003_otp_send_log",
+      "breakpoints": true
     }
   ]
 }
