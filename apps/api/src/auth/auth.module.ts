@@ -3,6 +3,7 @@ import { AuthModule } from '@thallesp/nestjs-better-auth';
 import { ENV, type Env } from '../config/env.js';
 import { DB, type Database } from '../db/db.provider.js';
 import { createAuth } from './auth.factory.js';
+import { authBodyLimit } from './body-limit.js';
 import { MAIL_TRANSPORT, OtpMailer, resendTransport } from './mailer.js';
 import { OtpThrottle } from './otp-throttle.js';
 
@@ -27,5 +28,6 @@ export const appAuthModule = AuthModule.forRootAsync({
     // Same origin behind Traefik: no CORS. The adapter would otherwise answer the trusted origins.
     disableTrustedOriginsCors: true,
     bodyParser: { json: { limit: '1mb' } },
+    middleware: authBodyLimit,
   }),
 });

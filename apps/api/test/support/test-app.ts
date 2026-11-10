@@ -1,3 +1,4 @@
+import { request as httpRequest } from 'node:http';
 import type { INestApplication, LoggerService } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type pg from 'pg';
@@ -96,4 +97,25 @@ export async function signInWithOtp(t: AuthTestApp, email: string, extraBody: Re
   const res = await t.post('/api/auth/sign-in/email-otp', { email, otp: lastOtp(t, email), ...extraBody });
   if (res.status !== 200) throw new Error(`sign-in failed: ${res.status} ${await res.text()}`);
   return cookieHeader(res);
+}
+
+/**
+ * A request with exactly the given headers. Node's fetch always adds Sec-Fetch-Mode and computes
+ * Content-Length; this one can omit both, or send a chunked body, like a non-browser client.
+ */
+export function rawRequest(
+  url: string,
+  options: { method: string; path: string; headers?: Record<string, string>; chunks?: string[] },
+): Promise<{ status: number; body: string; setCookie: string[] }> {
+  return new Promise((resolve, reject) => {
+    const req = httpRequest(`${url}${options.path}`, { method: options.method, headers: { 'cf-connecting-ip': uniqueIp(), ...options.headers } }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => (body += chunk));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body, setCookie: res.headers['set-cookie'] ?? [] }));
+    });
+    req.on('error', reject);
+    for (const chunk of options.chunks ?? []) req.write(chunk);
+    req.end();
+  });
 }

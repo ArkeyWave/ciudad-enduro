@@ -12,6 +12,18 @@ import type { OtpThrottle } from './otp-throttle.js';
 
 export type AuthDeps = { env: Env; db: Database; mailer: OtpMailer; throttle: OtpThrottle };
 
+export const USER_NAME_MAX = 100;
+
+// Sign-up input (email-code body or Google profile) is stored as given otherwise.
+function httpsUrlOrNull(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    return new URL(value).protocol === 'https:' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 // Phase 0 never calls Google APIs after sign-in, so Google's tokens are never stored.
 const withoutProviderTokens = <T extends object>(account: T) => ({
   data: { ...account, accessToken: null, refreshToken: null, idToken: null },
@@ -40,6 +52,14 @@ export function buildAuthOptions({ env, db, mailer, throttle }: AuthDeps) {
       google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
     },
     databaseHooks: {
+      user: {
+        create: {
+          before: (user) =>
+            Promise.resolve({
+              data: { ...user, name: user.name.trim().slice(0, USER_NAME_MAX), image: httpsUrlOrNull(user.image) },
+            }),
+        },
+      },
       account: {
         create: { before: (account) => Promise.resolve(withoutProviderTokens(account)) },
         update: { before: (account) => Promise.resolve(withoutProviderTokens(account)) },
