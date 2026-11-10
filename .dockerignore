@@ -1,0 +1,25 @@
+# Build context for apps/api/Dockerfile and apps/web/Dockerfile (context = repo root).
+.git
+**/node_modules
+**/.env*
+**/test/
+**/e2e/
+**/dist/
+**/.next/
+**/.turbo/
+**/coverage/
+**/playwright-report/
+**/test-results/
+docs/
+**/*.test.*
+**/*.spec.*
+# AI assistant files (gitignored, but present in a local checkout)
+**/CLAUDE.md
+**/CLAUDE.local.md
+**/AGENTS.md
+**/.claude/
+**/.codex/
+**/.cursor/
+**/.gstack/
+**/.playwright-mcp/
+**/.t3/

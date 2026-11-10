@@ -568,6 +568,14 @@ acceptable."
   many IPs (carried-over rule). Mitigations: the built-in per-IP limit (5/60 s), the Cloudflare
   per-IP rule and the `otp_global_cap_reached` log event.
 
+- **The staging box runs repo build steps** (B3 final review, opus @ xhigh). `ce-oss-deploy` runs
+  no repo file on the host, but the Coolify build runs the Dockerfile `RUN` steps and the build
+  tools in a BuildKit container with host networking (`--network host`, `--add-host` for the box
+  databases). Anyone who can merge to `main` can run code there. Accepted for staging: only
+  reviewed `main` commits deploy, the Environment and the forced command keep forks out.
+  Long-term fix: build the images in CI, push them to GHCR, deploy by digest — a Phase 1 item,
+  owner decision pending.
+
 ## 9. Gate ledger (round 1)
 
 | Finding | Source | Verdict | Where fixed |
@@ -615,4 +623,5 @@ acceptable."
 | F11 | e2e entrypoint, client regen, operator steps unowned | accepted | B4 files, B3.8 checklist, B1.12 |
 | F12 | `disabledPaths` is a denylist | accepted | B4.1 allowlist test |
 | F13 | Non-6-digit codes do consume attempts | confirmed | assertion deleted |
+| B3-F1 | Coolify build runs repo `RUN` steps with host networking on the shared box | accepted for staging | §8; Phase 1: CI-built images on GHCR, deploy by digest (owner decision pending) |
 | nits | async hash; `exec node`; Google tokens in `account`; `auth.cli` in `src/`; frozen Date; prerender; memory rate-limit storage | accepted | B4.1, B1.11, B4.4, B4.1, B4.3, B3.1, B4.1 |

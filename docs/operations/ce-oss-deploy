@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# ce-oss-deploy — the ONLY command the CI deploy key can run on vops-infra.
+# Installed at /usr/local/bin/ce-oss-deploy (root 755). authorized_keys line:
+#   restrict,command="/usr/local/bin/ce-oss-deploy" ssh-ed25519 AAAA... ci-deploy@ciudad-enduro-oss
+#
+# Input: SSH_ORIGINAL_COMMAND = a 40-hex commit SHA that is on origin/main.
+# Effect: builds and deploys that commit to staging (api, then web), then proves it is live.
+# This script runs no file from the repo: the image check is the reviewed copy in VERIFY.
+# (The Coolify build itself runs the Dockerfile RUN steps in a BuildKit container; see
+# docs/operations/deploy.md.)
+#
+# Rollback to an older main commit is refused unless an operator on the box sets ROLLBACK=1
+# (sshd passes no such variable from the CI key).
+set -euo pipefail
+umask 077
+
+REPO_URL=https://github.com/ArkeyWave/ciudad-enduro.git
+STATE=/var/cache/ce-oss-deploy
+CACHE=$STATE/repo.git
+LOCK=$STATE/lock
+VERIFY=/usr/local/lib/ce-oss/verify-image.sh
+API_UUID=c6mm7pwdmoysv0eg2vgwo4bi
+WEB_UUID=whfatie8ek3wh09ite3mnqn0
+HOST=enduro-next.vops.pe
+BOX_IP=104.152.209.8
+
+refuse() { echo "refused: $1" >&2; exit 2; }
+die() { echo "FAIL $*" >&2; exit 1; }
+log() { echo "[$(date -u +%H:%M:%S)] $*"; }
+
+sha=${SSH_ORIGINAL_COMMAND:-}
+[[ $sha =~ ^[0-9a-f]{40}$ ]] || refuse "expected one 40-hex commit SHA"
+
+install -d -m 700 "$STATE"
+exec 9>"$LOCK"
+flock -w 1800 9 || refuse "another deploy held the lock for 30 min"
+
+# Only commits reachable from main can deploy. The cache fetches main only, so a fork or
+# branch commit is not even present here.
+[ -d "$CACHE" ] || git init -q --bare "$CACHE"
+git -C "$CACHE" fetch -q --prune "$REPO_URL" '+refs/heads/main:refs/remotes/origin/main'
+git -C "$CACHE" cat-file -e "$sha^{commit}" 2>/dev/null || refuse "$sha is not on main"
+git -C "$CACHE" merge-base --is-ancestor "$sha" refs/remotes/origin/main || refuse "$sha is not on main"
+
+running_image() { # APP_UUID -> image of the running container(s)
+  docker ps --filter "name=^$1-" --filter status=running --format '{{.Image}}'
+}
+
+# Rollback guard: an older commit than the running api is refused without ROLLBACK=1.
+# A running commit that is not in the cache (never on main) cannot be ordered and passes.
+live=$(running_image "$API_UUID" | head -1)
+live_sha=${live##*:}
+if [[ $live_sha =~ ^[0-9a-f]{40}$ ]] && [ "$live_sha" != "$sha" ] &&
+  git -C "$CACHE" merge-base --is-ancestor "$sha" "$live_sha" 2>/dev/null; then
+  [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than the running $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
+  log "ROLLBACK=1: rolling back from $live_sha"
+fi
+
+# The commit must carry exactly the verifier installed on the box. A new verifier is
+# reviewed and installed by an operator first (docs/operations/deploy.md).
+git -C "$CACHE" show "$sha:scripts/verify-image.sh" 2>/dev/null | cmp -s - "$VERIFY" ||
+  die "scripts/verify-image.sh at $sha differs from the installed $VERIFY; install the reviewed verifier first"
+
+# Coolify API on loopback inside the coolify container. The token goes in on stdin and
+# into a curl config file there, never into any argv.
+capi() { # METHOD PATH [json]
+  local token
+  token=$(grep '^COOLIFY_API_TOKEN=' /root/.secrets/coolify-vops-infra.env | cut -d= -f2-)
+  { printf '%s\n' "$token"; printf '%s' "${3:-}"; } | docker exec -i coolify sh -c '
+    umask 077; read -r T; cfg=$(mktemp); trap "rm -f \"\$cfg\"" EXIT
+    printf "header = \"Authorization: Bearer %s\"\n" "$T" > "$cfg"; unset T
+    if [ -n "$2" ]; then data="--data-binary @-"; else data=""; fi
+    curl -sS --fail-with-body -K "$cfg" -X "$0" -H "Accept: application/json" \
+      -H "Content-Type: application/json" $data "http://127.0.0.1:8080/api/v1$1"' "$1" "$2" "${3:+1}"
+}
+
+stop_app() { # APP_UUID NAME
+  log "$2: stopping $1"
+  capi POST "/applications/$1/stop" >/dev/null || echo "FAIL $2: could not stop $1, stop it by hand" >&2
+}
+
+deploy() { # APP_UUID NAME
+  local uuid=$1 name=$2 dep status=queued
+  capi PATCH "/applications/$uuid" "{\"git_commit_sha\":\"$sha\"}" >/dev/null
+  dep=$(capi POST "/deploy?uuid=$uuid" | jq -r '.deployments[0].deployment_uuid // empty')
+  [ -n "$dep" ] || die "$name: Coolify queued no deployment"
+  log "$name: deployment $dep queued"
+  for _ in $(seq 180); do
+    status=$(docker exec coolify-db psql -U coolify -d coolify -tAc \
+      "select status from application_deployment_queues where deployment_uuid='$dep'")
+    case "$status" in
+      finished) log "$name: finished"; return 0 ;;
+      failed|cancelled*|error) die "$name: deployment $dep $status" ;;
+    esac
+    sleep 10
+  done
+  die "$name: deployment $dep still '$status' after 30 min"
+}
+
+# Each app is checked right after its own deploy, so a failed web deploy never leaves an
+# unchecked api image live.
+deploy_and_check() { # APP_UUID NAME
+  local uuid=$1 name=$2 img
+  deploy "$uuid" "$name"
+  # A failed rolling update leaves the old (already checked) container running.
+  img=$(running_image "$uuid")
+  [ "$img" = "$uuid:$sha" ] || die "$name: running image is '${img:-none}', expected $uuid:$sha"
+  if ! bash "$VERIFY" "$uuid:$sha"; then
+    stop_app "$uuid" "$name"
+    die "$name: image check failed"
+  fi
+  log "$name: running $uuid:$sha, image check ok"
+}
+
+# The origin must still answer only Cloudflare, and nothing may publish a host port.
+origin_lock_ok() {
+  local path code uuid c labels routers r
+  for path in / /api/health; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --resolve "$HOST:443:$BOX_IP" "https://$HOST$path" || true)
+    [ "$code" = 403 ] || { echo "FAIL origin lock: direct https://$HOST$path answered $code, expected 403" >&2; return 1; }
+  done
+  for uuid in "$API_UUID" "$WEB_UUID"; do
+    c=$(docker ps --filter "name=^$uuid-" --filter status=running --format '{{.Names}}')
+    [ -n "$c" ] || { echo "FAIL origin lock: no running container for $uuid" >&2; return 1; }
+    for c in $c; do
+      labels=$(docker inspect "$c" -f '{{range $k,$v := .Config.Labels}}{{$k}}={{$v}}{{"\n"}}{{end}}')
+      routers=$(grep -oE '^traefik\.http\.routers\.[^.=]+\.rule=' <<<"$labels" | cut -d. -f4 || true)
+      [ -n "$routers" ] || { echo "FAIL origin lock: $c has no traefik router" >&2; return 1; }
+      for r in $routers; do
+        grep -qE "^traefik\.http\.routers\.$r\.middlewares=(.*,)?cloudflare-only@file(,|$)" <<<"$labels" ||
+          { echo "FAIL origin lock: router $r on $c lacks cloudflare-only@file" >&2; return 1; }
+      done
+      [ -z "$(docker port "$c")" ] || { echo "FAIL origin lock: $c publishes a host port" >&2; return 1; }
+    done
+  done
+}
+
+log "deploying $sha"
+deploy_and_check "$API_UUID" api
+deploy_and_check "$WEB_UUID" web
+
+if ! origin_lock_ok; then
+  stop_app "$API_UUID" api
+  stop_app "$WEB_UUID" web
+  die "origin lock check failed; both apps stopped"
+fi
+log "origin lock: direct 403 for / and /api/health, every router has cloudflare-only@file, no host ports"
+
+# A crashed new container behind an old one would still answer: compare the revision, and
+# wait for the home page in the same loop.
+revision=""; home=""
+for _ in $(seq 18); do
+  revision=$(curl -fsS --max-time 10 "https://$HOST/api/health" | jq -r '.revision // empty' || true)
+  home=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$HOST/" || true)
+  if [ "$revision" = "$sha" ] && [ "$home" = 200 ]; then
+    log "live: https://$HOST/api/health revision=$revision, home 200"
+    exit 0
+  fi
+  sleep 10
+done
+die "live revision is '${revision:-none}' (expected $sha), home answered '${home:-none}'"
