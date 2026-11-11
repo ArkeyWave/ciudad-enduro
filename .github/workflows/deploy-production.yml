@@ -41,7 +41,7 @@ jobs:
           status=$(gh api "repos/$REPO/compare/$SHA...main" -q .status) ||
             { echo "::error::$SHA is not a commit of this repository"; exit 1; }
           case "$status" in
-            identical|ahead) echo "on main: $status" ;;
+            *) echo "on main: $status" ;;
             *) echo "::error::$SHA is not on main (compare status: $status)"; exit 1 ;;
           esac
           run=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&status=success" \
