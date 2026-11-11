@@ -344,9 +344,8 @@ verifier before publish; the digest and the attestation bind the checked image).
 
 ## Production
 
-Host **`enduro.vops.pe`** (today it still serves the old app; the cutover is plan P1a-3.5). Coolify
-project `ciudad-enduro-oss`, environment `production` (`e04m00q08bl1d6yop2rsfdgr`). Created on
-2026-11-11; **not deployed yet**.
+Host **`enduro.vops.pe`**. Coolify project `ciudad-enduro-oss`, environment `production`
+(`e04m00q08bl1d6yop2rsfdgr`). **Live since the cutover on 2026-11-11 12:53 UTC** (record below).
 
 | Piece | Value |
 |---|---|
@@ -354,10 +353,10 @@ project `ciudad-enduro-oss`, environment `production` (`e04m00q08bl1d6yop2rsfdgr
 | Coolify app `ce-oss-web-prod` | `gwn5ys9bnjvn7fasm6egvxw4`, build pack `dockerimage`, image `ghcr.io/arkeywave/ciudad-enduro-web`, port 3000, `API_INTERNAL_URL=http://ce-oss-api-prod:3001`, no domain, auto-deploy off |
 | Labels | `is_container_label_readonly_enabled = false`; hand-written `custom_labels` with the routers of the staging table for ``Host(`enduro.vops.pe`)`` (api priority 100, web 10, both `cloudflare-only@file`) and **`traefik.enable=false`** until the cutover |
 | Database | `ciudad-enduro-oss-postgres` (`k9ysrxe4vuaqge54kkqivfpa`), app role `ciudadenduro_app` (no superuser, owner of `ciudad_enduro`); the container superuser `ciudadenduro` is not in the app env |
-| API env | `NODE_ENV=production`, `PORT=3001`, `BETTER_AUTH_URL = WEB_ORIGIN = https://enduro.vops.pe`, `DATABASE_URL` (app role), `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET` (new, generated on the box), `TURNSTILE_SECRET_KEY` (prod widget), `GOOGLE_CLIENT_ID/SECRET` (shared with staging by decision), `EMAIL_FROM`. **`RESEND_API_KEY` is missing**: a prod sending-only key from the owner |
+| API env | `NODE_ENV=production`, `PORT=3001`, `BETTER_AUTH_URL = WEB_ORIGIN = https://enduro.vops.pe`, `DATABASE_URL` (app role), `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET` (new, generated on the box), `TURNSTILE_SECRET_KEY` (prod widget), `GOOGLE_CLIENT_ID/SECRET` (shared with staging by decision), `EMAIL_FROM`. `RESEND_API_KEY` = the staging sending-access key since 2026-11-11 (owner may replace it with a prod-only key) |
 | Web env | `API_INTERNAL_URL`, `TURNSTILE_SITE_KEY` (prod widget) |
 | Secrets | Coolify and the owner's machine only (`~/.secrets/ciudad-enduro-oss.env`, `PROD_*`); no copy on the box |
-| Backup | **none yet** (plan P1a-3.1, A8: daily, off-box on Cloudflare R2, restore proved before the cutover) |
+| Backup | Daily on-box dump `/usr/local/bin/ce-oss-backup` (cron `/etc/cron.d/ce-oss-backup`, 08:17 UTC, `pg_dump -Fc` to `/var/backups/ce-oss/`, root 700/600, 14 days kept, log `/var/log/ce-oss-backup.log`). Restore proved 2026-11-11 into a scratch DB (`restore_check`, dropped): every `public` table and row count equal. **Off-box R2 copy (A8) still to add** when the owner sends the keys (recorded deviation, plan ui-redesign-layer-1 §7) |
 
 ### How a production deploy happens
 
@@ -423,6 +422,22 @@ PRIVATE=1 SSH_ORIGINAL_COMMAND="<sha>" /usr/local/bin/ce-oss-deploy production
 
 The cutover then enables the locked labels (`traefik.enable=true`, a complete `custom_labels`
 PATCH) and runs the normal deploy (plan P1a-3.5c, amendments A2, A3).
+
+### Cutover record (2026-11-11)
+
+1. Rollback rehearsal: `docker stop` of the old container `ugh9axr8jcdphc5wez3xmg5w-20261021T153017`
+   (host answered 503), `docker start` (public 200 again).
+2. Old paths closed: Coolify auto-deploy of the old app `ugh9axr8jcdphc5wez3xmg5w` set off (tinker);
+   the old repo's `deploy-prod.yml` was already disabled.
+3. `PRIVATE=1` deploy of `fe53d95` (12:49 UTC, exit 0), then `traefik.enable=true` in both apps'
+   `custom_labels` (tinker, exactly one line changed per app), `docker stop` of the old container,
+   public deploy of `fe53d95` as root (12:53 UTC, exit 0: origin lock, revision, home 200).
+4. Live: `/api/health` revision `fe53d95`, `/` and `/ingresar` 200, direct origin 403.
+   One log line `error: no such object: <id>` came from an inspect of a container Coolify had just
+   removed; the run continued and passed (to check).
+
+Rollback to the old app: stop both new apps (`docker stop` of their containers), then
+`docker start ugh9axr8jcdphc5wez3xmg5w-20261021T153017`.
 
 ### Rollback (production)
 

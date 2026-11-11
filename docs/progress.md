@@ -41,9 +41,9 @@ Capabilities and their proofs are in [features.json](features.json). The backlog
 
 ## This week
 
-- **Production cutover of `enduro.vops.pe`** (P1a-3 part 2, issue #10): waits for the R2 keys and the
-  Resend production key. Then: daily off-box backup to R2 + one restore test (A8), private prod deploy,
-  cutover with a rehearsed rollback, live checks.
+- **Production:** `enduro.vops.pe` runs the new app since 2026-11-11 (cutover with a rehearsed
+  rollback, daily on-box DB dump with a proven restore). Still open: the off-box R2 copy (A8, owner keys).
+- **Rider routes + owner approval** (riders upload GPX → "En revisión" → owner publishes one by one).
 - **UI redesign layer 1** (#13): the approved "Night Rider" prototype on the screens the API already
   supports (Explorar list + map, Detalle, Importar GPX, Ingresar). Plan in progress, then the gate.
 - **Elevation calibration (D11)**: one real ride GPX with the device's distance and gain, before the
