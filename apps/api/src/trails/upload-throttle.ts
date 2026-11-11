@@ -18,11 +18,18 @@ export class UploadAttempts {
 
   /** Records an attempt; false when the user already has UPLOAD_ATTEMPTS in the window. */
   take(userId: string, now = Date.now()): boolean {
+    // ponytail: a sweep over every user per attempt; uploads are rare. A timer when they are not.
+    for (const [id, list] of this.attempts) if (now - list.at(-1)! >= UPLOAD_WINDOW_MS) this.attempts.delete(id);
     const recent = (this.attempts.get(userId) ?? []).filter((at) => now - at < UPLOAD_WINDOW_MS);
     const allowed = recent.length < UPLOAD_ATTEMPTS;
     if (allowed) recent.push(now);
     this.attempts.set(userId, recent);
     return allowed;
+  }
+
+  /** The users with an attempt in the window. */
+  get size(): number {
+    return this.attempts.size;
   }
 
   clear(): void {

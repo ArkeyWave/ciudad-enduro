@@ -126,8 +126,8 @@ export interface components {
         Difficulty: "facil" | "intermedio" | "dificil";
         ErrorBodyDto: {
             /** @example TOO_MANY_PENDING */
-            code: string;
-            message: string;
+            code?: string;
+            message: string | string[];
             /** @description GPX_DUPLICATE only, when the uploader may see that trail */
             slug?: string;
         };

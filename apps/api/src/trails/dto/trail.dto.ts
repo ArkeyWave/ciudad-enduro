@@ -19,10 +19,10 @@ const pairs = (description: string) =>
     nullable: true,
   }) as const;
 
-/** The body of a coded 4xx answer. */
+/** The body of a 4xx answer: coded errors carry `code`; a validation error has a list of messages. */
 export class ErrorBodyDto {
-  @ApiProperty({ example: 'TOO_MANY_PENDING' }) code!: string;
-  @ApiProperty() message!: string;
+  @ApiProperty({ required: false, example: 'TOO_MANY_PENDING' }) code?: string;
+  @ApiProperty({ oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }) message!: string | string[];
   @ApiProperty({ required: false, description: 'GPX_DUPLICATE only, when the uploader may see that trail' }) slug?: string;
 }
 

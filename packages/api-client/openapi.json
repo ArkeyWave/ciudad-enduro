@@ -86,7 +86,17 @@
             "type": "string"
           },
           "message": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
           },
           "slug": {
             "description": "GPX_DUPLICATE only, when the uploader may see that trail",
@@ -94,7 +104,6 @@
           }
         },
         "required": [
-          "code",
           "message"
         ],
         "type": "object"

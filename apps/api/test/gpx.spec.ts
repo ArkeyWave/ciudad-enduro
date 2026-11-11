@@ -1,4 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { elevationChange, elevationProfile, haversineM, trackMetrics } from '../src/trails/gpx/metrics.js';
 import { parseGpx, type GpxErrorCode } from '../src/trails/gpx/parse-gpx.js';
@@ -113,21 +115,35 @@ describe('parseGpx', () => {
     expect(codeOf(() => parseGpx(gpx([...points, pt(-9.2, -78.52)])))).toBe('GPX_TOO_LARGE');
   });
 
-  it('refuses too many elements for the point count before it builds the tree, and accepts the bound (S2)', () => {
-    const two = [pt(-9.09, -78.52, '10'), pt(-9.1, -78.52, '20')];
-    const padded = (n: number) => gpx([two[0]!, `<trkpt lat="-9.1" lon="-78.52"><extensions>${'<e/>'.repeat(n)}</extensions></trkpt>`]);
-    const base = new TextDecoder().decode(padded(0)).split('<').length - 1;
-    // The bound for 2 points is 2000 + 24 × 2 = 2048 `<`.
-    expect(codeOf(() => parseGpx(padded(2048 - base)))).toBeUndefined();
-    expect(codeOf(() => parseGpx(padded(2049 - base)))).toBe('GPX_TOO_COMPLEX');
-    expect(codeOf(() => parseGpx(padded(250_000)))).toBe('GPX_TOO_COMPLEX');
+  // S2: padding and fake <trkpt> tokens outside gpx/trk/trkseg cost nothing but scan time.
+  const padding = `<extensions>${'<e/>'.repeat(250_000)}</extensions>`;
+  const two = (head: string) => gpx([pt(-9.09, -78.52, '10'), `<trkpt lat="-9.1" lon="-78.52"><ele>20</ele>${padding}</trkpt>`], head);
+
+  it('parses a file with fake <trkpt> tokens in a comment and 250 000 empty elements to its 2 points', () => {
+    const head = `<gpx><!-- ${'<trkpt/>'.repeat(10_800)} -->`;
+    expect(parseGpx(two(head))).toMatchObject({ points: [{ lat: -9.09 }, { lat: -9.1 }], elevations: [10, 20] });
   });
 
-  it('accepts a Garmin-style file with 8 elements (16 `<`) per point, where the points outweigh the base budget', () => {
-    const garmin = (i: number) =>
-      `<trkpt lat="${-9.09 - i / 1000}" lon="-78.52"><ele>10</ele><time>2026-01-01T00:00:00Z</time><extensions><t:TrackPointExtension><t:hr>140</t:hr><t:cad>80</t:cad><t:atemp>20</t:atemp></t:TrackPointExtension></extensions></trkpt>`;
-    expect(parseGpx(gpx(Array.from({ length: 2000 }, (_, i) => garmin(i / 10)))).points).toHaveLength(2000);
+  it('parses a file with fake <trkpt> tokens in <metadata> and 250 000 empty elements to its 2 points', () => {
+    const head = `<gpx><metadata>${'<trkpt/>'.repeat(10_800)}</metadata>`;
+    expect(parseGpx(two(head)).points).toHaveLength(2);
   });
+
+  it('parses 2.4 million empty elements (9.6 MB) inside a 48 MB heap: no object per element', () => {
+    const script = fileURLToPath(new URL('./support/parse-padded.ts', import.meta.url));
+    const run = spawnSync(process.execPath, ['--max-old-space-size=48', '--import', '@swc-node/register/esm-register', script, '2400000'], {
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    expect({ status: run.status, out: run.stdout.trim() }).toEqual({ status: 0, out: '2' });
+  }, 70_000);
+
+  it('accepts the largest real shape: 100 000 Garmin points with 8 elements each', () => {
+    const garmin = (i: number) =>
+      `<trkpt lat="${-9 - i * 1e-6}" lon="-78.52"><ele>10</ele><time>2026-01-01T00:00:00Z</time><extensions><t:TrackPointExtension><t:hr>140</t:hr><t:cad>80</t:cad><t:atemp>20</t:atemp></t:TrackPointExtension></extensions></trkpt>`;
+    expect(parseGpx(gpx(Array.from({ length: 100_000 }, (_, i) => garmin(i)))).points).toHaveLength(100_000);
+  }, 30_000);
 
   it('refuses a point outside the Peru box, and accepts the box edge', () => {
     expect(codeOf(() => parseGpx(gpx([pt(-9.09, -78.52), pt(-34.6, -58.38)])))).toBe('GPX_OUT_OF_AREA');
