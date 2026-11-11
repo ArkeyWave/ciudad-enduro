@@ -26,7 +26,6 @@ export function NewTrailForm() {
   return (
     <form onSubmit={submit} style={column}>
       <label style={column}>
-        Archivo GPX
         <input name="gpx" type="file" required accept=".gpx,application/gpx+xml" style={input} />
       </label>
       <TrailFields />
