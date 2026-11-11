@@ -63,7 +63,7 @@ P1a-3 gets the D4 `preflight` job (added to issue #10), not this plan.
 | `probe` (exists) | haiku | Read, Grep, Glob, Bash | heavy reading, verdicts |
 | `doc-scribe` (exists) | haiku | Read, Grep, Glob, Edit, Write | docs from a settled brief, returns a diff |
 | `design-advisor` (exists) | opus / xhigh | Read, Grep, Glob, Bash | hard design forks |
-| `implementer` (new) | opus / medium | all; `disallowedTools: Agent, mcp__t3-code__delegate_task` | one batch, TDD, house commits, STOP & ASK on unexpected state; load rules from the project file |
+| `implementer` (new) | opus / medium | allowlist `tools:` (see R4) | one batch, TDD, house commits, STOP & ASK on unexpected state; load rules from the project file |
 | `reviewer` (new) | opus / high | Read, Grep, Glob, Bash | adversarial review; `skills: [review-rubric]` |
 | `final-reviewer` (new) | opus / xhigh | Read, Grep, Glob, Bash | final review before sign-off; `skills: [review-rubric]` |
 
@@ -203,8 +203,10 @@ compound try is not refused, drop `if` from that handler.
 `reviewer` prints it, `probe` with the same prompt does not. Model and effort are read from the
 subagent transcript (`~/.claude/projects/<p>/<session>/subagents/agent-<id>.jsonl`); `--debug` only for
 unknown fields. Rubric path `~/.claude/skills/review-rubric/SKILL.md`. Remove `teammateMode` with the
-teams env. Implementer `disallowedTools` adds `Workflow`, `mcp__t3-code__t3_thread_launch`,
-`mcp__t3-code__create_threads`.
+teams env. Implementer: an allowlist `tools: Read, Edit, Write, Bash, PowerShell, Grep, Glob, Skill,
+ToolSearch, WebFetch, WebSearch, mcp__t3-code__link_pull_request, mcp__t3-code__link_pull_requests`
+(a deny list missed T3 tools such as `t3_worktree_handoff`; L1 final review). Starting agents through
+Bash CLIs (`codex exec`, `claude -p`, `t3`) stays a behavioural rule.
 
 **R5 — skeleton placement (L3.2-3).** Home skeleton = `<Suspense>` inside `app/page.tsx`; **no**
 `app/loading.tsx`. Mutation: move it to `app/loading.tsx` → the `/ingresar` test must go red, else delete
