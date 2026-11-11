@@ -39,10 +39,12 @@ pnpm --filter api dev                    # http://localhost:3001/api/health
 pnpm --filter api openapi:emit           # write packages/api-client/openapi.json
 ```
 
-Endpoints: `GET /api/health`, `GET /api/trails?city=`, `GET /api/trails/:slug`, `GET /api/me`
-(needs a session), and Better Auth under `/api/auth/*` (allowlist in `src/auth/auth-paths.ts`).
-Admin only (`role = 'admin'`, `Origin` must equal `WEB_ORIGIN`): `POST /api/trails` (multipart GPX
-import, stores a draft) and `PATCH /api/trails/:slug` (metadata and status). Runbook:
+Endpoints: `GET /api/health`, `GET /api/trails?city=`, `GET /api/trails/:slug` (an author also
+sees their own drafts and hidden trails), and Better Auth under `/api/auth/*` (allowlist in
+`src/auth/auth-paths.ts`). Signed in: `GET /api/me`, `GET /api/me/trails`, and `POST /api/trails`
+(multipart GPX import, stores a draft; `Origin` must equal `WEB_ORIGIN`; a non-admin with 3 drafts
+gets 429 `TOO_MANY_PENDING`). Admin only (`role = 'admin'`): `GET /api/admin/trails?status=draft`
+(the moderation queue) and `PATCH /api/trails/:slug` (metadata and status, `Origin` checked). Runbook:
 [`docs/operations/trails-import.md`](docs/operations/trails-import.md).
 
 #### Auth environment (`apps/api/.env`)

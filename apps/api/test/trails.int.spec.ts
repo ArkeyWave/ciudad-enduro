@@ -84,6 +84,9 @@ describe('GET /api/trails', () => {
         type: 'descenso',
         start: { lat: -9.09, lng: -78.52 },
         distanceM: 1200,
+        elevationGainM: 80,
+        elevationLossM: null,
+        elevationProfile: null,
       },
     ]);
   });

@@ -10,6 +10,17 @@
 - `/rutas/nueva` is open to every signed-in user (anonymous: 404), ready for the rider upload of PR #50.
 - E2E: `shell.spec.ts` (nav, `aria-current`, 44 px targets, the nav above a map, Tab order with the lime ring, a loaded Bebas face, axe and an 11 px scan), `explore.spec.ts` (cards, pins, mini-card, toggle, empty states for anonymous and rider), detail checks in `trails.spec.ts`, the streamed skeleton before the error page, `screens.spec.ts` (390 and 1280 px screenshots) and shared helpers in `e2e/ui.ts` and `e2e/db.ts`. The seed gives `PUBLISHED[1]` a profile, numbers and a Trujillo start. CI uploads `apps/web/test-results/` (artifact `e2e-test-results`) on every e2e run.
 
+## [Unreleased] - Rider routes (API)
+
+### Added
+- Rider routes and owner approval, API part (plan `docs/plans/2026-11-11-ui-redesign-layer-1.md` §6, R-D1…R-D8): `POST /api/trails` is open to any signed-in user (was admin only) and always stores a `draft` with the session user as the author; OriginGuard, the GPX limits, the sha256 refusal and the slug rules stay. A non-admin with 3 drafts gets 429 `TOO_MANY_PENDING`; the count and the insert run in one transaction under `pg_advisory_xact_lock(hashtext(author_id))`, so concurrent uploads cannot pass the limit together. Admins have no limit.
+- `GET /api/trails/:slug` also shows a `draft` or `hidden` trail to its author; every other user still gets the 404 of a missing slug.
+- `GET /api/me/trails` (signed in): the user's own trails, every status, newest first, summary fields + `status`. `GET /api/admin/trails?status=draft` (admin, `@Roles`): the moderation queue, oldest first, summary fields + `status` + `authorEmail` (null when the author was deleted).
+- `GET /api/trails` summary (D8): `elevationGainM`, `elevationLossM`, `elevationProfile` (nullable). The detail inherits them from the summary DTO. API client regenerated.
+
+### Security
+- `PATCH /api/trails/:slug` stays admin only (a rider gets 403). A rider cannot set `status` or any other unknown field through the multipart body (400, `forbidNonWhitelisted`). Mutation proofs: dropping the author clause, loosening it to any signed-in user, dropping the limit, the advisory lock, the draft filter in the count, or `@Roles` on the queue each turn a test red.
+
 ## [Unreleased] - Phase 1b-min
 
 ### Fixed
