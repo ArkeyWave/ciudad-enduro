@@ -20,3 +20,18 @@ const number = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 1 });
 
 export const formatKm = (meters: number) => `${number.format(meters / 1000)} km`;
 export const formatM = (meters: number) => `${number.format(meters)} m`;
+
+/**
+ * `count` points of the profile, evenly spaced by index, first and last kept; a shorter profile as is.
+ * For the card's mini profile.
+ */
+export function sampleProfile(profile: number[][], count: number): number[][] {
+  if (profile.length <= count) return profile;
+  return Array.from({ length: count }, (_, i) => profile[Math.round((i * (profile.length - 1)) / (count - 1))] as number[]);
+}
+
+/** Pendiente in % (prototype formula: gain / distance), or null when it cannot be computed. */
+export function slopePct(gainM: number | null | undefined, distanceM: number | null | undefined): number | null {
+  if (gainM == null || distanceM == null || distanceM === 0) return null;
+  return Math.round((gainM / distanceM) * 100);
+}

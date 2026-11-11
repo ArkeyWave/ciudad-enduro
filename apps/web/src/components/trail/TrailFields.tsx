@@ -1,8 +1,5 @@
 import type { TrailDetail } from 'api-client';
 import { CITIES, DIFFICULTIES, difficultyLabel, TRAIL_TYPES, trailTypeLabel } from '../../lib/labels';
-import { input } from '../sign-in/styles';
-
-export const column = { display: 'flex', flexDirection: 'column', gap: 12 } as const;
 
 // Limits of the API DTOs (NAME_MAX, DESCRIPTION_MAX).
 const NAME_MAX = 80;
@@ -14,13 +11,13 @@ type Values = Pick<TrailDetail, 'name' | 'city' | 'difficulty' | 'type' | 'descr
 export function TrailFields({ values }: { values?: Values }) {
   return (
     <>
-      <label style={column}>
+      <label className="field">
         Nombre
-        <input name="name" required maxLength={NAME_MAX} defaultValue={values?.name} style={input} />
+        <input name="name" required maxLength={NAME_MAX} defaultValue={values?.name} />
       </label>
-      <label style={column}>
+      <label className="field">
         Ciudad
-        <select name="city" required defaultValue={values?.city} style={input}>
+        <select name="city" required defaultValue={values?.city}>
           {CITIES.map((city) => (
             <option key={city} value={city}>
               {city}
@@ -28,9 +25,9 @@ export function TrailFields({ values }: { values?: Values }) {
           ))}
         </select>
       </label>
-      <label style={column}>
+      <label className="field">
         Dificultad
-        <select name="difficulty" required defaultValue={values?.difficulty} style={input}>
+        <select name="difficulty" required defaultValue={values?.difficulty}>
           {DIFFICULTIES.map((slug) => (
             <option key={slug} value={slug}>
               {difficultyLabel(slug)}
@@ -38,9 +35,9 @@ export function TrailFields({ values }: { values?: Values }) {
           ))}
         </select>
       </label>
-      <label style={column}>
+      <label className="field">
         Tipo
-        <select name="type" required defaultValue={values?.type} style={input}>
+        <select name="type" required defaultValue={values?.type}>
           {TRAIL_TYPES.map((slug) => (
             <option key={slug} value={slug}>
               {trailTypeLabel(slug)}
@@ -48,9 +45,9 @@ export function TrailFields({ values }: { values?: Values }) {
           ))}
         </select>
       </label>
-      <label style={column}>
+      <label className="field">
         Descripción
-        <textarea name="description" rows={4} maxLength={DESCRIPTION_MAX} defaultValue={values?.description} style={input} />
+        <textarea name="description" rows={4} maxLength={DESCRIPTION_MAX} defaultValue={values?.description} />
       </label>
     </>
   );

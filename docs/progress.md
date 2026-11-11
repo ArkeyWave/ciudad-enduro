@@ -45,7 +45,7 @@ Capabilities and their proofs are in [features.json](features.json). The backlog
   rollback, daily on-box DB dump with a proven restore). Still open: the off-box R2 copy (A8, owner keys).
 - **Rider routes + owner approval** (riders upload GPX → "En revisión" → owner publishes one by one).
 - **UI redesign layer 1** (#13): the approved "Night Rider" prototype on the screens the API already
-  supports (Explorar list + map, Detalle, Importar GPX, Ingresar). Plan in progress, then the gate.
+  supports (Explorar list + map, Detalle, Importar GPX, Ingresar) — PR #51; rider pages wait for PR #50.
 - **Elevation calibration (D11)**: one real ride GPX with the device's distance and gain, before the
   first real trails are imported (owner rides 2026-11-15).
 

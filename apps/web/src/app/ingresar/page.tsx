@@ -8,8 +8,10 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
   const siteKey = process.env.TURNSTILE_SITE_KEY;
   if (!siteKey) throw new Error('TURNSTILE_SITE_KEY is required');
   return (
-    <main style={{ maxWidth: 420, margin: '0 auto', padding: 16 }}>
-      <h1 style={{ color: '#CCFF00' }}>Ingresar</h1>
+    <main className="page narrow">
+      <div className="head">
+        <h1 className="h-display">Ingresar</h1>
+      </div>
       <SignInForm initialMessage={googleErrorMessage(typeof error === 'string' ? error : null)} siteKey={siteKey} />
     </main>
   );

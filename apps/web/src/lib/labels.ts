@@ -34,3 +34,12 @@ function lookup(labels: Record<string, string>, kind: string, slug: string): str
 export const difficultyLabel = (slug: Difficulty): string => lookup(DIFFICULTY_LABELS, 'difficulty', slug);
 export const trailTypeLabel = (slug: TrailType): string => lookup(TRAIL_TYPE_LABELS, 'trail type', slug);
 export const statusLabel = (slug: TrailStatus): string => lookup(STATUS_LABELS, 'trail status', slug);
+
+const REVIEW_LABELS = {
+  draft: 'En revisión',
+  published: 'Publicada',
+  hidden: 'No aprobada',
+} satisfies Record<TrailStatus, string>;
+
+/** The chip a rider sees on an own trail. */
+export const reviewLabel = (slug: TrailStatus): string => lookup(REVIEW_LABELS, 'trail status', slug);

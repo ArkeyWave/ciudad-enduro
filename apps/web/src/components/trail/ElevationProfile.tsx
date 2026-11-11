@@ -1,9 +1,8 @@
 import type { TrailDetail } from 'api-client';
 import { formatKm, formatM, profilePolyline } from '../../lib/profile';
-import { LIME } from '../sign-in/styles';
 
 const WIDTH = 600;
-const HEIGHT = 160;
+const HEIGHT = 120;
 
 type Props = Pick<TrailDetail, 'distanceM' | 'elevationGainM' | 'elevationLossM' | 'elevationMinM' | 'elevationMaxM'> & {
   profile: number[][];
@@ -19,31 +18,25 @@ export function ElevationProfile({ profile, distanceM, elevationGainM, elevation
     ['Altura máxima', elevationMaxM === null ? null : formatM(elevationMaxM)],
   ];
   return (
-    <section aria-labelledby="perfil">
-      <h2 id="perfil" style={{ fontSize: 20 }}>
+    <section aria-labelledby="perfil" className="card card-pad profile-card">
+      <h2 id="perfil" className="eyebrow">
         Perfil de elevación
       </h2>
       <svg
         data-testid="elevation-profile"
         aria-hidden="true"
+        className="profile-svg"
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         preserveAspectRatio="none"
-        style={{ width: '100%', height: HEIGHT, background: '#141414', borderRadius: 8 }}
       >
-        <polyline
-          points={profilePolyline(profile, WIDTH, HEIGHT)}
-          fill="none"
-          stroke={LIME}
-          strokeWidth={2}
-          vectorEffect="non-scaling-stroke"
-        />
+        <polyline points={profilePolyline(profile, WIDTH, HEIGHT)} fill="none" strokeWidth={2} vectorEffect="non-scaling-stroke" />
       </svg>
-      <dl style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 12px' }}>
+      <dl className="facts">
         {facts.map(([label, value]) =>
           value === null ? null : (
-            <div key={label} style={{ display: 'contents' }}>
+            <div key={label} className="fact">
               <dt>{label}</dt>
-              <dd style={{ margin: 0 }}>{value}</dd>
+              <dd>{value}</dd>
             </div>
           ),
         )}

@@ -1,6 +1,9 @@
 import { cache } from 'react';
 import { createApiClient, type components, type TrailDetail, type TrailSummary } from 'api-client';
 
+export type MyTrail = components['schemas']['MyTrailDto'];
+export type QueueTrail = components['schemas']['QueueTrailDto'];
+
 /** A server-side API call that takes longer fails, so a hung API shows the error page. */
 export const API_TIMEOUT_MS = 5000;
 
@@ -53,4 +56,25 @@ export async function getTrail(slug: string, cookie: string): Promise<TrailDetai
   if (data) return data;
   if (response.status === 404) return null;
   throw new Error(`GET /api/trails/:slug failed with ${response.status}`);
+}
+
+/** The signed-in user's own trails, every status, newest first. */
+export async function listMyTrails(cookie: string): Promise<MyTrail[]> {
+  const { data, response } = await apiClient().GET('/api/me/trails', {
+    headers: { cookie },
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+  if (!data) throw new Error(`GET /api/me/trails failed with ${response.status}`);
+  return data;
+}
+
+/** The moderation queue (admin): drafts, oldest first, with the author's e-mail. */
+export async function listQueue(cookie: string): Promise<QueueTrail[]> {
+  const { data, response } = await apiClient().GET('/api/admin/trails', {
+    params: { query: { status: 'draft' } },
+    headers: { cookie },
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+  if (!data) throw new Error(`GET /api/admin/trails failed with ${response.status}`);
+  return data;
 }
