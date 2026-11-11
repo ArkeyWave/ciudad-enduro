@@ -79,6 +79,26 @@
         ],
         "type": "string"
       },
+      "ErrorBodyDto": {
+        "properties": {
+          "code": {
+            "example": "TOO_MANY_PENDING",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "slug": {
+            "description": "GPX_DUPLICATE only, when the uploader may see that trail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
       "MeDto": {
         "properties": {
           "email": {
@@ -706,8 +726,35 @@
             },
             "description": ""
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "GPX_* or SLUG_EMPTY, or a validation error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "GPX_DUPLICATE (slug only when visible to the uploader) or SLUG_TAKEN"
+          },
           "429": {
-            "description": "TOO_MANY_PENDING: a non-admin already has 3 drafts"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts"
           }
         },
         "tags": [

@@ -20,6 +20,9 @@
 - `GET /api/trails` summary (D8): `elevationGainM`, `elevationLossM`, `elevationProfile` (nullable). The detail inherits them from the summary DTO. API client regenerated.
 
 ### Security
+- Review round 1 of PR #50: the 409 `GPX_DUPLICATE` body gives the `slug` only when the uploader may see that trail (published, own, or admin), also on the race branch (F1). A non-admin's draft count runs once before the GPX parse as a shortcut and again under the lock in the insert transaction (F3). The advisory lock uses two keys, `(7301, hashtext(author_id))`, so it never shares a key with the one-key OTP lock (F4).
+- Resource abuse now that riders reach the parser (S2): a byte scan before the XML validator refuses a file with more than 2000 + 24 × (number of `<trkpt`) tags with 400 `GPX_TOO_COMPLEX` (a Garmin point with ele, time and three extension values has 16 `<`; a 2-point file padded with 250 000 empty elements is refused). `UploadThrottleGuard` runs before the multipart parser: a non-admin gets 429 `TOO_MANY_UPLOADS` after 10 attempts in 10 minutes (sliding window, in memory per API process). The 400, 409 and 429 answers of `POST /api/trails` document the `ErrorBodyDto` body (`code`, `message`, optional `slug`) in OpenAPI; API client regenerated.
+- `docs/operations/trails-import.md`: any signed-in user uploads; the author sees own drafts; the new codes.
 - `PATCH /api/trails/:slug` stays admin only (a rider gets 403). A rider cannot set `status` or any other unknown field through the multipart body (400, `forbidNonWhitelisted`). Mutation proofs: dropping the author clause, loosening it to any signed-in user, dropping the limit, the advisory lock, the draft filter in the count, or `@Roles` on the queue each turn a test red.
 
 ## [Unreleased] - Phase 1b-min

@@ -17,6 +17,8 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBody,
+  ApiBadRequestResponse,
+  ApiConflictResponse,
   ApiConsumes,
   ApiCreatedResponse,
   ApiNotFoundResponse,
@@ -28,9 +30,10 @@ import type { Auth } from '../auth/auth.factory.js';
 import { OriginGuard } from '../auth/origin.guard.js';
 import { hasRole } from '../auth/roles.js';
 import { ListTrailsQuery } from './dto/list-trails.query.js';
-import { TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
+import { ErrorBodyDto, TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
 import { CreateTrailBody, CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
 import { TrailsService } from './trails.service.js';
+import { UploadThrottleGuard } from './upload-throttle.js';
 
 const MiB = 1024 * 1024;
 // Multer limits (plan D2, M8): one file, at most 6 text fields, 8 KiB per field. Field names are
@@ -82,21 +85,27 @@ export class TrailsController {
     return trail;
   }
 
-  // Any signed-in user (plan R-D1). Order: auth guard (401) → origin (403) → multipart parser →
-  // GPX parser → pending limit for a non-admin (429).
+  // Any signed-in user (plan R-D1). Order: auth guard (401) → origin (403) → upload throttle for a
+  // non-admin (429 TOO_MANY_UPLOADS) → multipart parser → pending limit for a non-admin (429
+  // TOO_MANY_PENDING, rechecked under a lock at the insert) → GPX parser.
   @Post()
-  @UseGuards(OriginGuard)
+  @UseGuards(OriginGuard, UploadThrottleGuard)
   @UseInterceptors(FileInterceptor('gpx', { limits: GPX_UPLOAD_LIMITS }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: CreateTrailBody })
   @ApiCreatedResponse({ type: TrailDetailDto })
-  @ApiTooManyRequestsResponse({ description: 'TOO_MANY_PENDING: a non-admin already has 3 drafts' })
+  @ApiBadRequestResponse({ type: ErrorBodyDto, description: 'GPX_* or SLUG_EMPTY, or a validation error' })
+  @ApiConflictResponse({ type: ErrorBodyDto, description: 'GPX_DUPLICATE (slug only when visible to the uploader) or SLUG_TAKEN' })
+  @ApiTooManyRequestsResponse({
+    type: ErrorBodyDto,
+    description: 'TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts',
+  })
   create(
     @Body() body: CreateTrailDto,
     @UploadedFile(new ParseFilePipe()) file: { buffer: Buffer },
     @Session() session: UserSession<Auth>,
   ): Promise<TrailDetailDto> {
-    return this.trails.createFromGpx(body, session.user.id, !isAdmin(session), file.buffer);
+    return this.trails.createFromGpx(body, { id: session.user.id, admin: isAdmin(session) }, file.buffer);
   }
 
   @Patch(':slug')

@@ -6,6 +6,7 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { trails } from '../src/db/schema/index.js';
+import { UploadAttempts } from '../src/trails/upload-throttle.js';
 import { openTestClient } from './test-db.js';
 import { createAuthTestApp, signInWithOtp, truncateAuth, uniqueIp, WEB_ORIGIN, type AuthTestApp } from './support/test-app.js';
 
@@ -53,6 +54,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await client.query('TRUNCATE trails, trail_sources');
+  t.app.get(UploadAttempts).clear();
 });
 
 const fields = { name: 'Cerro de prueba', city: 'Chimbote', difficulty: 'intermedio', type: 'descenso' };
@@ -161,6 +163,46 @@ describe('POST /api/trails: a rider (R-D1, R-D2)', () => {
     } finally {
       await client.query('drop trigger slow_trail on trails');
     }
+  });
+
+  it('answers 429 before it parses the file, and parses it below the limit', async () => {
+    const broken = new TextEncoder().encode('<gpx><trk>');
+    await seed('a', 'draft', riderId);
+    await seed('b', 'draft', riderId);
+    expect((await upload(as(rider), fields, broken)).status).toBe(400);
+    await seed('c', 'draft', riderId);
+    expect((await upload(as(rider), fields, broken)).status).toBe(429);
+  });
+
+  it('gives the slug of a known file only to who may see that trail (F1)', async () => {
+    expect((await upload(as(rider))).status).toBe(201);
+    const dup = async (cookie: string) => {
+      const res = await upload(as(cookie), { ...fields, name: 'Otro nombre' });
+      expect(res.status).toBe(409);
+      return (await res.json()) as { code: string; slug?: string };
+    };
+    const foreign = await dup(other);
+    expect(foreign.code).toBe('GPX_DUPLICATE');
+    expect(foreign).not.toHaveProperty('slug');
+    expect(await dup(rider)).toMatchObject({ code: 'GPX_DUPLICATE', slug: 'cerro-de-prueba' });
+    expect(await dup(admin)).toMatchObject({ code: 'GPX_DUPLICATE', slug: 'cerro-de-prueba' });
+    await client.query(`update trails set status = 'published'`);
+    expect(await dup(other)).toMatchObject({ code: 'GPX_DUPLICATE', slug: 'cerro-de-prueba' });
+  });
+
+  it('answers 429 TOO_MANY_UPLOADS to the 11th attempt of a rider, before the multipart parser (S2)', async () => {
+    const broken = new TextEncoder().encode('<gpx><trk>');
+    for (let i = 0; i < 10; i++) expect((await upload(as(rider), fields, broken)).status).toBe(400);
+    // Seven text fields: the multipart parser would answer 400, so a 429 proves the throttle runs first.
+    const res = await upload(as(rider), { ...fields, description: 'x', a: '1', b: '2' });
+    expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({ code: 'TOO_MANY_UPLOADS' });
+    expect((await upload(as(other), fields, broken)).status).toBe(400);
+  });
+
+  it('does not throttle an admin', async () => {
+    const broken = new TextEncoder().encode('<gpx><trk>');
+    for (let i = 0; i < 11; i++) expect((await upload(as(admin), fields, broken)).status).toBe(400);
   });
 
   it('refuses an admin-only field (status) in the multipart body of a rider', async () => {

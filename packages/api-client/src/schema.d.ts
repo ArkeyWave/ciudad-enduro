@@ -124,6 +124,13 @@ export interface components {
         };
         /** @enum {string} */
         Difficulty: "facil" | "intermedio" | "dificil";
+        ErrorBodyDto: {
+            /** @example TOO_MANY_PENDING */
+            code: string;
+            message: string;
+            /** @description GPX_DUPLICATE only, when the uploader may see that trail */
+            slug?: string;
+        };
         MeDto: {
             email: string;
             id: string;
@@ -368,12 +375,32 @@ export interface operations {
                     "application/json": components["schemas"]["TrailDetailDto"];
                 };
             };
-            /** @description TOO_MANY_PENDING: a non-admin already has 3 drafts */
+            /** @description GPX_* or SLUG_EMPTY, or a validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description GPX_DUPLICATE (slug only when visible to the uploader) or SLUG_TAKEN */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts */
             429: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
             };
         };
     };

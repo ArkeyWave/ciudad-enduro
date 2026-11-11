@@ -51,8 +51,10 @@ The change applies to the next request; the owner does not sign in again. To tak
 
 ## 3. Upload, check, publish
 
-1. On the web, open "Nueva ruta" (`/rutas/nueva`, admin only), choose the file and fill in name, city,
-   difficulty, type and description. The trail is stored as a **draft**: only an admin sees it.
+1. On the web, open "Nueva ruta" (`/rutas/nueva`, any signed-in user), choose the file and fill in name,
+   city, difficulty, type and description. The trail is stored as a **draft**: only an admin and its
+   author see it. A non-admin with 3 drafts gets 429 `TOO_MANY_PENDING`. The moderation queue is
+   `GET /api/admin/trails?status=draft` (admin).
 2. Check the draft page: the map, the distance, the gain and loss, the profile.
 3. Publish it ("Publicar"). "Ocultar" hides it again; there is no delete in the API.
 
@@ -63,11 +65,14 @@ Error codes of the upload (HTTP 400 unless stated):
 | `GPX_INVALID` | Not UTF-8, a DOCTYPE, malformed XML, root is not `gpx`, elements nested deeper than 100, a reserved name such as `constructor`, a `<trkpt>` without a valid `lat`/`lon`, or a distance or a gain above the int4 range |
 | `GPX_EMPTY` | Fewer than 2 points, or a total distance of 0 |
 | `GPX_TOO_LARGE` | More than 100 000 points (a file above 10 MiB gets HTTP 413) |
+| `GPX_TOO_COMPLEX` | More than 2000 + 24 × (number of points) tags (`<`): padding, not a ride |
 | `GPX_MULTI_SEGMENT` | More than one `<trk>` (an empty one counts) or more than one non-empty segment (step 2.2) |
 | `GPX_OUT_OF_AREA` | A point outside Peru |
 | `SLUG_EMPTY` | The name has no letter or digit |
-| `GPX_DUPLICATE` (409) | This exact file is already imported; the response gives its `slug` (checked before the slug, so it wins over `SLUG_TAKEN`) |
+| `GPX_DUPLICATE` (409) | This exact file is already imported; the response gives its `slug` only when the uploader may see that trail (published, own, or admin). Checked before the slug, so it wins over `SLUG_TAKEN` |
 | `SLUG_TAKEN` (409) | The name and its suffixes `-2` … `-5` are all taken; choose another name |
+| `TOO_MANY_UPLOADS` (429) | A non-admin made 10 upload attempts in 10 minutes (per API process) |
+| `TOO_MANY_PENDING` (429) | A non-admin already has 3 drafts |
 
 ## 4. Calibration on staging (before the first production import, plan D11)
 
