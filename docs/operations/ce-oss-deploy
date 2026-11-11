@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# ce-oss-deploy v2 — the ONLY command a CI deploy key can run on vops-infra.
+# ce-oss-deploy v3 — the ONLY command a CI deploy key can run on vops-infra.
 # Installed at /usr/local/bin/ce-oss-deploy (root 755). The target is fixed per key in
 # /root/.ssh/authorized_keys; the caller can never choose it:
 #   restrict,command="/usr/local/bin/ce-oss-deploy staging" ssh-ed25519 AAAA... ci-deploy@ciudad-enduro-oss
+#   restrict,command="/usr/local/bin/ce-oss-deploy production" ssh-ed25519 AAAA... ci-deploy-prod@ciudad-enduro-oss
 #
-# Input: SSH_ORIGINAL_COMMAND = "<sha> <api-digest> <web-digest>": a commit on main and the
-# manifest digests of the two images CI built, checked and pushed to GHCR for it.
+# Input: SSH_ORIGINAL_COMMAND
+#   staging:    "<sha> <api-digest> <web-digest>": a commit on main and the manifest digests of
+#               the two images CI built, checked and pushed to GHCR for it;
+#   production: "<sha>" only. The digests come from the staging promotion record of <sha>, so
+#               production runs only a pair that passed staging.
 # Effect, in order, stopping at the first failure:
 #   1. refuses a SHA that is not on main, and a rollback (see below);
 #   2. preflight of BOTH images before either app is touched: pull by digest, GitHub build
@@ -14,13 +18,17 @@
 #   3. deploys api, then web, by digest through Coolify (pull, no build), and checks that each
 #      app runs exactly the pulled image;
 #   4. origin lock, live revision and home page;
-#   5. writes the promotion record /var/lib/ce-oss/promoted/<sha> (production deploys only a
-#      recorded pair).
+#   5. staging writes the promotion record /var/lib/ce-oss/promoted/<sha> (production deploys
+#      only a recorded pair); production writes its own record /var/lib/ce-oss/production/<sha>.
 # Nothing from the repo is built or run on the box except the attested images themselves.
 #
 # Rollback to an older main commit is refused unless an operator on the box sets ROLLBACK=1
 # (sshd passes no such variable from the CI key). A GitHub or Sigstore outage blocks every
 # deploy, ROLLBACK=1 included (fail closed).
+#
+# PRIVATE=1 (operator only, like ROLLBACK=1): a deploy that no public router serves. Both apps
+# must store the label traefik.enable=false before the deploy, and both containers must carry
+# it after; step 4 then checks /api/health and the home page on the container IPs instead.
 set -euo pipefail
 umask 077
 
@@ -32,6 +40,7 @@ GH_TOKEN_FILE=/root/.secrets/ce-oss-gh-attest.env
 STATE=/var/cache/ce-oss-deploy
 CACHE=$STATE/repo.git
 PROMOTED=/var/lib/ce-oss/promoted
+PROD_DEPLOYED=/var/lib/ce-oss/production
 BOX_IP=104.152.209.8
 REVISION=org.opencontainers.image.revision
 
@@ -41,18 +50,38 @@ log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
 target=${1:-}
 case "$target" in
-  staging) API_UUID=c6mm7pwdmoysv0eg2vgwo4bi WEB_UUID=whfatie8ek3wh09ite3mnqn0 HOST=enduro-next.vops.pe ;;
+  staging) API_UUID=c6mm7pwdmoysv0eg2vgwo4bi WEB_UUID=whfatie8ek3wh09ite3mnqn0 HOST=enduro-next.vops.pe
+    RECORDS=$PROMOTED ;;
+  production) API_UUID=ith1im25jwpamnvthlikfglq WEB_UUID=gwn5ys9bnjvn7fasm6egvxw4 HOST=enduro.vops.pe
+    RECORDS=$PROD_DEPLOYED ;;
   *) refuse "unknown target '$target'" ;;
 esac
+API_PORT=3001 WEB_PORT=3000
+private=0; [ "${PRIVATE:-}" = 1 ] && private=1
 
 request=${SSH_ORIGINAL_COMMAND:-}
 re='^([0-9a-f]{40}) (sha256:[0-9a-f]{64}) (sha256:[0-9a-f]{64})$'
-[[ $request =~ $re ]] || refuse "expected '<40-hex sha> sha256:<64-hex api digest> sha256:<64-hex web digest>'"
-sha=${BASH_REMATCH[1]} api_digest=${BASH_REMATCH[2]} web_digest=${BASH_REMATCH[3]}
+if [ "$target" = staging ]; then
+  [[ $request =~ $re ]] || refuse "expected '<40-hex sha> sha256:<64-hex api digest> sha256:<64-hex web digest>'"
+  sha=${BASH_REMATCH[1]} api_digest=${BASH_REMATCH[2]} web_digest=${BASH_REMATCH[3]}
+else
+  [[ $request =~ ^[0-9a-f]{40}$ ]] || refuse "expected '<40-hex sha>'"
+  sha=$request
+fi
 
 install -d -m 700 "$STATE"
 exec 9>"$STATE/lock.$target"
 flock -w 1800 9 || refuse "another $target deploy held the lock for 30 min"
+
+# Production takes the digests from the staging promotion record of the SHA, never from the caller.
+if [ "$target" = production ]; then
+  record=$PROMOTED/$sha
+  [ -f "$record" ] || refuse "$sha has no staging promotion record"
+  read -r r_sha r_api r_web _ < "$record" || refuse "cannot read $record"
+  [[ "$r_sha $r_api $r_web" =~ $re ]] && [ "$r_sha" = "$sha" ] || refuse "$record is malformed"
+  api_digest=$r_api web_digest=$r_web
+  log "staging promotion record: api $api_digest, web $web_digest"
+fi
 
 # Only commits reachable from main can deploy. The cache fetches main only, so a fork or
 # branch commit is not even present here.
@@ -75,9 +104,9 @@ label_of() { # IMAGE -> its revision label, empty when absent
   docker image inspect "$1" -f "{{with .Config.Labels}}{{index . \"$REVISION\"}}{{end}}" 2>/dev/null || true
 }
 
-newest_promoted() { # -> SHA of the promotion record with the newest UTC date (field 4), empty when none
+newest_record() { # -> SHA of the target's record with the newest UTC date (field 4), empty when none
   local f s d
-  for f in "$PROMOTED"/*; do
+  for f in "$RECORDS"/*; do
     [[ ${f##*/} =~ ^[0-9a-f]{40}$ ]] || continue
     read -r s _ _ d < "$f" || continue
     [[ $s = "${f##*/}" && $d =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] && echo "$d $s"
@@ -87,8 +116,8 @@ newest_promoted() { # -> SHA of the promotion record with the newest UTC date (f
 # Rollback guard: the lower bound is the revision label of the image of the newest api container,
 # in any state (a stopped or restarting api still counts). An image without the label (a Coolify
 # build before v2) is refused unless ROLLBACK=1. A Coolify stop removes the containers, so with no
-# api container at all the bound is the newest promotion record (by its UTC date); no record
-# either passes (the first v2 deploy). A bound that is not on main, or a SHA older than the bound,
+# api container at all the bound is the target's newest record (by its UTC date: staging the
+# promotion records, production its own deploy records); no record either passes (the first deploy). A bound that is not on main, or a SHA older than the bound,
 # is refused unless ROLLBACK=1.
 live=$(latest_container "$API_UUID")
 if [ -n "$live" ]; then
@@ -98,7 +127,7 @@ if [ -n "$live" ]; then
     log "ROLLBACK=1: the api image has no revision label"
   fi
 else
-  live_sha=$(newest_promoted) from="the newest promotion record"
+  live_sha=$(newest_record) from="the newest $target record"
 fi
 if [[ $live_sha =~ ^[0-9a-f]{40}$ ]] && [ "$live_sha" != "$sha" ]; then
   if ! git -C "$CACHE" cat-file -e "$live_sha^{commit}" 2>/dev/null; then
@@ -137,6 +166,18 @@ for app in "$API_UUID" "$WEB_UUID"; do
   bp=$(build_pack_of "$app")
   [ "$bp" = dockerimage ] || refuse "app $app has build pack '${bp:-none}', expected dockerimage"
 done
+
+# PRIVATE=1: no public router may come up. Coolify stores custom_labels base64; both apps must
+# store exactly one traefik.enable label, =false, before anything changes.
+stored_labels() { docker exec coolify-db psql -U coolify -d coolify -tAc "select custom_labels from applications where uuid='$1'" | base64 -d; }
+if [ $private = 1 ]; then
+  for app in "$API_UUID" "$WEB_UUID"; do
+    labels=$(stored_labels "$app") || refuse "app $app: cannot read its stored labels"
+    [ "$(grep -E '^traefik\.enable=' <<<"$labels")" = traefik.enable=false ] ||
+      refuse "PRIVATE=1: app $app does not store exactly one traefik.enable=false label"
+  done
+  log "PRIVATE=1: both apps store traefik.enable=false"
+fi
 
 # Coolify API on loopback inside the coolify container. The token goes in on stdin and
 # into a curl config file there, never into any argv.
@@ -219,34 +260,106 @@ origin_lock_ok() {
   done
 }
 
+# Every running container on the box whose labels name the host (the router rule's fixed
+# string) must be one of the two apps: an old app that still claims the host fails the deploy.
+host_owners_ok() {
+  local want got c values rule="Host(\`$HOST\`)"
+  want=$({ running_containers "$API_UUID"; running_containers "$WEB_UUID"; } | sort)
+  # The labels go into a variable first: with pipefail, grep -q closing the pipe early would
+  # turn a match into a SIGPIPE failure of docker inspect.
+  got=$(for c in $(docker ps -q); do
+    values=$(docker inspect "$c" -f '{{range $k,$v := .Config.Labels}}{{$v}}{{"\n"}}{{end}}') || values=""
+    grep -qF "$rule" <<<"$values" && echo "$c"
+  done | sort)
+  [ "$got" = "$want" ] ||
+    { echo "FAIL host: running containers with $rule: $(echo $got); expected $(echo $want)" >&2; return 1; }
+}
+
+# PRIVATE=1: both containers keep Traefik off and publish no host port.
+private_ok() {
+  local uuid c
+  for uuid in "$API_UUID" "$WEB_UUID"; do
+    c=$(running_containers "$uuid")
+    [ -n "$c" ] || { echo "FAIL private: no running container for $uuid" >&2; return 1; }
+    for c in $c; do
+      [ "$(docker inspect "$c" -f '{{index .Config.Labels "traefik.enable"}}')" = false ] ||
+        { echo "FAIL private: $c does not carry traefik.enable=false" >&2; return 1; }
+      [ -z "$(docker port "$c")" ] || { echo "FAIL private: $c publishes a host port" >&2; return 1; }
+    done
+  done
+}
+
+container_ips() { # APP_UUID -> the coolify network IP of each running container
+  local c
+  for c in $(running_containers "$1"); do
+    docker inspect "$c" -f '{{with index .NetworkSettings.Networks "coolify"}}{{.IPAddress}}{{end}}'
+  done
+}
+
+[ $private = 1 ] && log "PRIVATE=1: no public check; the checks run on the container IPs"
 log "deploying $sha to $target"
 deploy "$API_UUID" api "$API_REPO" "$api_digest"
 deploy "$WEB_UUID" web "$WEB_REPO" "$web_digest"
 
-if ! origin_lock_ok; then
-  stop_app "$API_UUID" api
-  stop_app "$WEB_UUID" web
-  die "origin lock check failed; both apps stopped"
+if [ $private = 1 ]; then
+  if ! private_ok; then
+    stop_app "$API_UUID" api
+    stop_app "$WEB_UUID" web
+    die "private check failed; both apps stopped"
+  fi
+  log "private: both containers carry traefik.enable=false, no host ports"
+  # Each running container answers on its own IP, so a crashed new container behind an old one
+  # cannot hide.
+  ok=0 seen=""
+  for _ in $(seq 18); do
+    ok=1 seen=""
+    for ip in $(container_ips "$API_UUID"); do
+      revision=$(curl -fsS --max-time 10 "http://$ip:$API_PORT/api/health" | jq -r '.revision // empty' || true)
+      [ "$revision" = "$sha" ] || ok=0
+      seen+=" api $ip revision=${revision:-none}"
+    done
+    for ip in $(container_ips "$WEB_UUID"); do
+      home=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://$ip:$WEB_PORT/" || true)
+      [ "$home" = 200 ] || ok=0
+      seen+=" web $ip home=${home:-none}"
+    done
+    [[ $seen = *" api "* && $seen = *" web "* ]] || ok=0
+    [ $ok = 1 ] && break
+    sleep 10
+  done
+  [ $ok = 1 ] || die "private:${seen:- no container IP} (expected revision $sha and home 200)"
+  log "private:$seen"
+else
+  if ! origin_lock_ok || ! host_owners_ok; then
+    stop_app "$API_UUID" api
+    stop_app "$WEB_UUID" web
+    die "origin lock check failed; both apps stopped"
+  fi
+  log "origin lock: direct 403 for / and /api/health, every router has cloudflare-only@file, no host ports, only these apps claim $HOST"
+
+  # A crashed new container behind an old one would still answer: compare the revision, and
+  # wait for the home page in the same loop.
+  revision=""; home=""
+  for _ in $(seq 18); do
+    revision=$(curl -fsS --max-time 10 "https://$HOST/api/health" | jq -r '.revision // empty' || true)
+    home=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$HOST/" || true)
+    [ "$revision" = "$sha" ] && [ "$home" = 200 ] && break
+    sleep 10
+  done
+  [ "$revision" = "$sha" ] && [ "$home" = 200 ] ||
+    die "live revision is '${revision:-none}' (expected $sha), home answered '${home:-none}'"
+  log "live: https://$HOST/api/health revision=$revision, home 200"
 fi
-log "origin lock: direct 403 for / and /api/health, every router has cloudflare-only@file, no host ports"
 
-# A crashed new container behind an old one would still answer: compare the revision, and
-# wait for the home page in the same loop.
-revision=""; home=""
-for _ in $(seq 18); do
-  revision=$(curl -fsS --max-time 10 "https://$HOST/api/health" | jq -r '.revision // empty' || true)
-  home=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$HOST/" || true)
-  [ "$revision" = "$sha" ] && [ "$home" = 200 ] && break
-  sleep 10
-done
-[ "$revision" = "$sha" ] && [ "$home" = 200 ] ||
-  die "live revision is '${revision:-none}' (expected $sha), home answered '${home:-none}'"
-log "live: https://$HOST/api/health revision=$revision, home 200"
-
-# Promotion record: production deploys only a pair that passed here. Written by rename, so a
-# reader never sees a partial file.
-install -d -m 700 "$PROMOTED"
-tmp=$(mktemp "$PROMOTED/.$sha.XXXXXX")
+# Record of the deploy, written by rename so a reader never sees a partial file. Staging: the
+# promotion record (production deploys only a pair that passed here); a PRIVATE=1 staging deploy
+# promotes nothing. Production: the lower bound of its own rollback guard.
+if [ "$target" = staging ] && [ $private = 1 ]; then
+  log "PRIVATE=1: no promotion record"
+  exit 0
+fi
+install -d -m 700 "$RECORDS"
+tmp=$(mktemp "$RECORDS/.$sha.XXXXXX")
 printf '%s %s %s %s\n' "$sha" "$api_digest" "$web_digest" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp"
-mv -f "$tmp" "$PROMOTED/$sha"
-log "promoted: $PROMOTED/$sha"
+mv -f "$tmp" "$RECORDS/$sha"
+log "recorded: $RECORDS/$sha"

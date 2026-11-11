@@ -1,0 +1,80 @@
+name: Deploy production
+
+# Manual only. The owner dispatches it on main with the SHA of a main commit that staging has
+# already deployed. `preflight` (no secret) checks the SHA; the Environment `production`
+# (required reviewer = the owner, branch main only) then gates `deploy`, the only job with the
+# prod key. On the box that key can only run `/usr/local/bin/ce-oss-deploy production <sha>`,
+# which takes the digests from the staging promotion record (docs/operations/deploy.md).
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full 40-hex SHA of a main commit that staging deployed
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  # SHA on main; the CI run of that push to main succeeded; its `deploy-staging` job succeeded.
+  preflight:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check ${{ inputs.sha }}
+        env:
+          SHA: ${{ inputs.sha }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ $SHA =~ ^[0-9a-f]{40}$ ]] || { echo "::error::'$SHA' is not a full 40-hex SHA"; exit 1; }
+          # base...head: "identical" or "ahead" means main contains the SHA.
+          status=$(gh api "repos/$REPO/compare/$SHA...main" -q .status) ||
+            { echo "::error::$SHA is not a commit of this repository"; exit 1; }
+          case "$status" in
+            identical|ahead) echo "on main: $status" ;;
+            *) echo "::error::$SHA is not on main (compare status: $status)"; exit 1 ;;
+          esac
+          run=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&event=push&branch=main&status=success" \
+            -q '[.workflow_runs[] | select(.head_sha == env.SHA)][0].id // empty')
+          [ -n "$run" ] || { echo "::error::no successful CI run of the push of $SHA to main"; exit 1; }
+          echo "CI run $run: success"
+          job=$(gh api "repos/$REPO/actions/runs/$run/jobs?filter=latest" \
+            -q '[.jobs[] | select(.name == "deploy-staging")][0].conclusion // empty')
+          [ "$job" = success ] || { echo "::error::deploy-staging of run $run is '${job:-absent}', expected success"; exit 1; }
+          echo "deploy-staging of run $run: success"
+
+  deploy:
+    needs: [preflight]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    permissions: {}
+    steps:
+      # The input is checked again here, before the step that holds the secret.
+      - name: Check the SHA
+        env:
+          SHA: ${{ inputs.sha }}
+        run: '[[ $SHA =~ ^[0-9a-f]{40}$ ]] || { echo "::error::bad SHA"; exit 1; }'
+
+      - name: Deploy ${{ inputs.sha }} to enduro.vops.pe
+        env:
+          SHA: ${{ inputs.sha }}
+          DEPLOY_KEY: ${{ secrets.CE_OSS_PROD_DEPLOY_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo '104.152.209.8 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGroYXrLr2Jn8Rfj9IMmw161mTAN3C404FChVhYl3bju' > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            root@104.152.209.8 "$SHA"
