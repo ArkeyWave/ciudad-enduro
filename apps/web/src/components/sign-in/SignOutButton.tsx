@@ -16,7 +16,7 @@ export function SignOutButton() {
 
   return (
     <>
-      <button type="button" onClick={() => void onClick()} style={linkButton}>
+      <button type="button" onClick={() => void onClick()} style={{ ...linkButton, whiteSpace: 'nowrap', flexShrink: 0 }}>
         Salir
       </button>
       {failed && <span role="alert">{MESSAGES.generic}</span>}

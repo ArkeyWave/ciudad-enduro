@@ -2,6 +2,12 @@
 
 ## [Unreleased] - Phase 1b-min
 
+### Fixed
+- Header on a phone (found in the staging live check): at 390 px a long e-mail pushed "Salir" off-screen and made the page wider than the screen. The e-mail now shrinks with an ellipsis (`min-width: 0` in its flex row; the full address is the `title`), and the brand, "Nueva ruta" and "Salir" never shrink. E2E at 390×844 with a long address without hyphens, on `/` and on a trail page: no horizontal scroll, "Salir" fully in the viewport.
+
+### Documentation
+- `docs/features.json`: `trail-maps` and the new `gpx-import` pass (the e2e and API tests, and the staging live check of 2026-11-11: OSM trace 3100811, 201/404/409/403/401/publish/hide, 0 residual rows). `media-gpx` is split: `media` (photos, GPX export) stays false.
+
 ### Added
 - GPX import (B-A, plan `docs/plans/2026-11-11-phase-1b-min-gpx-trails.md`): `POST /api/trails` (multipart, one `gpx` file ≤ 10 MiB, at most 6 text fields of 8 KiB) parses one continuous ride and stores a **draft** with the full-resolution 2D path, start/end points, distance, elevation gain and loss (extrema hysteresis with T = 5 m, `ELEVATION_THRESHOLD_M`, plan M11: a leg counts from one confirmed peak or valley to the next, and every counted leg is at least T), and an elevation profile of at most 300 `[distance_m, ele_m]` points. `department` comes from the city. Slugs: diacritics removed, ≤ 56 characters, `nueva` reserved, `-2` … `-5` on a collision (each try in its own transaction), then 409 `SLUG_TAKEN`. Error codes: `GPX_INVALID`, `GPX_EMPTY`, `GPX_TOO_LARGE`, `GPX_MULTI_SEGMENT`, `GPX_OUT_OF_AREA`, `SLUG_EMPTY`, 409 `GPX_DUPLICATE` (with the existing `slug`).
 - `PATCH /api/trails/:slug` (JSON: `status`, `name`, `description`, `city`, `difficulty`, `type`; the slug never changes; `null` and an empty body answer 400). `GET /api/trails/:slug` gives an admin drafts and hidden trails too; everyone else still gets 404. The detail adds `status`, `elevationLossM`, `elevationMinM`, `elevationMaxM`, `elevationProfile`, and a display path simplified with `ST_SimplifyPreserveTopology` (0.00002°). API client regenerated.
