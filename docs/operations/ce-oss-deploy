@@ -75,20 +75,29 @@ label_of() { # IMAGE -> its revision label, empty when absent
   docker image inspect "$1" -f "{{with .Config.Labels}}{{index . \"$REVISION\"}}{{end}}" 2>/dev/null || true
 }
 
-# Rollback guard: the api revision comes from the revision label of the image of its newest
-# container, in any state (a stopped or restarting api still counts). Only "no api container at
-# all" passes; an image without the label (a Coolify build before v2) is refused unless
-# ROLLBACK=1; an older commit than that one is refused unless ROLLBACK=1.
+newest_promoted() { # -> SHA of the newest promotion record of this box, empty when none
+  ls -1t "$PROMOTED" 2>/dev/null | grep -E '^[0-9a-f]{40}$' | head -1 || true
+}
+
+# Rollback guard: the lower bound is the revision label of the image of the newest api container,
+# in any state (a stopped or restarting api still counts). An image without the label (a Coolify
+# build before v2) is refused unless ROLLBACK=1. A Coolify stop removes the containers, so with no
+# api container at all the bound is the newest promotion record; no record either passes (the
+# first v2 deploy). A SHA older than the bound is refused unless ROLLBACK=1.
 live=$(latest_container "$API_UUID")
 if [ -n "$live" ]; then
-  live_sha=$(label_of "$(docker inspect -f '{{.Image}}' "$live")")
+  live_sha=$(label_of "$(docker inspect -f '{{.Image}}' "$live")") from="the deployed"
   if ! [[ $live_sha =~ ^[0-9a-f]{40}$ ]]; then
     [ "${ROLLBACK:-}" = 1 ] || refuse "the api image has no $REVISION label; an operator on the box sets ROLLBACK=1"
     log "ROLLBACK=1: the api image has no revision label"
-  elif [ "$live_sha" != "$sha" ] && git -C "$CACHE" merge-base --is-ancestor "$sha" "$live_sha" 2>/dev/null; then
-    [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than the deployed $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
-    log "ROLLBACK=1: rolling back from $live_sha"
   fi
+else
+  live_sha=$(newest_promoted) from="the newest promotion record"
+fi
+if [[ $live_sha =~ ^[0-9a-f]{40}$ ]] && [ "$live_sha" != "$sha" ] &&
+  git -C "$CACHE" merge-base --is-ancestor "$sha" "$live_sha" 2>/dev/null; then
+  [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than $from $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
+  log "ROLLBACK=1: rolling back from $live_sha"
 fi
 
 # Preflight: both images before either app changes. The token (fine-grained, no permissions)
@@ -109,6 +118,14 @@ preflight() { # NAME REPO DIGEST
 }
 preflight api "$API_REPO" "$api_digest"
 preflight web "$WEB_REPO" "$web_digest"
+
+# Both apps must deploy a registry image. Any other build pack would ignore the digest PATCH and
+# build from source on the box.
+build_pack_of() { docker exec coolify-db psql -U coolify -d coolify -tAc "select build_pack from applications where uuid='$1'"; }
+for app in "$API_UUID" "$WEB_UUID"; do
+  bp=$(build_pack_of "$app")
+  [ "$bp" = dockerimage ] || refuse "app $app has build pack '${bp:-none}', expected dockerimage"
+done
 
 # Coolify API on loopback inside the coolify container. The token goes in on stdin and
 # into a curl config file there, never into any argv.
@@ -155,11 +172,14 @@ deploy() { # APP_UUID NAME REPO DIGEST
   [ "$status" = finished ] || die "$name: deployment $dep still '$status' after 30 min"
   want=$(docker image inspect "$repo@$digest" -f '{{.Id}}')
   got=$(app_images "$uuid")
+  # Two passes, so the result does not depend on the order of the IDs: an unchecked image first.
   for id in $got; do
-    [ "$id" = "$want" ] && continue
-    grep -qxF "$id" <<<"$before" && die "$name: the old image $id still runs, expected $want ($repo@$digest)"
+    [ "$id" = "$want" ] || grep -qxF "$id" <<<"$before" && continue
     stop_app "$uuid" "$name"
     die "$name: unchecked image $id runs, expected $want ($repo@$digest); app stopped"
+  done
+  for id in $got; do
+    [ "$id" = "$want" ] || die "$name: the old image $id still runs, expected $want ($repo@$digest)"
   done
   [ -n "$got" ] || die "$name: no running container, expected $want ($repo@$digest)"
   log "$name: finished, running $repo@$digest"
