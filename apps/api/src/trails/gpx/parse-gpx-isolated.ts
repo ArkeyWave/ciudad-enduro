@@ -1,7 +1,9 @@
 import { Worker } from 'node:worker_threads';
 import { GpxError, type GpxErrorCode, type Track } from './parse-gpx.js';
 
-// Under tests and `pnpm dev` this module is TypeScript; the built API runs dist/**/*.js.
+// Under tests and `pnpm dev` this module is TypeScript; the built API runs dist/**/*.js. The
+// TypeScript worker loads through tsx (esbuild in a child process): a native loader such as
+// @swc-node/register crashed the process (SIGSEGV) when a worker thread exited.
 const TS = import.meta.url.endsWith('.ts');
 const WORKER = new URL(`./gpx.worker.${TS ? 'ts' : 'js'}`, import.meta.url);
 
@@ -25,7 +27,7 @@ export function parseGpxIsolated(bytes: Uint8Array, timeoutMs = PARSE_TIMEOUT_MS
       workerData: copy,
       transferList: [copy.buffer],
       resourceLimits: PARSE_LIMITS,
-      execArgv: TS ? ['--import', '@swc-node/register/esm-register'] : [],
+      execArgv: TS ? ['--import', 'tsx'] : [],
     });
     const timer = setTimeout(() => {
       reject(new GpxError('GPX_TOO_COMPLEX'));
