@@ -236,3 +236,12 @@ succeeded" (Actions API). The CHANGELOG item is cut. Final list in issue #10.
 
 **R10 — small.** features.json title match: a `test(` or `it(` literal equal to the title, read from the
 index (`git show :<path>`). §0 adds: frontmatter `experimental`; `if` holds one rule.
+
+**R12 (from the P1a-3 review, 2026-11-11) — the guard also denies production dispatch and approval.** The
+local `gh` token is the owner's account (`repo` + `workflow`), and the owner is the required reviewer of the
+`production` Environment with "prevent self-review" off (G4). A local agent could therefore dispatch
+`deploy-production.yml` and approve it through the API. L2's `guard.mjs` adds two deny rules (both shells,
+same parsing as R3): `gh workflow run deploy-production…` (any spelling of the workflow: file name, name or
+id) and any `gh api` call to `…/pending_deployments`. Tests: must-deny for each spelling, must-allow for
+`gh workflow run ci.yml` and `gh run list`. This is an accident guard, not a boundary; only the owner approves,
+in the GitHub UI.
