@@ -31,7 +31,7 @@ In `psql`, the same SQL for both environments:
 UPDATE "user" SET role = 'admin' WHERE email = '<owner e-mail>' RETURNING id, email, role;
 ```
 
-The result must show exactly one row. Zero rows: the owner has not signed in on this environment yet.
+The result must show exactly one row. The API reads roles as the auth adapter's `@Roles` does: `admin`, or a comma list that contains `admin` (`rider, admin`); `administrator` is not an admin. Zero rows: the owner has not signed in on this environment yet.
 The change applies to the next request; the owner does not sign in again. To take the role away:
 `UPDATE "user" SET role = 'rider' WHERE email = '<owner e-mail>';`
 
@@ -46,8 +46,8 @@ The change applies to the next request; the owner does not sign in again. To tak
    Merge the segments into one segment in the GPX editor, check the joins on the map (a join draws a
    straight line across the pause), and export again.
 3. The file must be UTF-8, at most 10 MiB and at most 100 000 points, and every point must be inside
-   Peru. Elevation counts only when every point has an `<ele>`; otherwise the trail has no gain, loss
-   or profile.
+   Peru. Elevation counts only when every point has an `<ele>` and every `<ele>` is a number in
+   −500…7000 m; otherwise the trail has no gain, loss or profile.
 
 ## 3. Upload, check, publish
 
@@ -60,13 +60,13 @@ Error codes of the upload (HTTP 400 unless stated):
 
 | Code | Meaning |
 |------|---------|
-| `GPX_INVALID` | Not UTF-8, a DOCTYPE, malformed XML, root is not `gpx`, or a point without a valid `lat`/`lon` |
+| `GPX_INVALID` | Not UTF-8, a DOCTYPE, malformed XML, root is not `gpx`, elements nested deeper than 100, a reserved name such as `constructor`, a `<trkpt>` without a valid `lat`/`lon`, or a distance or a gain above the int4 range |
 | `GPX_EMPTY` | Fewer than 2 points, or a total distance of 0 |
 | `GPX_TOO_LARGE` | More than 100 000 points (a file above 10 MiB gets HTTP 413) |
-| `GPX_MULTI_SEGMENT` | More than one track or more than one non-empty segment (step 2.2) |
+| `GPX_MULTI_SEGMENT` | More than one `<trk>` (an empty one counts) or more than one non-empty segment (step 2.2) |
 | `GPX_OUT_OF_AREA` | A point outside Peru |
 | `SLUG_EMPTY` | The name has no letter or digit |
-| `GPX_DUPLICATE` (409) | This exact file is already imported; the response gives its `slug` |
+| `GPX_DUPLICATE` (409) | This exact file is already imported; the response gives its `slug` (checked before the slug, so it wins over `SLUG_TAKEN`) |
 | `SLUG_TAKEN` (409) | The name and its suffixes `-2` … `-5` are all taken; choose another name |
 
 ## 4. Calibration on staging (before the first production import, plan D11)

@@ -76,6 +76,31 @@ describe('parseGpx', () => {
     expect(parseGpx(bytes(withEmpty)).points).toHaveLength(2);
   });
 
+  it('counts an empty second <trk/> as a second track', () => {
+    const doc = `<gpx><trk><trkseg>${pt(-9.09, -78.52)}${pt(-9.1, -78.52)}</trkseg></trk><trk/></gpx>`;
+    expect(codeOf(() => parseGpx(bytes(doc)))).toBe('GPX_MULTI_SEGMENT');
+  });
+
+  it('refuses a <trkpt/> without attributes between two valid points', () => {
+    expect(codeOf(() => parseGpx(gpx([pt(-9.09, -78.52), '<trkpt/>', pt(-9.1, -78.52)])))).toBe('GPX_INVALID');
+  });
+
+  it('maps a parser exception to GPX_INVALID: 101 nested elements, a name constructor', () => {
+    const two = `<trkseg>${pt(-9.09, -78.52)}${pt(-9.1, -78.52)}</trkseg>`;
+    const nested = `<gpx><trk>${two}<extensions>${'<e>'.repeat(101)}${'</e>'.repeat(101)}</extensions></trk></gpx>`;
+    const error = (() => {
+      try {
+        parseGpx(bytes(nested));
+      } catch (e) {
+        return e as Error;
+      }
+    })();
+    expect(error).toMatchObject({ code: 'GPX_INVALID' });
+    expect(error?.cause).toBeUndefined();
+    expect(codeOf(() => parseGpx(bytes(`<gpx><trk>${two}<constructor>1</constructor></trk></gpx>`)))).toBe('GPX_INVALID');
+    expect(codeOf(() => parseGpx(bytes(`<gpx constructor="1"><trk>${two}</trk></gpx>`)))).toBe('GPX_INVALID');
+  });
+
   it('refuses 1 point and accepts 2', () => {
     expect(codeOf(() => parseGpx(gpx([pt(-9.09, -78.52)])))).toBe('GPX_EMPTY');
     expect(codeOf(() => parseGpx(bytes('<gpx></gpx>')))).toBe('GPX_EMPTY');

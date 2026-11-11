@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsString, Length, MaxLength, ValidateIf } from 'class-validator';
+import { IsIn, IsString, Length, MaxLength, NotContains, ValidateIf } from 'class-validator';
 import {
   CITIES,
   DIFFICULTIES,
@@ -14,11 +14,15 @@ import {
 export const NAME_MAX = 80;
 export const DESCRIPTION_MAX = 2000;
 
+// Postgres text cannot store U+0000 (a 500 otherwise).
+const noNul = NotContains('\u0000', { message: '$property must not contain U+0000' });
+
 /** The text fields of the multipart upload; the file is the `gpx` part. */
 export class CreateTrailDto {
   @ApiProperty({ minLength: 1, maxLength: NAME_MAX })
   @IsString()
   @Length(1, NAME_MAX)
+  @noNul
   name!: string;
 
   @ApiProperty({ enum: CITIES, enumName: 'City' })
@@ -37,6 +41,7 @@ export class CreateTrailDto {
   @ValidateIf((_, v) => v !== undefined)
   @IsString()
   @MaxLength(DESCRIPTION_MAX)
+  @noNul
   description?: string;
 }
 
@@ -59,12 +64,14 @@ export class UpdateTrailDto {
   @present
   @IsString()
   @Length(1, NAME_MAX)
+  @noNul
   name?: string;
 
   @ApiPropertyOptional({ maxLength: DESCRIPTION_MAX })
   @present
   @IsString()
   @MaxLength(DESCRIPTION_MAX)
+  @noNul
   description?: string;
 
   @ApiPropertyOptional({ enum: CITIES, enumName: 'City' })
