@@ -43,7 +43,7 @@ export default function TrailMap({ slug, path, start, end }: TrailMapProps) {
     return () => {
       map.remove();
     };
-  }, [slug]); // the geometry of this render; a refresh of the same trail keeps the map
+  }, [slug, path, start, end]); // the geometry of this render; a refresh of the same trail keeps the map
 
   return (
     <div
