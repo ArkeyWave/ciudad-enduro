@@ -1,4 +1,4 @@
-# Agents, gates and UX standard — Plan (rev. 2, for the final review)
+# Agents, gates and UX standard — Plan (rev. 3, gate closed; §6 amendments are BINDING)
 
 **Goal:** (A) a small team of named agents with fixed roles, models and efforts that the orchestrator
 routes work between; (B) local guards that refuse early, behind the server gates that decide; (C) a
@@ -170,3 +170,68 @@ local push-to-main rule; a Stop hook; a route filename checker (until the route 
 | axe scans at explicit states; focus/keyboard not covered | both | L3.3 |
 | Reviewer `Bash` is not read-only; implementer can delegate via T3 | both | L1.2 |
 | jsx-a11y peer range | opus | §0 skipped |
+
+## 6. Rev. 3 amendments — BINDING (they replace any conflicting text above)
+
+From the final review (opus 5.5 @ xhigh, approve with changes, 2 blocking).
+
+**R1 (blocking) — `prepare` must not break the image build (L3.5).** The Dockerfiles run
+`pnpm install` on `node:24-alpine` without git and without `.git` in the context. The root `prepare` is
+`node -e "require('fs').existsSync('.git')&&require('child_process').execSync('git config core.hooksPath .githooks')"`
+(`.git` is a file in a worktree, so it still runs there). `git add --chmod=+x .githooks/pre-commit`.
+
+**R2 (blocking) — the CHANGELOG rule is per PR, in CI only (L3.5).** House practice adds the entry once
+per PR (25 of the last 32 code commits on main have none). The pre-commit hook runs only the
+`features.json` check. The CHANGELOG rule runs in the CI `check` job on `pull_request` only
+(`fetch-depth: 2`, `git diff --name-only HEAD^1 HEAD` on the merge ref): a diff touching `apps/` or
+`packages/` must include `CHANGELOG.md`. Tests for both sides.
+
+**R3 — guard registration and parsing (L2).** `if` holds one rule: two handlers with the same script,
+`Bash(git *)` and `PowerShell(git *)`; no `gh`. Parsing: blank out `'…'`, `"…"` and heredoc bodies, split
+on `;` `&&` `||` `|` and newlines, match `git( -[cC] \S+)* (push|commit|config)` per segment, flags as
+whole tokens (`-[a-z]*f[a-z]*` only as a push flag token, `--force*`, `-d`, `--delete`, `--mirror`,
+`\s:\S`, `\s\+\S`; commit `-n`/`--no-verify`); also deny `-c core.hooksPath=…` and
+`git config … core.hooksPath`. Tests (must-deny / must-allow) include: `git commit -m "fix -n flag"`,
+`git commit -m "deny git push --force"`, a heredoc body, `git push -u origin fix-flaky`,
+`git push --follow-tags`, `git -C repo push --force`, `git push -d origin x`,
+`git -c core.hooksPath=/dev/null commit`, `git config --unset core.hooksPath`. `node --test` covers
+decisions only; registration and the four `onFailure` modes are live tries in the scratch repo, in the
+CLI and in T3, including `cd x && git push -f` and `Set-Location x; git push -f`. If the PowerShell
+compound try is not refused, drop `if` from that handler.
+
+**R4 — L1 proof.** The rubric's last line is the canary `rubric: v1` (named by no prompt): the named
+`reviewer` prints it, `probe` with the same prompt does not. Model and effort are read from the
+subagent transcript (`~/.claude/projects/<p>/<session>/subagents/agent-<id>.jsonl`); `--debug` only for
+unknown fields. Rubric path `~/.claude/skills/review-rubric/SKILL.md`. Remove `teammateMode` with the
+teams env. Implementer `disallowedTools` adds `Workflow`, `mcp__t3-code__t3_thread_launch`,
+`mcp__t3-code__create_threads`. Move the plaintext `nano-banana` API key in `~/.claude/settings.json`
+to `~/.secrets/` in the same batch (owner rule).
+
+**R5 — skeleton placement (L3.2-3).** Home skeleton = `<Suspense>` inside `app/page.tsx`; **no**
+`app/loading.tsx`. Mutation: move it to `app/loading.tsx` → the `/ingresar` test must go red, else delete
+that test. `global-error.tsx` is cut until the root layout can throw (`getMe` catches every error).
+Skill rule: a `[param]` route loads its resource **before** its first Suspense boundary, so a missing
+resource returns HTTP 404 (a streamed `notFound()` returns 200); the missing-slug test asserts 404.
+Record: `/` returns 200 when the API is down, so monitors use `/api/health`. The slow-header test sends
+a session cookie (the 5 s wait happens only with one).
+
+**R6 — axe scope (L3.3).** No empty-list scan (the list is fetched on the server; the seed has two
+published trails). Move `requestCode` and `freshIp` to an e2e helper for the step-2 scan.
+
+**R7 — LHCI inside Playwright (L3.4).** A last spec `lighthouse.spec.ts` runs `lhci collect` + `lhci
+assert` via `execFileSync` while Playwright's servers are up: `chromePath = chromium.executablePath()`,
+`--headless=new --no-sandbox`, URL `http://127.0.0.1:3100/`, 3-minute timeout. No Cloudflare block.
+Median LCP, TBT and performance go to `$GITHUB_STEP_SUMMARY` and `.lighthouseci/` is uploaded as an
+artifact; an issue dated 2026-11-24 tracks the promotion trigger.
+
+**R8 — merge freeze (D5).** A separate ruleset `freeze-main` (`~DEFAULT_BRANCH`, one `update` rule, no
+bypass), kept `disabled`; never edit `protect-main` for a freeze. Sequence: active (freeze) → disabled →
+merge the planned PR → active → verify its deploy → disabled. Rehearse once with a throwaway PR
+(`gh pr merge` refused). `allow_auto_merge` is false (confirm; no drain step). Applies to the P1a-1 A5
+switch.
+
+**R9 — preflight items (D4, P1a-3).** The staging item is "the `deploy-staging` job for that SHA
+succeeded" (Actions API). The CHANGELOG item is cut. Final list in issue #10.
+
+**R10 — small.** features.json title match: a `test(` or `it(` literal equal to the title, read from the
+index (`git show :<path>`). §0 adds: frontmatter `experimental`; `if` holds one rule.
