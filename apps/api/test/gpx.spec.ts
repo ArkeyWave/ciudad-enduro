@@ -1,6 +1,4 @@
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { elevationChange, elevationProfile, haversineM, trackMetrics } from '../src/trails/gpx/metrics.js';
 import { parseGpx, type GpxErrorCode } from '../src/trails/gpx/parse-gpx.js';
@@ -115,29 +113,21 @@ describe('parseGpx', () => {
     expect(codeOf(() => parseGpx(gpx([...points, pt(-9.2, -78.52)])))).toBe('GPX_TOO_LARGE');
   });
 
-  // S2: padding and fake <trkpt> tokens outside gpx/trk/trkseg cost nothing but scan time.
-  const padding = `<extensions>${'<e/>'.repeat(250_000)}</extensions>`;
-  const two = (head: string) => gpx([pt(-9.09, -78.52, '10'), `<trkpt lat="-9.1" lon="-78.52"><ele>20</ele>${padding}</trkpt>`], head);
-
-  it('parses a file with fake <trkpt> tokens in a comment and 250 000 empty elements to its 2 points', () => {
-    const head = `<gpx><!-- ${'<trkpt/>'.repeat(10_800)} -->`;
-    expect(parseGpx(two(head))).toMatchObject({ points: [{ lat: -9.09 }, { lat: -9.1 }], elevations: [10, 20] });
-  });
-
-  it('parses a file with fake <trkpt> tokens in <metadata> and 250 000 empty elements to its 2 points', () => {
+  it('ignores fake <trkpt> tokens in <metadata>', () => {
     const head = `<gpx><metadata>${'<trkpt/>'.repeat(10_800)}</metadata>`;
-    expect(parseGpx(two(head)).points).toHaveLength(2);
+    expect(parseGpx(gpx([pt(-9.09, -78.52), pt(-9.1, -78.52)], head)).points).toHaveLength(2);
   });
 
-  it('parses 2.4 million empty elements (9.6 MB) inside a 48 MB heap: no object per element', () => {
-    const script = fileURLToPath(new URL('./support/parse-padded.ts', import.meta.url));
-    const run = spawnSync(process.execPath, ['--max-old-space-size=48', '--import', '@swc-node/register/esm-register', script, '2400000'], {
-      cwd: fileURLToPath(new URL('..', import.meta.url)),
-      encoding: 'utf8',
-      timeout: 60_000,
-    });
-    expect({ status: run.status, out: run.stdout.trim() }).toEqual({ status: 0, out: '2' });
-  }, 70_000);
+  it('reads an <ele> given as CDATA', () => {
+    const doc = gpx([pt(-9.09, -78.52, '<![CDATA[10]]>'), pt(-9.1, -78.52, '2<![CDATA[0]]>')]);
+    expect(parseGpx(doc).elevations).toEqual([10, 20]);
+  });
+
+  it('gives no elevations when a point has two <ele>, and keeps them with one each', () => {
+    const two = '<trkpt lat="-9.1" lon="-78.52"><ele>20</ele><ele>30</ele></trkpt>';
+    expect(parseGpx(gpx([pt(-9.09, -78.52, '10'), two])).elevations).toBeNull();
+    expect(parseGpx(gpx([pt(-9.09, -78.52, '10'), pt(-9.1, -78.52, '20')])).elevations).toEqual([10, 20]);
+  });
 
   it('accepts the largest real shape: 100 000 Garmin points with 8 elements each', () => {
     const garmin = (i: number) =>

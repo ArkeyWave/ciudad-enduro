@@ -205,6 +205,18 @@ jobs:
           grep -q 'Aún no hay senderos publicados.' home.html
           curl -fsS http://127.0.0.1:3000/ingresar | grep -q ci-site-key
 
+      # The GPX parser runs in a worker loaded from dist/ at run time: prove the image ships it.
+      - name: Parse a GPX through the API image's worker
+        env:
+          API_IMAGE: ${{ steps.ids.outputs.api }}
+        run: |
+          docker run --rm --entrypoint node "$API_IMAGE" --input-type=module -e "
+            const { parseGpxIsolated } = await import('/app/dist/trails/gpx/parse-gpx-isolated.js');
+            const gpx = '<gpx><trk><trkseg><trkpt lat=\"-9.09\" lon=\"-78.52\"/><trkpt lat=\"-9.1\" lon=\"-78.52\"/></trkseg></trk></gpx>';
+            const track = await parseGpxIsolated(new TextEncoder().encode(gpx));
+            if (track.points.length !== 2) throw new Error('worker parse: ' + JSON.stringify(track));
+            console.log('ok worker parse in the image');"
+
       - name: Container logs
         if: failure()
         run: docker logs api; docker logs web

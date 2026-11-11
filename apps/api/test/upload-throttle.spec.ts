@@ -9,6 +9,9 @@ describe('UploadAttempts', () => {
     for (let i = 0; i < UPLOAD_ATTEMPTS; i++) expect(uploads.take('a', t0)).toBe(true);
     expect(uploads.take('a', t0 + UPLOAD_WINDOW_MS - 1)).toBe(false);
     expect(uploads.take('a', t0 + UPLOAD_WINDOW_MS)).toBe(true);
+    // A fresh window: 9 more attempts pass (10 in all), the next one does not.
+    for (let i = 0; i < UPLOAD_ATTEMPTS - 1; i++) expect(uploads.take('a', t0 + UPLOAD_WINDOW_MS)).toBe(true);
+    expect(uploads.take('a', t0 + UPLOAD_WINDOW_MS)).toBe(false);
   });
 
   it('drops each attempt exactly when it leaves the window, while a newer one keeps the user', () => {

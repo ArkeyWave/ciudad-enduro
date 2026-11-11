@@ -15,7 +15,7 @@ import { trails, trailSources, user, type City, type Department, type TrailStatu
 import type { CoordinatesDto, MyTrailDto, QueueTrailDto, TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
 import type { CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
 import { trackMetrics } from './gpx/metrics.js';
-import { parseGpx } from './gpx/parse-gpx.js';
+import { parseGpxIsolated } from './gpx/parse-gpx-isolated.js';
 
 // Geo columns are read through PostGIS functions, never as raw driver values.
 const summaryColumns = {
@@ -157,7 +157,7 @@ export class TrailsService {
     const authorId = uploader.id;
     // A shortcut before the parse; the locked count in the transaction decides.
     if (!uploader.admin) await this.refuseTooManyPending(this.db, authorId);
-    const track = parseGpx(bytes);
+    const track = await parseGpxIsolated(bytes);
     const metrics = trackMetrics(track.points, track.elevations);
     const base = slugify(input.name);
     if (!base) throw new BadRequestException(coded('SLUG_EMPTY'));

@@ -375,7 +375,7 @@ export interface operations {
                     "application/json": components["schemas"]["TrailDetailDto"];
                 };
             };
-            /** @description GPX_* or SLUG_EMPTY, or a validation error */
+            /** @description GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error */
             400: {
                 headers: {
                     [name: string]: unknown;

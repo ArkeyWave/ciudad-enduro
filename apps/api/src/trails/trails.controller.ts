@@ -94,7 +94,7 @@ export class TrailsController {
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: CreateTrailBody })
   @ApiCreatedResponse({ type: TrailDetailDto })
-  @ApiBadRequestResponse({ type: ErrorBodyDto, description: 'GPX_* or SLUG_EMPTY, or a validation error' })
+  @ApiBadRequestResponse({ type: ErrorBodyDto, description: 'GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error' })
   @ApiConflictResponse({ type: ErrorBodyDto, description: 'GPX_DUPLICATE (slug only when visible to the uploader) or SLUG_TAKEN' })
   @ApiTooManyRequestsResponse({
     type: ErrorBodyDto,

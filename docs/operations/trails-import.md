@@ -65,6 +65,7 @@ Error codes of the upload (HTTP 400 unless stated):
 | `GPX_INVALID` | Not UTF-8, a DOCTYPE, malformed XML, root is not `gpx`, elements nested deeper than 100, a reserved name such as `constructor`, a `<trkpt>` without a valid `lat`/`lon`, or a distance or a gain above the int4 range |
 | `GPX_EMPTY` | Fewer than 2 points, or a total distance of 0 |
 | `GPX_TOO_LARGE` | More than 100 000 points (a file above 10 MiB gets HTTP 413) |
+| `GPX_TOO_COMPLEX` | The parse needs more than 96 MB or 5 s (a huge comment, text or attribute, not a ride) |
 | `GPX_MULTI_SEGMENT` | More than one `<trk>` (an empty one counts) or more than one non-empty segment (step 2.2) |
 | `GPX_OUT_OF_AREA` | A point outside Peru |
 | `SLUG_EMPTY` | The name has no letter or digit |

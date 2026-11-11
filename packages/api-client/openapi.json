@@ -743,7 +743,7 @@
                 }
               }
             },
-            "description": "GPX_* or SLUG_EMPTY, or a validation error"
+            "description": "GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error"
           },
           "409": {
             "content": {

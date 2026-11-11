@@ -2,7 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { SaxesParser } from 'saxes';
 import type { LngLat } from '../../db/types/geo.js';
 
-export type GpxErrorCode = 'GPX_INVALID' | 'GPX_EMPTY' | 'GPX_TOO_LARGE' | 'GPX_MULTI_SEGMENT' | 'GPX_OUT_OF_AREA';
+export type GpxErrorCode = 'GPX_INVALID' | 'GPX_EMPTY' | 'GPX_TOO_LARGE' | 'GPX_TOO_COMPLEX' | 'GPX_MULTI_SEGMENT' | 'GPX_OUT_OF_AREA';
 
 /** A 400 with a constant code. It never carries a snippet of the uploaded file. */
 export class GpxError extends BadRequestException {
@@ -47,8 +47,10 @@ function elevation(texts: string[]): number | undefined {
 
 /**
  * Parses one continuous ride: exactly one track with exactly one non-empty segment.
- * A SAX stream (S2): only the points of gpx/trk/trkseg/trkpt are kept, so memory grows with the
- * points, never with other elements; the point cap stops the stream early.
+ * A SAX stream (S2): only the points of gpx/trk/trkseg/trkpt are kept, so the result grows with the
+ * points, never with other elements; the point cap stops the stream early. saxes still buffers a
+ * whole comment, text node or attribute value: the API calls this through parseGpxIsolated (B1).
+ * saxes refuses an entity XML does not define, such as `&eacute;` (GPX_INVALID).
  */
 export function parseGpx(bytes: Uint8Array): Track {
   let text: string;
@@ -57,6 +59,8 @@ export function parseGpx(bytes: Uint8Array): Track {
   } catch {
     throw new GpxError('GPX_INVALID');
   }
+  // Before saxes: it would buffer the whole DOCTYPE first.
+  if (/<!doctype/i.test(text)) throw new GpxError('GPX_INVALID');
 
   const stack: string[] = [];
   const points: LngLat[] = [];
@@ -68,9 +72,6 @@ export function parseGpx(bytes: Uint8Array): Track {
   let eleText: string | null = null; // the text of the open <ele>
 
   const sax = new SaxesParser();
-  sax.on('doctype', () => {
-    throw new GpxError('GPX_INVALID');
-  });
   sax.on('opentag', (tag) => {
     const name = localName(tag.name);
     if (RESERVED.has(name) || Object.keys(tag.attributes).some((key) => RESERVED.has(localName(key)))) throw new GpxError('GPX_INVALID');
@@ -95,6 +96,9 @@ export function parseGpx(bytes: Uint8Array): Track {
     if (depth === 5 && name === 'ele' && eles) eleText = '';
   });
   sax.on('text', (chunk) => {
+    if (eleText !== null) eleText += chunk;
+  });
+  sax.on('cdata', (chunk) => {
     if (eleText !== null) eleText += chunk;
   });
   sax.on('closetag', () => {
