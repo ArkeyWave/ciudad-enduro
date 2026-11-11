@@ -31,10 +31,11 @@ project `ciudad-enduro-oss`, environment `staging`.
    - holds `flock /var/cache/ce-oss-deploy/lock.<target>` (one lock per target);
    - fetches `main` of the public repo into `/var/cache/ce-oss-deploy/repo.git` and refuses a SHA that
      is not an ancestor of `origin/main`;
-   - **rollback guard:** reads the running api revision from its image's
-     `org.opencontainers.image.revision` label. No running container passes; a running image without the
-     label is refused unless `ROLLBACK=1`; a SHA that is a strict ancestor of the running one is refused
-     unless `ROLLBACK=1` (see [Rollback](#rollback));
+   - **rollback guard:** reads the api revision from the `org.opencontainers.image.revision` label of
+     the image of the **newest api container in any state** (`docker ps -a --latest`), so a stopped or
+     restarting api still counts. Only "no api container at all" passes; an image without the label is
+     refused unless `ROLLBACK=1`; a SHA that is a strict ancestor of that revision is refused unless
+     `ROLLBACK=1` (see [Rollback](#rollback));
    - **preflight, both images before either app changes:** `docker pull <repo>@<digest>`;
      `gh attestation verify oci://<repo>@<digest> --repo ArkeyWave/ciudad-enduro --signer-workflow
      ArkeyWave/ciudad-enduro/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest <sha>
@@ -42,8 +43,9 @@ project `ciudad-enduro-oss`, environment `staging`.
    - per app, api first (the api container migrates the database on start), then web: PATCH
      `docker_registry_image_name` = the repository and `docker_registry_image_tag` = `sha256-<hex>`,
      deploy, and require every running container of the app to run exactly
-     `docker image inspect <repo>@<digest> -f {{.Id}}`. A failure stops the script; a failed rolling
-     update leaves the old container running;
+     `docker image inspect <repo>@<digest> -f {{.Id}}`. The script records the app's running image IDs
+     before the deploy: if one of those still runs, the rolling update failed and the old container
+     stays (exit 1); any other image is unchecked, so the script stops the app and exits 1;
    - re-checks the origin lock: direct requests to the box for `/` and `/api/health` answer 403,
      every `traefik.http.routers.*.rule` label on both running containers has a `.middlewares`
      label with `cloudflare-only@file`, and `docker port` is empty for both. On failure it stops
@@ -54,9 +56,20 @@ project `ciudad-enduro-oss`, environment `staging`.
      `<sha> <api-digest> <web-digest> <utc>`. Production (Phase 1a, P1a-3) deploys only a recorded pair.
 
 What runs where: **no repository build step runs on the box.** Images are built and checked in GitHub
-Actions; Coolify pulls them by digest (`Image (…) not found on the server. Pulling it` in the deployment
-log, no build). The only code from the repo that runs on the box is the attested image itself. This
-closes B3-F1 (the Coolify BuildKit build that ran repo `RUN` steps with host networking).
+Actions; the preflight pulls them by digest, and Coolify starts the pulled image. Evidence per deploy:
+the Coolify deployment log says `Starting deployment of ghcr.io/arkeywave/ciudad-enduro-<app>@sha256:<hex>`
+and has no build step, and the script prints `<app>: finished, running <repo>@<digest>`:
+
+```bash
+docker exec coolify-db psql -U coolify -d coolify -tAc \
+  "select logs from application_deployment_queues where deployment_uuid='<deployment uuid>'" |
+  grep -oE 'Starting deployment of [^ ]+|Building docker image|docker build' | sort | uniq -c
+# expected: 1 "Starting deployment of ghcr.io\/…@sha256:…" (the log is JSON: "/" shows as "\/"),
+# no "Building docker image" and no "docker build" line (a v1 build log has both)
+```
+
+The only code from the repo that runs on the box is the attested image itself. This closes B3-F1 (the
+Coolify BuildKit build that ran repo `RUN` steps with host networking).
 
 The Coolify token goes into the `coolify` container on stdin and into a curl config file there;
 it never appears in a process argv (`/root/ce-oss/capi` does the same for manual API calls).
@@ -71,7 +84,8 @@ public-good** Fulcio CA, bound to the GitHub Actions OIDC identity of the run (r
 log, and stored by GitHub (repository attestations API) and in GHCR next to the image. `gh` verifies it
 against the Sigstore public-good trusted root (TUF). Who can make a valid attestation: a workflow run of
 `ci.yml` on `refs/heads/main` of `ArkeyWave/ciudad-enduro`; `main` is protected (ruleset `protect-main`:
-pull request and the checks `check`, `contract`, `e2e`, `images` required, no force push, no deletion).
+pull request and the checks `check`, `contract`, `e2e`, `images` required, no force push, no deletion,
+**no bypass actors**: the admin bypass was removed on 2026-11-11, so nobody pushes to `main` around CI).
 
 `gh attestation verify` needs a GitHub token even for public repos. The box uses a **fine-grained token
 with no permissions** (public read only) in `/root/.secrets/ce-oss-gh-attest.env` (root 600,
@@ -182,16 +196,43 @@ to `main` deploys forward again.
 The box script v2, the switch of both apps to `dockerimage` and the new `ci.yml` request format go live
 together, under a merge freeze (plan §2, amendment A5):
 
-1. Freeze merges to `main`. Confirm no `main` CI run is active and no `ce-oss-deploy` process runs.
-2. Hold the v1 lock (`flock /var/cache/ce-oss-deploy/lock`), install v2 at `/usr/local/bin/ce-oss-deploy`,
-   change the key's forced command to `/usr/local/bin/ce-oss-deploy staging`.
-3. Switch both apps to `dockerimage` (same uuids; image name set, labels and runtime env unchanged).
-   The running containers keep running.
-4. Release the lock before the merge (a queued v1 request now reaches v2 and is refused by the regex).
-5. Merge P1a-1. `publish` pushes and attests; `deploy-staging` is refused because the
-   running images have no revision label (proof of the guard).
+1. Freeze merges to `main`. Confirm no `main` CI run is active (`gh run list --branch main -s in_progress`)
+   and no `ce-oss-deploy` process runs (`pgrep -af ce-oss-deploy` prints nothing).
+2. In one root shell on the box, hold both locks, install v2 and fix the forced command. v1 uses
+   `lock`, v2 uses `lock.staging`; the two never block each other, so hold both:
+   ```bash
+   exec 8>/var/cache/ce-oss-deploy/lock;          flock 8   # waits for a running v1 deploy
+   exec 7>/var/cache/ce-oss-deploy/lock.staging;  flock 7   # no v2 deploy during the switch
+   install -o root -g root -m 755 ce-oss-deploy.v2 /usr/local/bin/ce-oss-deploy   # new inode
+   cp -p /root/.ssh/authorized_keys /root/.ssh/authorized_keys.pre-v2
+   sed -i 's|command="/usr/local/bin/ce-oss-deploy" \(.*ci-deploy@ciudad-enduro-oss\)$|command="/usr/local/bin/ce-oss-deploy staging" \1|' /root/.ssh/authorized_keys
+   grep -c 'command="/usr/local/bin/ce-oss-deploy staging" .*ci-deploy@ciudad-enduro-oss$' /root/.ssh/authorized_keys  # 1
+   pgrep -af ce-oss-deploy   # nothing; a waiting v1 process would continue on the old inode: stop and ask
+   ```
+   `ce-oss-deploy.v2` is `docs/operations/ce-oss-deploy` from the reviewed PR head (check its sha256).
+3. Switch both apps to `dockerimage` (same uuids; image name set; labels and runtime env unchanged) with
+   one PATCH each through `/root/ce-oss/capi`, body
+   `{"build_pack":"dockerimage","docker_registry_image_name":"ghcr.io/arkeywave/ciudad-enduro-<app>","git_repository":"","git_branch":"","git_commit_sha":""}`
+   (if Coolify refuses an empty git field, stop and ask). The running containers keep running. Before and
+   after, the values must be equal except `build_pack`, the image name and the git fields (empty after):
+   ```bash
+   for u in c6mm7pwdmoysv0eg2vgwo4bi whfatie8ek3wh09ite3mnqn0; do
+     docker exec coolify-db psql -U coolify -d coolify -tAc "select a.build_pack, a.docker_registry_image_name,
+       md5(a.custom_labels), s.is_container_label_readonly_enabled, a.git_repository, a.git_branch, a.git_commit_sha,
+       (select md5(string_agg(e.key||e.value, ',' order by e.key, e.is_preview)) from environment_variables e
+         where e.resourceable_id = a.id and e.resourceable_type like '%Application')
+       from applications a join application_settings s on s.application_id = a.id where a.uuid = '$u'"
+   done
+   ```
+   Expected after: `dockerimage`, the GHCR repository, the same label md5, `f`, empty git fields, the same
+   env md5.
+4. Release both locks before the merge: `exec 8>&- 7>&-`. A queued v1 request now reaches v2 and is
+   refused by the regex.
+5. Merge P1a-1. `publish` pushes and attests; `deploy-staging` is refused because the running images have
+   no revision label (proof of the guard).
 6. The operator runs the first deploy with the digests from the publish job:
-   `ROLLBACK=1 SSH_ORIGINAL_COMMAND="<sha> <api> <web>" /usr/local/bin/ce-oss-deploy staging`.
+   `ROLLBACK=1 SSH_ORIGINAL_COMMAND="<sha> <api> <web>" /usr/local/bin/ce-oss-deploy staging`. Check the
+   Coolify log of both deployments (section "What runs where").
 7. Re-run the failed `deploy-staging` job (same SHA: passes without `ROLLBACK`), run the live checks,
    release the freeze.
 

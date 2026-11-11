@@ -64,21 +64,29 @@ git -C "$CACHE" merge-base --is-ancestor "$sha" refs/remotes/origin/main || refu
 running_containers() { # APP_UUID -> IDs of its running containers
   docker ps --filter "name=^$1-" --filter status=running --format '{{.ID}}'
 }
+latest_container() { # APP_UUID -> ID of its newest container in any state, empty when none
+  docker ps -a --latest --filter "name=^$1-" --format '{{.ID}}'
+}
+app_images() { # APP_UUID -> sorted image IDs of its running containers
+  local c
+  for c in $(running_containers "$1"); do docker inspect -f '{{.Image}}' "$c"; done | sort -u
+}
 label_of() { # IMAGE -> its revision label, empty when absent
   docker image inspect "$1" -f "{{with .Config.Labels}}{{index . \"$REVISION\"}}{{end}}" 2>/dev/null || true
 }
 
-# Rollback guard: the running api revision comes from its image's revision label. No running
-# container passes; a running image without the label (a Coolify build before v2) is refused
-# unless ROLLBACK=1; an older commit than the running one is refused unless ROLLBACK=1.
-live=$(running_containers "$API_UUID" | head -1)
+# Rollback guard: the api revision comes from the revision label of the image of its newest
+# container, in any state (a stopped or restarting api still counts). Only "no api container at
+# all" passes; an image without the label (a Coolify build before v2) is refused unless
+# ROLLBACK=1; an older commit than that one is refused unless ROLLBACK=1.
+live=$(latest_container "$API_UUID")
 if [ -n "$live" ]; then
   live_sha=$(label_of "$(docker inspect -f '{{.Image}}' "$live")")
   if ! [[ $live_sha =~ ^[0-9a-f]{40}$ ]]; then
-    [ "${ROLLBACK:-}" = 1 ] || refuse "the running api image has no $REVISION label; an operator on the box sets ROLLBACK=1"
-    log "ROLLBACK=1: the running api image has no revision label"
+    [ "${ROLLBACK:-}" = 1 ] || refuse "the api image has no $REVISION label; an operator on the box sets ROLLBACK=1"
+    log "ROLLBACK=1: the api image has no revision label"
   elif [ "$live_sha" != "$sha" ] && git -C "$CACHE" merge-base --is-ancestor "$sha" "$live_sha" 2>/dev/null; then
-    [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than the running $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
+    [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than the deployed $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
     log "ROLLBACK=1: rolling back from $live_sha"
   fi
 fi
@@ -120,18 +128,24 @@ stop_app() { # APP_UUID NAME
   capi POST "/applications/$1/stop" >/dev/null || echo "FAIL $2: could not stop $1, stop it by hand" >&2
 }
 
+deploy_status() { # DEPLOYMENT_UUID -> its Coolify queue status
+  docker exec coolify-db psql -U coolify -d coolify -tAc \
+    "select status from application_deployment_queues where deployment_uuid='$1'"
+}
+
 # Deploys one app by digest, then requires every running container of it to run exactly the
-# pulled image. A failed rolling update leaves the old (already checked) container running.
+# pulled image. If the old image (running before this deploy) still runs, the rolling update
+# failed and the old container stays. Any other image is unchecked: the app is stopped.
 deploy() { # APP_UUID NAME REPO DIGEST
-  local uuid=$1 name=$2 repo=$3 digest=$4 dep status=queued want got
+  local uuid=$1 name=$2 repo=$3 digest=$4 dep status=queued want before got id
+  before=$(app_images "$uuid")
   capi PATCH "/applications/$uuid" \
     "{\"docker_registry_image_name\":\"$repo\",\"docker_registry_image_tag\":\"sha256-${digest#sha256:}\"}" >/dev/null
   dep=$(capi POST "/deploy?uuid=$uuid" | jq -r '.deployments[0].deployment_uuid // empty')
-  [ -n "$dep" ] || die "$name: Coolify queued no deployment"
+  [[ $dep =~ ^[A-Za-z0-9]+$ ]] || die "$name: Coolify queued no deployment"
   log "$name: deployment $dep queued ($repo@$digest)"
   for _ in $(seq 180); do
-    status=$(docker exec coolify-db psql -U coolify -d coolify -tAc \
-      "select status from application_deployment_queues where deployment_uuid='$dep'")
+    status=$(deploy_status "$dep")
     case "$status" in
       finished) break ;;
       failed|cancelled*|error) die "$name: deployment $dep $status" ;;
@@ -140,8 +154,14 @@ deploy() { # APP_UUID NAME REPO DIGEST
   done
   [ "$status" = finished ] || die "$name: deployment $dep still '$status' after 30 min"
   want=$(docker image inspect "$repo@$digest" -f '{{.Id}}')
-  got=$(for c in $(running_containers "$uuid"); do docker inspect -f '{{.Image}}' "$c"; done | sort -u)
-  [ "$got" = "$want" ] || die "$name: running image is '${got:-none}', expected $want ($repo@$digest)"
+  got=$(app_images "$uuid")
+  for id in $got; do
+    [ "$id" = "$want" ] && continue
+    grep -qxF "$id" <<<"$before" && die "$name: the old image $id still runs, expected $want ($repo@$digest)"
+    stop_app "$uuid" "$name"
+    die "$name: unchecked image $id runs, expected $want ($repo@$digest); app stopped"
+  done
+  [ -n "$got" ] || die "$name: no running container, expected $want ($repo@$digest)"
   log "$name: finished, running $repo@$digest"
 }
 
