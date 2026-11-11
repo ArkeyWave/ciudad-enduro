@@ -38,7 +38,7 @@ export function ElevationProfile({ profile, distanceM, elevationGainM, elevation
           vectorEffect="non-scaling-stroke"
         />
       </svg>
-      <dl style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 12px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 12px' }}>
         {facts.map(([label, value]) =>
           value === null ? null : (
             <div key={label} style={{ display: 'contents' }}>
@@ -47,7 +47,7 @@ export function ElevationProfile({ profile, distanceM, elevationGainM, elevation
             </div>
           ),
         )}
-      </dl>
+      </div>
     </section>
   );
 }
