@@ -114,11 +114,16 @@ jobs:
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm --filter web test:e2e
 
-  # Builds both production images, smoke-runs them against PostGIS, and refuses an image that
-  # ships test code or a file from the build context's .env (scripts/verify-image.sh).
+  # Builds both production images once (labels set at build time), refuses an image that ships
+  # test code or a file from the build context's .env (scripts/verify-image.sh), smoke-runs them
+  # against PostGIS, and emits the checked image IDs. On a push to main it hands the same images
+  # to `publish` as an artifact; pull requests upload nothing.
   images:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      api-id: ${{ steps.ids.outputs.api }}
+      web-id: ${{ steps.ids.outputs.web }}
 
     services:
       postgres:
@@ -148,14 +153,34 @@ jobs:
           printf 'BETTER_AUTH_SECRET=%s\n' "$canary" > apps/api/.env
           printf 'API_INTERNAL_URL=%s\n' "$canary" > apps/web/.env
 
-      - run: docker build -f apps/api/Dockerfile --build-arg BUILD_SHA=${{ github.sha }} -t ce-api:ci .
-      - run: docker build -f apps/web/Dockerfile -t ce-web:ci .
-      - run: scripts/verify-image.sh ce-api:ci "$CANARY"
-      - run: scripts/verify-image.sh ce-web:ci "$CANARY"
+      # --provenance=false: one image manifest, no index, so the pushed manifest is the checked image.
+      - name: Build both images
+        env:
+          SHA: ${{ github.sha }}
+          SOURCE: https://github.com/${{ github.repository }}
+        run: |
+          labels=(--label "org.opencontainers.image.revision=$SHA" --label "org.opencontainers.image.source=$SOURCE")
+          docker build --provenance=false "${labels[@]}" -f apps/api/Dockerfile --build-arg BUILD_SHA="$SHA" -t ce-api:ci .
+          docker build --provenance=false "${labels[@]}" -f apps/web/Dockerfile -t ce-web:ci .
+
+      - name: Record the image IDs
+        id: ids
+        run: |
+          for app in api web; do
+            id=$(docker image inspect "ce-$app:ci" -f '{{.Id}}')
+            [[ $id =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad image ID '$id'"; exit 1; }
+            echo "$app=$id" >> "$GITHUB_OUTPUT"
+          done
+
+      - run: scripts/verify-image.sh "${{ steps.ids.outputs.api }}" "$CANARY"
+      - run: scripts/verify-image.sh "${{ steps.ids.outputs.web }}" "$CANARY"
 
       # The API container migrates an empty database, then answers with the baked revision;
       # the web container renders the home page through it.
       - name: Smoke-run both images
+        env:
+          API_IMAGE: ${{ steps.ids.outputs.api }}
+          WEB_IMAGE: ${{ steps.ids.outputs.web }}
         run: |
           secret() { echo "ci-$(openssl rand -hex 24)"; }
           docker run -d --name api --network host \
@@ -165,9 +190,9 @@ jobs:
             -e RESEND_API_KEY="$(secret)" -e GOOGLE_CLIENT_SECRET="$(secret)" \
             -e EMAIL_FROM=ci@example.com -e GOOGLE_CLIENT_ID=ci \
             -e TURNSTILE_SECRET_KEY="$(secret)" \
-            ce-api:ci
+            "$API_IMAGE"
           docker run -d --name web --network host -e API_INTERNAL_URL=http://127.0.0.1:3001 \
-            -e TURNSTILE_SITE_KEY=ci-site-key ce-web:ci
+            -e TURNSTILE_SITE_KEY=ci-site-key "$WEB_IMAGE"
           for i in $(seq 30); do curl -fsS http://127.0.0.1:3001/api/health -o health.json && break; sleep 2; done
           cat health.json; echo
           test "$(jq -r .revision health.json)" = "${{ github.sha }}"
@@ -179,11 +204,103 @@ jobs:
         if: failure()
         run: docker logs api; docker logs web
 
-  # Push to main only, after every gate. The key in the `staging` Environment (restricted to
-  # main) can run one command on the box: ce-oss-deploy <sha> (docs/operations/deploy.md).
-  # Pull requests, including fork PRs, never reach this job or its secret.
-  deploy-staging:
+      - name: Save the checked images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker save -o "$RUNNER_TEMP/images.tar" ce-api:ci ce-web:ci
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          name: images
+          path: ${{ runner.temp }}/images.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  # Push to main only, after every gate. The only job that can write packages and attestations;
+  # it checks out nothing and runs no repo code. It loads the checked images, refuses them unless
+  # their IDs equal what `images` checked (before any push), pushes them to GHCR, proves the pushed
+  # manifest is that image, and attests build provenance for each digest.
+  publish:
     needs: [check, contract, e2e, images]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      packages: write
+      attestations: write
+      id-token: write
+      artifact-metadata: write
+    outputs:
+      api: ${{ steps.push.outputs.api }}
+      web: ${{ steps.push.outputs.web }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: images
+          path: ${{ runner.temp }}/images
+
+      - name: Load, compare, push
+        id: push
+        env:
+          SHA: ${{ github.sha }}
+          API_ID: ${{ needs.images.outputs.api-id }}
+          WEB_ID: ${{ needs.images.outputs.web-id }}
+          ACTOR: ${{ github.actor }}
+          TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The image ID is the config digest in the classic store and the manifest digest in the
+          # containerd store; the identity proof below uses the matching value.
+          status=$(docker info -f '{{.Driver}} {{.DriverStatus}}')
+          case "$status" in
+            *"driver-type io.containerd.snapshotter.v1"*) store=containerd ;;
+            overlay2\ *) store=classic ;;
+            *) echo "unknown image store: $status"; exit 1 ;;
+          esac
+          echo "image store: $store"
+          docker load -i "$RUNNER_TEMP/images/images.tar"
+          for app in api web; do
+            if [ $app = api ]; then want=$API_ID; else want=$WEB_ID; fi
+            got=$(docker image inspect "ce-$app:ci" -f '{{.Id}}')
+            [ "$got" = "$want" ] || { echo "$app: loaded image $got is not the checked image $want"; exit 1; }
+          done
+          printf '%s\n' "$TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          for app in api web; do
+            if [ $app = api ]; then want=$API_ID; else want=$WEB_ID; fi
+            repo=ghcr.io/arkeywave/ciudad-enduro-$app
+            docker tag "ce-$app:ci" "$repo:sha-$SHA"
+            docker push "$repo:sha-$SHA" | tee push.log
+            digest=$(sed -n 's/.*digest: \(sha256:[0-9a-f]\{64\}\).*/\1/p' push.log | tail -1)
+            [ -n "$digest" ] || { echo "$app: no digest in the push output"; exit 1; }
+            docker manifest inspect "$repo@$digest" > manifest.json
+            jq -e '(.mediaType == "application/vnd.oci.image.manifest.v1+json" or
+                    .mediaType == "application/vnd.docker.distribution.manifest.v2+json")
+                   and (.config.digest | type == "string")' manifest.json >/dev/null ||
+              { echo "$app: $digest is not a single image manifest"; cat manifest.json; exit 1; }
+            if [ $store = classic ]; then pushed=$(jq -r .config.digest manifest.json); else pushed=$digest; fi
+            [ "$pushed" = "$want" ] || { echo "$app: $repo@$digest is $pushed, not the checked image $want"; exit 1; }
+            echo "$app: $repo@$digest is the checked image $want"
+            echo "$app=$digest" >> "$GITHUB_OUTPUT"
+          done
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/arkeywave/ciudad-enduro-api
+          subject-digest: ${{ steps.push.outputs.api }}
+          push-to-registry: true
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ghcr.io/arkeywave/ciudad-enduro-web
+          subject-digest: ${{ steps.push.outputs.web }}
+          push-to-registry: true
+
+  # Push to main only, after `publish`. The key in the `staging` Environment (restricted to main)
+  # runs one fixed command on the box, `ce-oss-deploy staging`, with the request
+  # "<sha> <api-digest> <web-digest>" (docs/operations/deploy.md). Pull requests, including fork
+  # PRs, never reach this job or its secret.
+  deploy-staging:
+    needs: [publish]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -196,10 +313,11 @@ jobs:
       - name: Deploy ${{ github.sha }} to enduro-next.vops.pe
         env:
           DEPLOY_KEY: ${{ secrets.CE_OSS_DEPLOY_KEY }}
+          REQUEST: ${{ github.sha }} ${{ needs.publish.outputs.api }} ${{ needs.publish.outputs.web }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           echo '104.152.209.8 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGroYXrLr2Jn8Rfj9IMmw161mTAN3C404FChVhYl3bju' > ~/.ssh/known_hosts
           ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-            root@104.152.209.8 '${{ github.sha }}'
+            root@104.152.209.8 "$REQUEST"

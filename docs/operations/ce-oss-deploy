@@ -1,39 +1,58 @@
 #!/usr/bin/env bash
-# ce-oss-deploy — the ONLY command the CI deploy key can run on vops-infra.
-# Installed at /usr/local/bin/ce-oss-deploy (root 755). authorized_keys line:
-#   restrict,command="/usr/local/bin/ce-oss-deploy" ssh-ed25519 AAAA... ci-deploy@ciudad-enduro-oss
+# ce-oss-deploy v2 — the ONLY command a CI deploy key can run on vops-infra.
+# Installed at /usr/local/bin/ce-oss-deploy (root 755). The target is fixed per key in
+# /root/.ssh/authorized_keys; the caller can never choose it:
+#   restrict,command="/usr/local/bin/ce-oss-deploy staging" ssh-ed25519 AAAA... ci-deploy@ciudad-enduro-oss
 #
-# Input: SSH_ORIGINAL_COMMAND = a 40-hex commit SHA that is on origin/main.
-# Effect: builds and deploys that commit to staging (api, then web), then proves it is live.
-# This script runs no file from the repo: the image check is the reviewed copy in VERIFY.
-# (The Coolify build itself runs the Dockerfile RUN steps in a BuildKit container; see
-# docs/operations/deploy.md.)
+# Input: SSH_ORIGINAL_COMMAND = "<sha> <api-digest> <web-digest>": a commit on main and the
+# manifest digests of the two images CI built, checked and pushed to GHCR for it.
+# Effect, in order, stopping at the first failure:
+#   1. refuses a SHA that is not on main, and a rollback (see below);
+#   2. preflight of BOTH images before either app is touched: pull by digest, GitHub build
+#      provenance attestation (ci.yml on refs/heads/main, source commit = <sha>, GitHub-hosted
+#      runner), revision label = <sha>;
+#   3. deploys api, then web, by digest through Coolify (pull, no build), and checks that each
+#      app runs exactly the pulled image;
+#   4. origin lock, live revision and home page;
+#   5. writes the promotion record /var/lib/ce-oss/promoted/<sha> (production deploys only a
+#      recorded pair).
+# Nothing from the repo is built or run on the box except the attested images themselves.
 #
 # Rollback to an older main commit is refused unless an operator on the box sets ROLLBACK=1
-# (sshd passes no such variable from the CI key).
+# (sshd passes no such variable from the CI key). A GitHub or Sigstore outage blocks every
+# deploy, ROLLBACK=1 included (fail closed).
 set -euo pipefail
 umask 077
 
 REPO_URL=https://github.com/ArkeyWave/ciudad-enduro.git
+API_REPO=ghcr.io/arkeywave/ciudad-enduro-api
+WEB_REPO=ghcr.io/arkeywave/ciudad-enduro-web
+GH=/usr/local/lib/ce-oss/gh/bin/gh
+GH_TOKEN_FILE=/root/.secrets/ce-oss-gh-attest.env
 STATE=/var/cache/ce-oss-deploy
 CACHE=$STATE/repo.git
-LOCK=$STATE/lock
-VERIFY=/usr/local/lib/ce-oss/verify-image.sh
-API_UUID=c6mm7pwdmoysv0eg2vgwo4bi
-WEB_UUID=whfatie8ek3wh09ite3mnqn0
-HOST=enduro-next.vops.pe
+PROMOTED=/var/lib/ce-oss/promoted
 BOX_IP=104.152.209.8
+REVISION=org.opencontainers.image.revision
 
 refuse() { echo "refused: $1" >&2; exit 2; }
 die() { echo "FAIL $*" >&2; exit 1; }
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
-sha=${SSH_ORIGINAL_COMMAND:-}
-[[ $sha =~ ^[0-9a-f]{40}$ ]] || refuse "expected one 40-hex commit SHA"
+target=${1:-}
+case "$target" in
+  staging) API_UUID=c6mm7pwdmoysv0eg2vgwo4bi WEB_UUID=whfatie8ek3wh09ite3mnqn0 HOST=enduro-next.vops.pe ;;
+  *) refuse "unknown target '$target'" ;;
+esac
+
+request=${SSH_ORIGINAL_COMMAND:-}
+re='^([0-9a-f]{40}) (sha256:[0-9a-f]{64}) (sha256:[0-9a-f]{64})$'
+[[ $request =~ $re ]] || refuse "expected '<40-hex sha> sha256:<64-hex api digest> sha256:<64-hex web digest>'"
+sha=${BASH_REMATCH[1]} api_digest=${BASH_REMATCH[2]} web_digest=${BASH_REMATCH[3]}
 
 install -d -m 700 "$STATE"
-exec 9>"$LOCK"
-flock -w 1800 9 || refuse "another deploy held the lock for 30 min"
+exec 9>"$STATE/lock.$target"
+flock -w 1800 9 || refuse "another $target deploy held the lock for 30 min"
 
 # Only commits reachable from main can deploy. The cache fetches main only, so a fork or
 # branch commit is not even present here.
@@ -42,24 +61,46 @@ git -C "$CACHE" fetch -q --prune "$REPO_URL" '+refs/heads/main:refs/remotes/orig
 git -C "$CACHE" cat-file -e "$sha^{commit}" 2>/dev/null || refuse "$sha is not on main"
 git -C "$CACHE" merge-base --is-ancestor "$sha" refs/remotes/origin/main || refuse "$sha is not on main"
 
-running_image() { # APP_UUID -> image of the running container(s)
-  docker ps --filter "name=^$1-" --filter status=running --format '{{.Image}}'
+running_containers() { # APP_UUID -> IDs of its running containers
+  docker ps --filter "name=^$1-" --filter status=running --format '{{.ID}}'
+}
+label_of() { # IMAGE -> its revision label, empty when absent
+  docker image inspect "$1" -f "{{with .Config.Labels}}{{index . \"$REVISION\"}}{{end}}" 2>/dev/null || true
 }
 
-# Rollback guard: an older commit than the running api is refused without ROLLBACK=1.
-# A running commit that is not in the cache (never on main) cannot be ordered and passes.
-live=$(running_image "$API_UUID" | head -1)
-live_sha=${live##*:}
-if [[ $live_sha =~ ^[0-9a-f]{40}$ ]] && [ "$live_sha" != "$sha" ] &&
-  git -C "$CACHE" merge-base --is-ancestor "$sha" "$live_sha" 2>/dev/null; then
-  [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than the running $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
-  log "ROLLBACK=1: rolling back from $live_sha"
+# Rollback guard: the running api revision comes from its image's revision label. No running
+# container passes; a running image without the label (a Coolify build before v2) is refused
+# unless ROLLBACK=1; an older commit than the running one is refused unless ROLLBACK=1.
+live=$(running_containers "$API_UUID" | head -1)
+if [ -n "$live" ]; then
+  live_sha=$(label_of "$(docker inspect -f '{{.Image}}' "$live")")
+  if ! [[ $live_sha =~ ^[0-9a-f]{40}$ ]]; then
+    [ "${ROLLBACK:-}" = 1 ] || refuse "the running api image has no $REVISION label; an operator on the box sets ROLLBACK=1"
+    log "ROLLBACK=1: the running api image has no revision label"
+  elif [ "$live_sha" != "$sha" ] && git -C "$CACHE" merge-base --is-ancestor "$sha" "$live_sha" 2>/dev/null; then
+    [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than the running $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
+    log "ROLLBACK=1: rolling back from $live_sha"
+  fi
 fi
 
-# The commit must carry exactly the verifier installed on the box. A new verifier is
-# reviewed and installed by an operator first (docs/operations/deploy.md).
-git -C "$CACHE" show "$sha:scripts/verify-image.sh" 2>/dev/null | cmp -s - "$VERIFY" ||
-  die "scripts/verify-image.sh at $sha differs from the installed $VERIFY; install the reviewed verifier first"
+# Preflight: both images before either app changes. The token (fine-grained, no permissions)
+# only lets gh read public attestations; it enters gh's environment and no argv.
+preflight() { # NAME REPO DIGEST
+  local name=$1 ref=$2@$3 token rev
+  docker pull -q "$ref" >/dev/null || refuse "$name: cannot pull $ref"
+  token=$(grep '^GH_TOKEN=' "$GH_TOKEN_FILE" | cut -d= -f2-) || refuse "no GH_TOKEN in $GH_TOKEN_FILE"
+  GH_TOKEN=$token "$GH" attestation verify "oci://$ref" \
+    --repo ArkeyWave/ciudad-enduro \
+    --signer-workflow ArkeyWave/ciudad-enduro/.github/workflows/ci.yml \
+    --source-ref refs/heads/main --source-digest "$sha" \
+    --deny-self-hosted-runners >/dev/null ||
+    refuse "$name: $ref has no build provenance attestation from ci.yml on main for $sha"
+  rev=$(label_of "$ref")
+  [ "$rev" = "$sha" ] || refuse "$name: $ref has revision label '${rev:-none}', expected $sha"
+  log "$name: $ref pulled, attested for $sha, label ok"
+}
+preflight api "$API_REPO" "$api_digest"
+preflight web "$WEB_REPO" "$web_digest"
 
 # Coolify API on loopback inside the coolify container. The token goes in on stdin and
 # into a curl config file there, never into any argv.
@@ -79,37 +120,29 @@ stop_app() { # APP_UUID NAME
   capi POST "/applications/$1/stop" >/dev/null || echo "FAIL $2: could not stop $1, stop it by hand" >&2
 }
 
-deploy() { # APP_UUID NAME
-  local uuid=$1 name=$2 dep status=queued
-  capi PATCH "/applications/$uuid" "{\"git_commit_sha\":\"$sha\"}" >/dev/null
+# Deploys one app by digest, then requires every running container of it to run exactly the
+# pulled image. A failed rolling update leaves the old (already checked) container running.
+deploy() { # APP_UUID NAME REPO DIGEST
+  local uuid=$1 name=$2 repo=$3 digest=$4 dep status=queued want got
+  capi PATCH "/applications/$uuid" \
+    "{\"docker_registry_image_name\":\"$repo\",\"docker_registry_image_tag\":\"sha256-${digest#sha256:}\"}" >/dev/null
   dep=$(capi POST "/deploy?uuid=$uuid" | jq -r '.deployments[0].deployment_uuid // empty')
   [ -n "$dep" ] || die "$name: Coolify queued no deployment"
-  log "$name: deployment $dep queued"
+  log "$name: deployment $dep queued ($repo@$digest)"
   for _ in $(seq 180); do
     status=$(docker exec coolify-db psql -U coolify -d coolify -tAc \
       "select status from application_deployment_queues where deployment_uuid='$dep'")
     case "$status" in
-      finished) log "$name: finished"; return 0 ;;
+      finished) break ;;
       failed|cancelled*|error) die "$name: deployment $dep $status" ;;
     esac
     sleep 10
   done
-  die "$name: deployment $dep still '$status' after 30 min"
-}
-
-# Each app is checked right after its own deploy, so a failed web deploy never leaves an
-# unchecked api image live.
-deploy_and_check() { # APP_UUID NAME
-  local uuid=$1 name=$2 img
-  deploy "$uuid" "$name"
-  # A failed rolling update leaves the old (already checked) container running.
-  img=$(running_image "$uuid")
-  [ "$img" = "$uuid:$sha" ] || die "$name: running image is '${img:-none}', expected $uuid:$sha"
-  if ! bash "$VERIFY" "$uuid:$sha"; then
-    stop_app "$uuid" "$name"
-    die "$name: image check failed"
-  fi
-  log "$name: running $uuid:$sha, image check ok"
+  [ "$status" = finished ] || die "$name: deployment $dep still '$status' after 30 min"
+  want=$(docker image inspect "$repo@$digest" -f '{{.Id}}')
+  got=$(for c in $(running_containers "$uuid"); do docker inspect -f '{{.Image}}' "$c"; done | sort -u)
+  [ "$got" = "$want" ] || die "$name: running image is '${got:-none}', expected $want ($repo@$digest)"
+  log "$name: finished, running $repo@$digest"
 }
 
 # The origin must still answer only Cloudflare, and nothing may publish a host port.
@@ -135,9 +168,9 @@ origin_lock_ok() {
   done
 }
 
-log "deploying $sha"
-deploy_and_check "$API_UUID" api
-deploy_and_check "$WEB_UUID" web
+log "deploying $sha to $target"
+deploy "$API_UUID" api "$API_REPO" "$api_digest"
+deploy "$WEB_UUID" web "$WEB_REPO" "$web_digest"
 
 if ! origin_lock_ok; then
   stop_app "$API_UUID" api
@@ -152,10 +185,17 @@ revision=""; home=""
 for _ in $(seq 18); do
   revision=$(curl -fsS --max-time 10 "https://$HOST/api/health" | jq -r '.revision // empty' || true)
   home=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$HOST/" || true)
-  if [ "$revision" = "$sha" ] && [ "$home" = 200 ]; then
-    log "live: https://$HOST/api/health revision=$revision, home 200"
-    exit 0
-  fi
+  [ "$revision" = "$sha" ] && [ "$home" = 200 ] && break
   sleep 10
 done
-die "live revision is '${revision:-none}' (expected $sha), home answered '${home:-none}'"
+[ "$revision" = "$sha" ] && [ "$home" = 200 ] ||
+  die "live revision is '${revision:-none}' (expected $sha), home answered '${home:-none}'"
+log "live: https://$HOST/api/health revision=$revision, home 200"
+
+# Promotion record: production deploys only a pair that passed here. Written by rename, so a
+# reader never sees a partial file.
+install -d -m 700 "$PROMOTED"
+tmp=$(mktemp "$PROMOTED/.$sha.XXXXXX")
+printf '%s %s %s %s\n' "$sha" "$api_digest" "$web_digest" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp"
+mv -f "$tmp" "$PROMOTED/$sha"
+log "promoted: $PROMOTED/$sha"
