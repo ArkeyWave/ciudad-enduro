@@ -95,7 +95,7 @@ export class TrailsController {
   @UseGuards(OriginGuard)
   @ApiOkResponse({ type: TrailDetailDto })
   @ApiNotFoundResponse({ description: 'No trail has this slug' })
-  async update(@Param('slug', SlugPipe) slug: string, @Body() body: UpdateTrailDto): Promise<TrailDetailDto> {
+  async update(@Param('slug') slug: string, @Body() body: UpdateTrailDto): Promise<TrailDetailDto> {
     const trail = await this.trails.update(slug, body);
     if (!trail) throw new NotFoundException();
     return trail;
