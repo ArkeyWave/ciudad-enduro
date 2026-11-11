@@ -36,11 +36,6 @@ export function NewTrailForm() {
       {failure && (
         <p role="alert" style={{ margin: 0 }}>
           {trailErrorMessage(failure)}{' '}
-          {failure.slug && (
-            <a href={`/rutas/${encodeURIComponent(failure.slug)}`} style={{ color: LIME }}>
-              Ver la ruta
-            </a>
-          )}
         </p>
       )}
     </form>
