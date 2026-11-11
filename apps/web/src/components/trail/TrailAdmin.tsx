@@ -67,11 +67,6 @@ export function TrailAdmin({ trail }: { trail: TrailDetail }) {
           {pending('edit') ? 'Guardando…' : 'Guardar'}
         </button>
       </form>
-      {message && (
-        <p role="alert" style={{ margin: 0 }}>
-          {message}
-        </p>
-      )}
     </section>
   );
 }
