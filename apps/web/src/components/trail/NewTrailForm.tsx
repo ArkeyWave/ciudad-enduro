@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, type SubmitEvent } from 'react';
 import { trailErrorMessage, uploadTrail, type TrailFailure } from '../../lib/trails-client';
-import { input, LIME, primaryButton } from '../sign-in/styles';
+import { input, primaryButton } from '../sign-in/styles';
 import { column, TrailFields } from './TrailFields';
 
 export function NewTrailForm() {
