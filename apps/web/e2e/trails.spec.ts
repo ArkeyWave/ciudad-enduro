@@ -253,7 +253,9 @@ test.describe('admin and rider', () => {
     await expect(mine.getByTestId('trail-status')).toHaveText('En revisión');
     await expect(nav.getByRole('link', { name: 'Revisión' })).toHaveCount(0);
     expect((await rider.request.get('/admin/rutas')).status()).toBe(404);
+    expect((await rider.request.get('/mis-rutas')).status()).toBe(200);
     expect((await page.request.get('/mis-rutas')).status()).toBe(404);
+    expect((await admin.request.get('/admin/rutas')).status()).toBe(200);
     expect((await axe(rider)).violations).toEqual([]);
 
     await admin.goto('/');
@@ -269,10 +271,18 @@ test.describe('admin and rider', () => {
     await expect(admin.getByTestId('trail-card').filter({ hasText: 'Ruta Rider E2E' })).toHaveCount(0);
 
     await rider.goto('/mis-rutas');
-    await expect(mine).toBeVisible();
-    await expect(mine.getByTestId('trail-status')).toHaveCount(0);
+    await expect(mine.getByTestId('trail-status')).toHaveText('Publicada');
     await rider.goto('/rutas/ruta-rider-e2e');
     await expect(meta(rider).getByTestId('trail-status')).toHaveCount(0);
+  });
+
+  test('a rider who uploads a GPX that is already stored gets the duplicate message', async () => {
+    await rider.goto('/rutas/nueva');
+    await gpxInput(rider).setInputFiles(GPX);
+    await rider.getByLabel('Nombre').fill('Ruta Rider Duplicada');
+    await rider.getByRole('button', { name: 'Subir ruta' }).click();
+    await expect(rider.locator('main').getByRole('alert')).toContainText('Este GPX ya está subido.');
+    await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
   });
 
   test('a rider with 3 routes in review gets the Spanish limit message on the 4th', async () => {
@@ -281,9 +291,7 @@ test.describe('admin and rider', () => {
       await expect(rider).toHaveURL(`${ORIGIN}/rutas/ruta-pendiente-${n}`);
     }
     await riderUpload('Ruta Pendiente 4');
-    await expect(rider.locator('main').getByRole('alert')).toHaveText(
-      'Ya tienes 3 rutas en revisión. Espera la aprobación antes de registrar otra.',
-    );
+    await expect(rider.locator('main').getByRole('alert')).toHaveText('Tienes 3 rutas en revisión. Espera la aprobación.');
     await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
   });
 

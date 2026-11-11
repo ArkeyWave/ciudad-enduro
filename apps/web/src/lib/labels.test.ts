@@ -44,11 +44,12 @@ describe('labels', () => {
 });
 
 describe('reviewLabel', () => {
-  it('names a pending and a refused trail', () => {
+  it('names each status in the rider\'s words', () => {
     expect(reviewLabel('draft')).toBe('En revisión');
     expect(reviewLabel('hidden')).toBe('No aprobada');
+    expect(reviewLabel('published')).toBe('Publicada');
   });
-  it('gives a published trail no chip', () => {
-    expect(reviewLabel('published')).toBeNull();
+  it('refuses an unknown status', () => {
+    expect(() => reviewLabel('toString' as never)).toThrow('Unknown trail status');
   });
 });

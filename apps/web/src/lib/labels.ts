@@ -37,9 +37,9 @@ export const statusLabel = (slug: TrailStatus): string => lookup(STATUS_LABELS, 
 
 const REVIEW_LABELS = {
   draft: 'En revisión',
-  published: null,
+  published: 'Publicada',
   hidden: 'No aprobada',
-} satisfies Record<TrailStatus, string | null>;
+} satisfies Record<TrailStatus, string>;
 
-/** The chip a rider sees on an own trail; a published trail has none. */
-export const reviewLabel = (slug: TrailStatus): string | null => REVIEW_LABELS[slug];
+/** The chip a rider sees on an own trail. */
+export const reviewLabel = (slug: TrailStatus): string => lookup(REVIEW_LABELS, 'trail status', slug);

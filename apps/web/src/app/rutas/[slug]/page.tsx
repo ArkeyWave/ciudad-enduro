@@ -21,8 +21,8 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
   const admin = isAdmin(me);
   const { lat, lng } = trail.start;
   // The API shows a draft or hidden trail to an admin and to its author only, so a non-admin who
-  // gets one is its author.
-  const chip = admin ? statusLabel(trail.status) : reviewLabel(trail.status);
+  // gets one is its author. A published trail has no chip for everyone else.
+  const chip = admin ? statusLabel(trail.status) : trail.status === 'published' ? null : reviewLabel(trail.status);
 
   return (
     <main className="page">
