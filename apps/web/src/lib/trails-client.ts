@@ -50,6 +50,7 @@ const CODE_MESSAGES: Record<string, string> = {
   TOO_MANY_PENDING: 'Tienes 3 rutas en revisión. Espera la aprobación.',
   TOO_MANY_UPLOADS: 'Demasiados intentos. Prueba en unos minutos.',
   GPX_TOO_COMPLEX: 'El archivo GPX es demasiado complejo.',
+  PARSE_BUSY: 'El servidor está ocupado. Prueba en unos segundos.',
 };
 
 /** The Spanish message for a failed upload or edit, by error code first, then by status. */

@@ -21,10 +21,11 @@ describe('trailErrorMessage', () => {
     expect(trailErrorMessage({ status: 401, code })).toBe('Tu sesión venció. Ingresa de nuevo.');
   });
 
-  it('maps TOO_MANY_PENDING, TOO_MANY_UPLOADS and GPX_TOO_COMPLEX to their messages, not the generic one', () => {
+  it('maps TOO_MANY_PENDING, TOO_MANY_UPLOADS, GPX_TOO_COMPLEX and PARSE_BUSY to their messages, not the generic one', () => {
     expect(trailErrorMessage({ status: 429, code: 'TOO_MANY_PENDING' })).toBe('Tienes 3 rutas en revisión. Espera la aprobación.');
     expect(trailErrorMessage({ status: 429, code: 'TOO_MANY_UPLOADS' })).toBe('Demasiados intentos. Prueba en unos minutos.');
     expect(trailErrorMessage({ status: 400, code: 'GPX_TOO_COMPLEX' })).toBe('El archivo GPX es demasiado complejo.');
+    expect(trailErrorMessage({ status: 503, code: 'PARSE_BUSY' })).toBe('El servidor está ocupado. Prueba en unos segundos.');
     expect(trailErrorMessage({ status: 429 })).toBe(MESSAGES.generic);
   });
 
