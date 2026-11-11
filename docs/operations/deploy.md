@@ -55,8 +55,8 @@ project `ciudad-enduro-oss`, environment `staging`. Production: see [Production]
      ``Host(`enduro-next.vops.pe`)`` (refused, no Coolify call);
    - per app, api first (the api container migrates the database on start), then web: PATCH
      `docker_registry_image_name` = the repository and `docker_registry_image_tag` = `sha256-<hex>`,
-     deploy, and require every running container of the app to run exactly
-     `docker image inspect <repo>@<digest> -f {{.Id}}`. The script records the app's running image IDs
+     deploy, and require every container of the app that `docker ps` lists (running, restarting, paused) to run exactly
+     `docker image inspect <repo>@<digest> -f {{.Id}}`. The script records the image IDs of those containers
      before the deploy and checks in two passes, so the order of the IDs does not matter: any image that
      is neither the pulled one nor a recorded one is unchecked, so the script stops the app and exits 1;
      then, if a recorded image still runs, the rolling update failed and the old container stays
@@ -378,7 +378,7 @@ project `ciudad-enduro-oss`, environment `production` (`e04m00q08bl1d6yop2rsfdgr
    the SHA), and then runs the same steps as staging: SHA on `main` (the shared `repo.git` fetch holds
    `lock.cache`), rollback guard, preflight of both images (pull, attestation verified again, label),
    build pack `dockerimage`, the checks before the first change (below), api then web by digest,
-   running image check, origin lock, live revision and home page on `https://enduro.vops.pe`.
+   image check (every listed container), origin lock, live revision and home page on `https://enduro.vops.pe`.
 5. **Checks before the first change** (both targets): both apps have
    `is_container_label_readonly_enabled = f` (otherwise Coolify would generate its own labels and
    ignore the stored ones), and in public mode no container that `docker ps` lists (running,

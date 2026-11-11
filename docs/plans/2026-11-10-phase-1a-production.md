@@ -171,7 +171,7 @@ not matching the attestation, attestation from another workflow/ref, label misma
    b. stop the old app; confirm its container is gone;
    c. enable the new apps' locked labels and deploy;
    d. verify: public 200 + revision, direct origin 403, every router has the middleware, no host ports,
-      and the set of running containers with ``Host(`enduro.vops.pe`)`` == {new api, new web};
+      and the set of containers that `docker ps` lists (running, restarting, paused) with ``Host(`enduro.vops.pe`)`` == {new api, new web};
    e. **rollback** (exact reverse): stop the new apps → confirm gone → start the old app with its stored
       labels → same checks. Rehearse once inside the window (the old repo's pull key must still work;
       the old images survive on the box).
