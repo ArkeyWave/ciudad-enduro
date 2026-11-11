@@ -8,19 +8,33 @@ export async function SessionHeader() {
   const me = await getMe((await headers()).get('cookie') ?? '');
   return (
     <header
-      style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: 16, borderBottom: '1px solid #2A2A2A' }}
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: 12,
+        padding: 16,
+        borderBottom: '1px solid #2A2A2A',
+      }}
     >
-      <a href="/" style={{ color: LIME, fontWeight: 700, textDecoration: 'none' }}>
+      <a href="/" style={{ color: LIME, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
         Ciudad Enduro
       </a>
       {me ? (
-        <span style={{ display: 'flex', gap: 12 }}>
+        // min-width 0 lets the e-mail shrink, so a long address never pushes "Salir" off a phone screen.
+        <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
           {isAdmin(me) && (
-            <a href="/rutas/nueva" style={{ color: LIME }}>
+            <a href="/rutas/nueva" style={{ color: LIME, whiteSpace: 'nowrap', flexShrink: 0 }}>
               Nueva ruta
             </a>
           )}
-          <span data-testid="session-email">{me.email}</span>
+          <span
+            data-testid="session-email"
+            title={me.email}
+            style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {me.email}
+          </span>
           <SignOutButton />
         </span>
       ) : (
