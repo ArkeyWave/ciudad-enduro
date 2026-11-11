@@ -19,6 +19,7 @@ const env = loadEnv({
   GOOGLE_CLIENT_ID: 'cli',
   GOOGLE_CLIENT_SECRET: 'cli',
   OTP_HMAC_SECRET: 'cli-only-secret-0123456789abcdef0123',
+  TURNSTILE_SECRET_KEY: 'cli',
 });
 
 export const auth = createAuth({

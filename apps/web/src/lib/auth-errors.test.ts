@@ -39,6 +39,25 @@ describe('sendErrorMessage', () => {
   it('maps any other failure to a generic message', () => {
     expect(sendErrorMessage({ status: 500 })).toBe(MESSAGES.generic);
   });
+
+  it.each([
+    ['MISSING_RESPONSE', 400],
+    ['VERIFICATION_FAILED', 403],
+  ])('maps the captcha code %s to the captcha message', (code, status) => {
+    expect(sendErrorMessage({ status, code })).toBe('No pudimos verificar que eres una persona. Intenta de nuevo.');
+  });
+
+  it('maps the captcha codes by code, not by status', () => {
+    expect(sendErrorMessage({ status: 500, code: 'VERIFICATION_FAILED' })).toBe(MESSAGES.captcha);
+    // Same statuses, other causes: an invalid body (400) and a refused origin (403).
+    expect(sendErrorMessage({ status: 400, code: 'VALIDATION_ERROR' })).toBe(MESSAGES.generic);
+    expect(sendErrorMessage({ status: 403, code: 'INVALID_ORIGIN' })).toBe(MESSAGES.generic);
+    expect(sendErrorMessage({ status: 403 })).toBe(MESSAGES.generic);
+  });
+
+  it('maps UNKNOWN_ERROR (siteverify unreachable) to the generic message', () => {
+    expect(sendErrorMessage({ status: 500, code: 'UNKNOWN_ERROR' })).toBe(MESSAGES.generic);
+  });
 });
 
 describe('googleErrorMessage', () => {

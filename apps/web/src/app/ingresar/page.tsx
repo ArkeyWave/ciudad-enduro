@@ -4,10 +4,13 @@ import { googleErrorMessage } from '../../lib/auth-errors';
 export default async function SignInPage({ searchParams }: { searchParams: Promise<{ error?: string | string[] }> }) {
   // Better Auth sends a failed Google sign-in back here with ?error=<code>.
   const { error } = await searchParams;
+  // Read per request, not inlined at build (no NEXT_PUBLIC_): one image serves every host.
+  const siteKey = process.env.TURNSTILE_SITE_KEY;
+  if (!siteKey) throw new Error('TURNSTILE_SITE_KEY is required');
   return (
     <main style={{ maxWidth: 420, margin: '0 auto', padding: 16 }}>
       <h1 style={{ color: '#CCFF00' }}>Ingresar</h1>
-      <SignInForm initialMessage={googleErrorMessage(typeof error === 'string' ? error : null)} />
+      <SignInForm initialMessage={googleErrorMessage(typeof error === 'string' ? error : null)} siteKey={siteKey} />
     </main>
   );
 }

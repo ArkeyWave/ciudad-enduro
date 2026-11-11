@@ -164,13 +164,16 @@ jobs:
             -e BETTER_AUTH_SECRET="$(secret)" -e OTP_HMAC_SECRET="$(secret)" \
             -e RESEND_API_KEY="$(secret)" -e GOOGLE_CLIENT_SECRET="$(secret)" \
             -e EMAIL_FROM=ci@example.com -e GOOGLE_CLIENT_ID=ci \
+            -e TURNSTILE_SECRET_KEY="$(secret)" \
             ce-api:ci
-          docker run -d --name web --network host -e API_INTERNAL_URL=http://127.0.0.1:3001 ce-web:ci
+          docker run -d --name web --network host -e API_INTERNAL_URL=http://127.0.0.1:3001 \
+            -e TURNSTILE_SITE_KEY=ci-site-key ce-web:ci
           for i in $(seq 30); do curl -fsS http://127.0.0.1:3001/api/health -o health.json && break; sleep 2; done
           cat health.json; echo
           test "$(jq -r .revision health.json)" = "${{ github.sha }}"
           for i in $(seq 30); do curl -fsS http://127.0.0.1:3000/ -o home.html && break; sleep 2; done
           grep -q 'Aún no hay senderos publicados.' home.html
+          curl -fsS http://127.0.0.1:3000/ingresar | grep -q ci-site-key
 
       - name: Container logs
         if: failure()

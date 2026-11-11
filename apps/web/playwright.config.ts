@@ -2,11 +2,12 @@ import { defineConfig, devices } from '@playwright/test';
 import { CODES_FILE } from './e2e/codes.ts';
 import { API_PORT, HUNG_API_PORT, HUNG_WEB_PORT, ORIGIN_PORT, WEB_PORT } from './e2e/ports.ts';
 
-
 // The API runs on ciudad_enduro_test_<TEST_DB_SUFFIX>, the database e2e/prepare-db.ts recreates.
 const databaseUrl = new URL(process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5434/ciudad_enduro');
 databaseUrl.pathname = `/ciudad_enduro_test_${process.env.TEST_DB_SUFFIX ?? 'main'}`;
 const origin = `http://127.0.0.1:${ORIGIN_PORT}`;
+// Read at runtime by /ingresar; e2e/turnstile.ts (SITE_KEY) checks the widget got this value.
+const TURNSTILE_SITE_KEY = 'e2e-site-key';
 
 export default defineConfig({
   testDir: 'e2e',
@@ -36,6 +37,8 @@ export default defineConfig({
         GOOGLE_CLIENT_ID: 'test-google-client-id',
         GOOGLE_CLIENT_SECRET: 'test-google-client-secret',
         OTP_HMAC_SECRET: 'test-otp-hmac-secret-0123456789abcdef',
+        // e2e-main checks tokens against an in-process siteverify stub, never Cloudflare.
+        TURNSTILE_SECRET_KEY: 'test-turnstile-secret-key',
       },
     },
     {
@@ -43,7 +46,7 @@ export default defineConfig({
       command: `next start -p ${WEB_PORT}`,
       url: `http://127.0.0.1:${WEB_PORT}/ingresar`,
       reuseExistingServer: false,
-      env: { API_INTERNAL_URL: `http://127.0.0.1:${API_PORT}` },
+      env: { API_INTERNAL_URL: `http://127.0.0.1:${API_PORT}`, TURNSTILE_SITE_KEY },
     },
     {
       command: `node e2e/front-proxy.ts ${ORIGIN_PORT} ${WEB_PORT} ${API_PORT}`,
@@ -59,7 +62,7 @@ export default defineConfig({
       command: `next start -p ${HUNG_WEB_PORT}`,
       url: `http://127.0.0.1:${HUNG_WEB_PORT}/ingresar`,
       reuseExistingServer: false,
-      env: { API_INTERNAL_URL: `http://127.0.0.1:${HUNG_API_PORT}` },
+      env: { API_INTERNAL_URL: `http://127.0.0.1:${HUNG_API_PORT}`, TURNSTILE_SITE_KEY },
     },
   ],
 });

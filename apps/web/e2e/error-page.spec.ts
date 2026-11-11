@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { HUNG_API_PORT, HUNG_WEB_PORT } from './ports.ts';
+import { test } from './turnstile.ts';
 
 // This web server's API accepts the connection and never answers.
 const HUNG_WEB = `http://127.0.0.1:${HUNG_WEB_PORT}`;
