@@ -46,8 +46,8 @@ The change applies to the next request; the owner does not sign in again. To tak
    Merge the segments into one segment in the GPX editor, check the joins on the map (a join draws a
    straight line across the pause), and export again.
 3. The file must be UTF-8, at most 10 MiB and at most 100 000 points, and every point must be inside
-   Peru. Elevation counts only when every point has an `<ele>`; otherwise the trail has no gain, loss
-   or profile.
+   Peru. Elevation counts only when every point has an `<ele>` and every `<ele>` is a number in
+   −500…7000 m; otherwise the trail has no gain, loss or profile.
 
 ## 3. Upload, check, publish
 
@@ -60,7 +60,7 @@ Error codes of the upload (HTTP 400 unless stated):
 
 | Code | Meaning |
 |------|---------|
-| `GPX_INVALID` | Not UTF-8, a DOCTYPE, malformed XML, root is not `gpx`, elements nested deeper than 100, a reserved name such as `constructor`, or a `<trkpt>` without a valid `lat`/`lon` |
+| `GPX_INVALID` | Not UTF-8, a DOCTYPE, malformed XML, root is not `gpx`, elements nested deeper than 100, a reserved name such as `constructor`, a `<trkpt>` without a valid `lat`/`lon`, or a distance or a gain above the int4 range |
 | `GPX_EMPTY` | Fewer than 2 points, or a total distance of 0 |
 | `GPX_TOO_LARGE` | More than 100 000 points (a file above 10 MiB gets HTTP 413) |
 | `GPX_MULTI_SEGMENT` | More than one `<trk>` (an empty one counts) or more than one non-empty segment (step 2.2) |

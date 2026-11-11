@@ -247,6 +247,29 @@ describe('POST /api/trails: import', () => {
       await client.query('drop trigger fail_source on trail_sources');
     }
   });
+
+  it('maps a sha256 unique violation from the insert (a race) to 409 GPX_DUPLICATE', async () => {
+    await client.query(`create or replace function race_source() returns trigger language plpgsql as $$
+      begin raise exception 'raced' using errcode = 'unique_violation', constraint = 'trail_sources_sha256_unique'; end $$`);
+    await client.query('create trigger race_source before insert on trail_sources for each row execute function race_source()');
+    try {
+      lines.length = 0;
+      const res = await upload(as(admin));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ code: 'GPX_DUPLICATE' });
+      expect(await count('trails')).toBe(0);
+      expect(lines.filter((line) => line.includes('trail_create_failed'))).toEqual([]);
+    } finally {
+      await client.query('drop trigger race_source on trail_sources');
+    }
+  });
+
+  it('refuses U+0000 in the name or the description, and accepts other text', async () => {
+    expect((await upload(as(admin), { ...fields, name: 'Cerro\u0000x' })).status).toBe(400);
+    expect((await upload(as(admin), { ...fields, description: 'a\u0000b' })).status).toBe(400);
+    expect(await count('trails')).toBe(0);
+    expect((await upload(as(admin), { ...fields, name: 'Cerro Ñandú', description: 'línea\nsegunda' })).status).toBe(201);
+  });
 });
 
 describe('GET /api/trails/:slug for an admin', () => {
@@ -320,6 +343,12 @@ describe('PATCH /api/trails/:slug', () => {
     expect((await patch('borrador', as(admin), {})).status).toBe(400);
     expect((await patch('borrador', as(admin), { slug: 'otro' })).status).toBe(400);
     expect((await patch('borrador', as(admin), { name: 'x'.repeat(81) })).status).toBe(400);
+  });
+
+  it('refuses U+0000 in the name or the description, and accepts other text', async () => {
+    expect((await patch('borrador', as(admin), { name: 'a\u0000b' })).status).toBe(400);
+    expect((await patch('borrador', as(admin), { description: 'a\u0000b' })).status).toBe(400);
+    expect((await patch('borrador', as(admin), { name: 'Ñandú', description: 'línea\nsegunda' })).status).toBe(200);
   });
 
   it('answers 404 to an unknown slug', async () => {
