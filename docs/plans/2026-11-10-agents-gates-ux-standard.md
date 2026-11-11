@@ -245,3 +245,21 @@ same parsing as R3): `gh workflow run deploy-production…` (any spelling of the
 id) and any `gh api` call to `…/pending_deployments`. Tests: must-deny for each spelling, must-allow for
 `gh workflow run ci.yml` and `gh run list`. This is an accident guard, not a boundary; only the owner approves,
 in the GitHub UI.
+
+**R13 (L2 build record, 2026-11-11) — handlers, failure modes and known limits.** Installed handlers: two
+Bash handlers with `if: "Bash(git *)"` and `if: "Bash(gh *)"`, and one PowerShell handler with no `if`
+(R3 allowed dropping `if` for PowerShell; it was needed because `PowerShell(git *)` does not reach
+`& "C:\Program Files\Git\cmd\git.exe" …`). R12 is why `gh` handlers exist (R3's "no `gh`" is replaced).
+`onFailure: "block"` refuses on a missing script, a crash, a timeout and output that starts with `{` and is not
+valid JSON (`{bad}`); output that does not parse as a JSON object (`{"hookSpecificOutput": {`) is read as
+plain text and does **not** block — the guard writes one `JSON.stringify` result, so it never emits that.
+Known limits after the final review (accident guard, not a boundary; guard sha256 `fd1e2924…`, 307
+tests, 94 mutants all red): (1) in Bash the `if` filters do not reach `GIT`, `git.exe`, `/mingw64/bin/git`,
+`GH` or `time git …` (they do reach `for … do` and `if … then` bodies); (2) commands after `sudo`, `env`,
+`command`, `xargs` are not read; (3) quoted flags and quoted `-c` values pass (`git push "-f"`); (4) a `|` or
+`;` inside `$( … )` in a `gh api` endpoint splits the word, so that endpoint passes; (5) a GraphQL query or a
+dispatch body read from a file or stdin passes; (6) truncated hook output that does not parse as a JSON
+object does not block; (7) every numeric workflow id is refused (no local id lookup). Scripts, other
+interpreters and direct API clients pass. The server-side gates (`protect-main`, the `production` Environment
+approval in the GitHub UI) stay the real gates. Process rule: a failure-mode test never changes the installed
+`guard.mjs`; it uses a copy and a temporary handler, and the installed file is replaced atomically.
