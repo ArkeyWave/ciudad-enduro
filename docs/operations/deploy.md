@@ -416,14 +416,14 @@ cd /root/ce-oss
 exec 7>/var/cache/ce-oss-deploy/lock.staging; flock 7
 rm -f ce-oss-deploy.v3
 curl -fsSL -o ce-oss-deploy.v3 \
-  https://raw.githubusercontent.com/ArkeyWave/ciudad-enduro/<commit>/docs/operations/ce-oss-deploy &&
-  echo '<sha256>  ce-oss-deploy.v3' | sha256sum -c &&
+  https://raw.githubusercontent.com/ArkeyWave/ciudad-enduro/797008a6f4cc3e0b539bc089ddf8bfdb5744ed2a/docs/operations/ce-oss-deploy &&
+  echo '0aba288bbfb20f391daa0b5b7a9c330c58feb15e6ac9c29370bab21799beb928  ce-oss-deploy.v3' | sha256sum -c &&
   install -o root -g root -m 755 ce-oss-deploy.v3 /usr/local/bin/ce-oss-deploy &&
-  echo '<sha256>  /usr/local/bin/ce-oss-deploy' | sha256sum -c
+  echo '0aba288bbfb20f391daa0b5b7a9c330c58feb15e6ac9c29370bab21799beb928  /usr/local/bin/ce-oss-deploy' | sha256sum -c
 exec 7>&-
 ```
 
-`<commit>` and `<sha256>` are those of the commit that last changed the script (P1a-3 PR; updated
+The commit and the sha256 are those of the commit that last changed the script (P1a-3 PR; update
 with every review fix). Until v3 is installed, the prod key is refused (`unknown target 'production'`).
 
 ### `ce-oss-deploy` v3 proofs
