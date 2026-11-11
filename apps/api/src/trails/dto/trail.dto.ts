@@ -19,6 +19,13 @@ const pairs = (description: string) =>
     nullable: true,
   }) as const;
 
+/** The body of a coded 4xx answer. */
+export class ErrorBodyDto {
+  @ApiProperty({ example: 'TOO_MANY_PENDING' }) code!: string;
+  @ApiProperty() message!: string;
+  @ApiProperty({ required: false, description: 'GPX_DUPLICATE only, when the uploader may see that trail' }) slug?: string;
+}
+
 export class CoordinatesDto {
   @ApiProperty() lat!: number;
   @ApiProperty() lng!: number;
