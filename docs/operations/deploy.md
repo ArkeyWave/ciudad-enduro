@@ -468,8 +468,10 @@ ls -A /var/lib/ce-oss/production 2>/dev/null   # nothing: no stray record may bo
 ```
 
 The sha256 (fee830e5fa73feb263f409e3956104dcb7d6fddec3ecdfb5bfe58876384b2e3e) is that of `docs/operations/ce-oss-deploy` at the reviewed head (in the P1a-3 PR;
-update it with every review fix). After the install, write the merge commit into this section in a
-docs commit. Until v3 is installed, the prod key is refused (`unknown target 'production'`).
+update it with every review fix).
+
+**Installed 2026-11-11** from merge commit `fe53d95ffac6b76adc9b70367f73413d030eff78` (PR #21), both
+locks held, both sha256 checks OK, `/var/lib/ce-oss/production/` absent.
 
 ### Post-merge steps (P1a-3 part 1)
 
