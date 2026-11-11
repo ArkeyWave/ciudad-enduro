@@ -75,15 +75,21 @@ label_of() { # IMAGE -> its revision label, empty when absent
   docker image inspect "$1" -f "{{with .Config.Labels}}{{index . \"$REVISION\"}}{{end}}" 2>/dev/null || true
 }
 
-newest_promoted() { # -> SHA of the newest promotion record of this box, empty when none
-  ls -1t "$PROMOTED" 2>/dev/null | grep -E '^[0-9a-f]{40}$' | head -1 || true
+newest_promoted() { # -> SHA of the promotion record with the newest UTC date (field 4), empty when none
+  local f s d
+  for f in "$PROMOTED"/*; do
+    [[ ${f##*/} =~ ^[0-9a-f]{40}$ ]] || continue
+    read -r s _ _ d < "$f" || continue
+    [[ $s = "${f##*/}" && $d =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] && echo "$d $s"
+  done | sort | tail -1 | cut -d' ' -f2
 }
 
 # Rollback guard: the lower bound is the revision label of the image of the newest api container,
 # in any state (a stopped or restarting api still counts). An image without the label (a Coolify
 # build before v2) is refused unless ROLLBACK=1. A Coolify stop removes the containers, so with no
-# api container at all the bound is the newest promotion record; no record either passes (the
-# first v2 deploy). A SHA older than the bound is refused unless ROLLBACK=1.
+# api container at all the bound is the newest promotion record (by its UTC date); no record
+# either passes (the first v2 deploy). A bound that is not on main, or a SHA older than the bound,
+# is refused unless ROLLBACK=1.
 live=$(latest_container "$API_UUID")
 if [ -n "$live" ]; then
   live_sha=$(label_of "$(docker inspect -f '{{.Image}}' "$live")") from="the deployed"
@@ -94,10 +100,15 @@ if [ -n "$live" ]; then
 else
   live_sha=$(newest_promoted) from="the newest promotion record"
 fi
-if [[ $live_sha =~ ^[0-9a-f]{40}$ ]] && [ "$live_sha" != "$sha" ] &&
-  git -C "$CACHE" merge-base --is-ancestor "$sha" "$live_sha" 2>/dev/null; then
-  [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than $from $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
-  log "ROLLBACK=1: rolling back from $live_sha"
+if [[ $live_sha =~ ^[0-9a-f]{40}$ ]] && [ "$live_sha" != "$sha" ]; then
+  if ! git -C "$CACHE" cat-file -e "$live_sha^{commit}" 2>/dev/null; then
+    # A bound that is not on main cannot be ordered; never let it pass silently.
+    [ "${ROLLBACK:-}" = 1 ] || refuse "$from $live_sha is not on main; an operator on the box sets ROLLBACK=1"
+    log "ROLLBACK=1: $from $live_sha is not on main"
+  elif git -C "$CACHE" merge-base --is-ancestor "$sha" "$live_sha"; then
+    [ "${ROLLBACK:-}" = 1 ] || refuse "$sha is older than $from $live_sha; an operator on the box sets ROLLBACK=1 to roll back"
+    log "ROLLBACK=1: rolling back from $live_sha"
+  fi
 fi
 
 # Preflight: both images before either app changes. The token (fine-grained, no permissions)
