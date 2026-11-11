@@ -4,7 +4,8 @@ Last updated: 2026-11-10
 
 Read this file first. It tells you what works, what is in flight and what waits on a decision.
 Capabilities and their proofs are in [features.json](features.json). The backlog is in
-[GitHub Issues](https://github.com/ArkeyWave/ciudad-enduro/issues). Feature ideas and votes are in
+[GitHub Issues](https://github.com/ArkeyWave/ciudad-enduro/issues) and on the
+[project board](https://github.com/users/ArkeyWave/projects/1). Feature ideas and votes are in
 [Discussions → Ideas](https://github.com/ArkeyWave/ciudad-enduro/discussions/categories/ideas).
 
 ## Done
