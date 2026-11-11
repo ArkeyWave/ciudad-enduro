@@ -6,55 +6,102 @@ project `ciudad-enduro-oss`, environment `staging`.
 ## How a deploy happens
 
 1. A push to `main` runs `.github/workflows/ci.yml`.
-2. When `check`, `contract`, `e2e` and `images` pass, the `deploy-staging` job runs in the GitHub
-   Environment `staging` (deployment branches: `main` only). It holds one secret,
-   `CE_OSS_DEPLOY_KEY`.
-3. The job runs `ssh root@104.152.209.8 <sha>` with a pinned host key. On the box, that key can only
-   run `/usr/local/bin/ce-oss-deploy` (`restrict,command=...` in `/root/.ssh/authorized_keys`).
-4. `ce-oss-deploy` (copy in [`ce-oss-deploy`](ce-oss-deploy)):
-   - refuses anything that is not one 40-hex SHA;
-   - fetches `main` of the public repo into `/var/cache/ce-oss-deploy/repo.git` and refuses a SHA
-     that is not an ancestor of `origin/main` (a fork or branch commit cannot deploy);
-   - holds `flock /var/cache/ce-oss-deploy/lock` (directory `700`);
-   - refuses a SHA that is a strict ancestor of the running api commit (a rollback) unless an
-     operator on the box sets `ROLLBACK=1` (see [Rollback](#rollback));
-   - refuses the commit, **before any deploy**, when its `scripts/verify-image.sh` differs from
-     the reviewed copy installed at `/usr/local/lib/ce-oss/verify-image.sh`;
-   - deploys **api first** (the api container migrates the database on start), then web. Right
-     after each app's own deploy, it requires the running container to be exactly
-     `<app-uuid>:<sha>` and runs the installed verifier on that image; when the image check
-     fails, it stops that app through the Coolify API and exits 1. A failed web deploy therefore
-     never leaves an unchecked api image live;
+2. `images` builds both images **once** with plain `docker build --provenance=false` (one image
+   manifest, no index) and the labels `org.opencontainers.image.revision=<sha>` and
+   `org.opencontainers.image.source`. It runs `scripts/verify-image.sh` (forbidden paths, build-context
+   canary) and the smoke run on those exact image IDs, and emits the IDs as job outputs. On a push to
+   `main` only, it saves the images as a one-day artifact; pull requests upload nothing and have no
+   package permission.
+3. When `check`, `contract`, `e2e` and `images` pass, `publish` (push to `main` only) runs. It is the
+   only job with `packages: write`, `attestations: write`, `id-token: write` and
+   `artifact-metadata: write`, and it checks out nothing. It loads the artifact, **refuses unless each
+   loaded image ID equals the ID `images` checked** (before any push), pushes
+   `ghcr.io/arkeywave/ciudad-enduro-{api,web}:sha-<sha>`, and proves the pushed manifest is the checked
+   image: the runner uses the containerd image store, so the manifest digest must equal the image ID (in
+   the classic store it would be the config digest; the job detects the store and fails on an unknown
+   one). Then `actions/attest-build-provenance` (pinned by SHA) signs a build provenance attestation for
+   each digest and pushes it to the registry.
+4. `deploy-staging` runs in the GitHub Environment `staging` (deployment branches: `main` only) with
+   one secret, `CE_OSS_DEPLOY_KEY`, and `permissions: {}`. It runs
+   `ssh root@104.152.209.8 "<sha> <api-digest> <web-digest>"` with a pinned host key. On the box that key
+   can only run `/usr/local/bin/ce-oss-deploy staging` (`restrict,command=...` in
+   `/root/.ssh/authorized_keys`); the target is fixed by the key.
+5. `ce-oss-deploy` v2 (copy in [`ce-oss-deploy`](ce-oss-deploy)):
+   - refuses anything that does not match `^[0-9a-f]{40} sha256:[0-9a-f]{64} sha256:[0-9a-f]{64}$`;
+   - holds `flock /var/cache/ce-oss-deploy/lock.<target>` (one lock per target);
+   - fetches `main` of the public repo into `/var/cache/ce-oss-deploy/repo.git` and refuses a SHA that
+     is not an ancestor of `origin/main`;
+   - **rollback guard:** reads the running api revision from its image's
+     `org.opencontainers.image.revision` label. No running container passes; a running image without the
+     label is refused unless `ROLLBACK=1`; a SHA that is a strict ancestor of the running one is refused
+     unless `ROLLBACK=1` (see [Rollback](#rollback));
+   - **preflight, both images before either app changes:** `docker pull <repo>@<digest>`;
+     `gh attestation verify oci://<repo>@<digest> --repo ArkeyWave/ciudad-enduro --signer-workflow
+     ArkeyWave/ciudad-enduro/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest <sha>
+     --deny-self-hosted-runners`; revision label == `<sha>`;
+   - per app, api first (the api container migrates the database on start), then web: PATCH
+     `docker_registry_image_name` = the repository and `docker_registry_image_tag` = `sha256-<hex>`,
+     deploy, and require every running container of the app to run exactly
+     `docker image inspect <repo>@<digest> -f {{.Id}}`. A failure stops the script; a failed rolling
+     update leaves the old container running;
    - re-checks the origin lock: direct requests to the box for `/` and `/api/health` answer 403,
      every `traefik.http.routers.*.rule` label on both running containers has a `.middlewares`
      label with `cloudflare-only@file`, and `docker port` is empty for both. On failure it stops
      both apps and exits 1;
    - fails unless, within 3 minutes, `https://enduro-next.vops.pe/api/health` answers `revision`
-     = the SHA and `/` answers 200 (both retried in the same loop).
+     = the SHA and `/` answers 200 (both retried in the same loop);
+   - writes the **promotion record** `/var/lib/ce-oss/promoted/<sha>` (root 600, written by rename):
+     `<sha> <api-digest> <web-digest> <utc>`. Production (Phase 1a, P1a-3) deploys only a recorded pair.
 
-What runs where: `ce-oss-deploy` itself runs no file from the repo on the host. The Coolify build
-does run repo code: the Dockerfile `RUN` steps and the build tools (pnpm, turbo, tsc, next) run in
-a BuildKit container with host networking (`--network host`, `--add-host` entries for the box
-databases). This risk is accepted for staging and recorded in the plan (section 8).
+What runs where: **no repository build step runs on the box.** Images are built and checked in GitHub
+Actions; Coolify pulls them by digest (`Image (…) not found on the server. Pulling it` in the deployment
+log, no build). The only code from the repo that runs on the box is the attested image itself. This
+closes B3-F1 (the Coolify BuildKit build that ran repo `RUN` steps with host networking).
 
 The Coolify token goes into the `coolify` container on stdin and into a curl config file there;
 it never appears in a process argv (`/root/ce-oss/capi` does the same for manual API calls).
 
 There is no `workflow_run` trigger and no Coolify webhook: auto-deploy is off on both apps.
 
+### Trust root of the attestation
+
+The attestation is a Sigstore bundle signed with a short-lived certificate from the **Sigstore
+public-good** Fulcio CA, bound to the GitHub Actions OIDC identity of the run (repository, workflow file
+`.github/workflows/ci.yml`, ref, commit, GitHub-hosted runner), logged in the public Rekor transparency
+log, and stored by GitHub (repository attestations API) and in GHCR next to the image. `gh` verifies it
+against the Sigstore public-good trusted root (TUF). Who can make a valid attestation: a workflow run of
+`ci.yml` on `refs/heads/main` of `ArkeyWave/ciudad-enduro`; `main` is protected (ruleset `protect-main`:
+pull request and the checks `check`, `contract`, `e2e`, `images` required, no force push, no deletion).
+
+`gh attestation verify` needs a GitHub token even for public repos. The box uses a **fine-grained token
+with no permissions** (public read only) in `/root/.secrets/ce-oss-gh-attest.env` (root 600,
+`GH_TOKEN=...`), passed only in the environment of the `gh` call (binary
+`/usr/local/lib/ce-oss/gh/bin/gh`; `/usr/local/lib/ce-oss/gh` is a directory symlink). The owner created
+it on 2026-11-10 with **no expiration**: it can read only what is public. **Revoke it (GitHub → Settings →
+Developer settings → Fine-grained tokens) if the box is compromised**, then put a new one in the file.
+Without a valid token every deploy is refused. A GitHub or Sigstore outage also refuses every deploy,
+`ROLLBACK=1` included (fail closed, accepted).
+
 ## Pieces on the box
 
 | Piece | Value |
 |---|---|
-| Coolify app `ce-oss-api-staging` | `c6mm7pwdmoysv0eg2vgwo4bi`, `apps/api/Dockerfile`, port 3001, network alias `ce-oss-api-staging`, health check `/api/health` |
-| Coolify app `ce-oss-web-staging` | `whfatie8ek3wh09ite3mnqn0`, `apps/web/Dockerfile`, port 3000, `API_INTERNAL_URL=http://ce-oss-api-staging:3001` |
+| Coolify app `ce-oss-api-staging` | `c6mm7pwdmoysv0eg2vgwo4bi`, build pack `dockerimage`, image `ghcr.io/arkeywave/ciudad-enduro-api`, tag `sha256-<hex>` (set by each deploy), port 3001, network alias `ce-oss-api-staging`, health check `/api/health` |
+| Coolify app `ce-oss-web-staging` | `whfatie8ek3wh09ite3mnqn0`, build pack `dockerimage`, image `ghcr.io/arkeywave/ciudad-enduro-web`, port 3000, `API_INTERNAL_URL=http://ce-oss-api-staging:3001` |
+| GHCR packages | `ghcr.io/arkeywave/ciudad-enduro-api`, `…-web`: public, pulled anonymously (the box has no GHCR login) |
 | Database | `ciudad-enduro-oss-postgres-staging` (`zsr9gmrfd3sfdthyxxaikmoc`), Docker network only |
-| Revision | Coolify passes `SOURCE_COMMIT` (setting "include source commit in build"); the API Dockerfile bakes it as `BUILD_SHA` |
-| Deploy script | `/usr/local/bin/ce-oss-deploy` (root 755) |
-| Image verifier | `/usr/local/lib/ce-oss/verify-image.sh` (root 755), the reviewed copy of `scripts/verify-image.sh` |
-| State | `/var/cache/ce-oss-deploy/` (root 700): `repo.git` (main only), `lock` |
-| Deploy key | `ci-deploy@ciudad-enduro-oss` in `/root/.ssh/authorized_keys` |
-| API env | Coolify runtime env on the api app; `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET` were generated on the box |
+| Revision | CI passes `BUILD_SHA=<sha>` (api) and the label `org.opencontainers.image.revision=<sha>` (both images) |
+| Deploy script | `/usr/local/bin/ce-oss-deploy` (root 755), v2 |
+| gh | `/usr/local/lib/ce-oss/gh/bin/gh`; `/usr/local/lib/ce-oss/gh` → `gh-2.103.3` (release tarball, sha256 checked against the release checksums) |
+| Attestation token | `/root/.secrets/ce-oss-gh-attest.env` (root 600), fine-grained, no permissions, no expiration |
+| State | `/var/cache/ce-oss-deploy/` (root 700): `repo.git` (main only), `lock.staging` |
+| Promotion records | `/var/lib/ce-oss/promoted/<sha>` (root 700 / 600) |
+| Deploy key | `ci-deploy@ciudad-enduro-oss` in `/root/.ssh/authorized_keys`, `restrict,command="/usr/local/bin/ce-oss-deploy staging"` |
+| API env | Coolify runtime env on the api app; `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET` were generated on the box; `TURNSTILE_SECRET_KEY` (staging widget, runtime only) |
+| Web env | Coolify runtime env on the web app: `API_INTERNAL_URL`, `TURNSTILE_SITE_KEY` (staging widget, runtime only: the server component of `/ingresar` reads it, so one image serves both hosts) |
+
+Images pulled by digest are untagged; Coolify's retention does not remove them. The disk grows slowly
+(accepted; the old images help a rollback).
 
 ### Traefik labels
 
@@ -95,6 +142,7 @@ On the box:
 ```bash
 for u in c6mm7pwdmoysv0eg2vgwo4bi whfatie8ek3wh09ite3mnqn0; do
   c=$(docker ps --filter "name=^$u-" --format '{{.Names}}' | head -1)
+  docker inspect "$c" -f '{{.Config.Image}}'   # ghcr.io/arkeywave/ciudad-enduro-…@sha256:…
   docker inspect "$c" -f '{{range $k,$v := .Config.Labels}}{{$k}}={{$v}}{{"\n"}}{{end}}' | grep 'routers\..*\.middlewares'
   docker port "$c"            # empty: no published host port
 done
@@ -104,36 +152,51 @@ docker port zsr9gmrfd3sfdthyxxaikmoc   # empty
 Every `routers.*.middlewares` line must contain `cloudflare-only@file`, and the number of
 `.middlewares` lines must equal the number of `.rule` lines.
 
-### `ce-oss-deploy` refusals (proved 2026-11-10 with the real key)
+### `ce-oss-deploy` refusals
+
+The proofs and their results are recorded in the P1a-1 pull request (#7). Every harness runs a copy of
+the script whose `capi` is replaced by a logging stub that exits, and the harness aborts unless the stub
+applied, so no proof can deploy.
+
+## Rollback
+
+The CI key cannot roll back: `ce-oss-deploy` refuses a SHA that is a strict ancestor of the running
+api revision, and sshd passes no `ROLLBACK` variable from the key (`PermitUserEnvironment no`,
+`AcceptEnv LANG LC_*`). A redeploy of the running SHA and a newer SHA pass.
+
+Operator procedure, as root on the box:
 
 ```bash
-K=~/.secrets/ciudad-enduro-oss_deploy_key
-ssh -i $K -o IdentitiesOnly=yes root@104.152.209.8 ls                 # refused: expected one 40-hex commit SHA
-ssh -i $K -o IdentitiesOnly=yes root@104.152.209.8 ''                 # refused (same)
-ssh -i $K -o IdentitiesOnly=yes root@104.152.209.8 <39 hex chars>     # refused (same)
-ssh -i $K -o IdentitiesOnly=yes root@104.152.209.8 '<main sha>; id'   # refused (same)
-ssh -i $K -o IdentitiesOnly=yes root@104.152.209.8 <branch sha>       # refused: <sha> is not on main
-ssh -i $K -o IdentitiesOnly=yes -N -L 15999:127.0.0.1:8000 root@...   # forward: administratively prohibited
+# 1. Pick the main commit to go back to and read what it changes in apps/api/drizzle:
+#    the database is NOT rolled back; older code must work on the newer schema.
+# 2. Take its digests from its promotion record (or from its CI publish job):
+cat /var/lib/ce-oss/promoted/<sha>
+ROLLBACK=1 SSH_ORIGINAL_COMMAND="<sha> <api-digest> <web-digest>" /usr/local/bin/ce-oss-deploy staging
 ```
 
-## Roll out a new image verifier
+The attestation is verified again: a GitHub or Sigstore outage blocks the rollback too. The next push
+to `main` deploys forward again.
 
-A change to `scripts/verify-image.sh` blocks every deploy until the box has the same file. This is
-on purpose: the deploy key must not be able to run new code as root.
+## First v2 deploy (done once, P1a-1)
 
-1. Review the change in its PR, then merge it. The deploy job of that merge fails with
-   `differs from the installed /usr/local/lib/ce-oss/verify-image.sh`.
-2. On the box, install the reviewed file from `main` and check it:
-   ```bash
-   C=/var/cache/ce-oss-deploy/repo.git
-   git -C $C fetch -q https://github.com/ArkeyWave/ciudad-enduro.git '+refs/heads/main:refs/remotes/origin/main'
-   git -C $C show origin/main:scripts/verify-image.sh > /tmp/verify-image.sh
-   less /tmp/verify-image.sh            # read it: it runs as root
-   install -o root -g root -m 755 /tmp/verify-image.sh /usr/local/lib/ce-oss/verify-image.sh
-   ```
-3. Re-run the failed deploy job in GitHub Actions.
+The box script v2, the switch of both apps to `dockerimage` and the new `ci.yml` request format go live
+together, under a merge freeze (plan §2, amendment A5):
 
-A change to `docs/operations/ce-oss-deploy` is installed the same way at `/usr/local/bin/ce-oss-deploy`.
+1. Freeze merges to `main`. Confirm no `main` CI run is active and no `ce-oss-deploy` process runs.
+2. Hold the v1 lock (`flock /var/cache/ce-oss-deploy/lock`), install v2 at `/usr/local/bin/ce-oss-deploy`,
+   change the key's forced command to `/usr/local/bin/ce-oss-deploy staging`.
+3. Switch both apps to `dockerimage` (same uuids; image name set, labels and runtime env unchanged).
+   The running containers keep running.
+4. Release the lock before the merge (a queued v1 request now reaches v2 and is refused by the regex).
+5. Merge P1a-1. `publish` pushes and attests; `deploy-staging` is refused because the
+   running images have no revision label (proof of the guard).
+6. The operator runs the first deploy with the digests from the publish job:
+   `ROLLBACK=1 SSH_ORIGINAL_COMMAND="<sha> <api> <web>" /usr/local/bin/ce-oss-deploy staging`.
+7. Re-run the failed `deploy-staging` job (same SHA: passes without `ROLLBACK`), run the live checks,
+   release the freeze.
+
+After this, `/usr/local/lib/ce-oss/verify-image.sh` is no longer used on the box (A10: CI runs the
+verifier before publish; the digest and the attestation bind the checked image).
 
 ## Seed data
 
@@ -144,33 +207,10 @@ home page has something to list (`slug = 'staging-demo'`). Run SQL through the D
 docker exec -i zsr9gmrfd3sfdthyxxaikmoc psql -U ciudadenduro_staging -d ciudad_enduro_staging
 ```
 
-## Rollback
-
-The CI key cannot roll back: `ce-oss-deploy` refuses a SHA that is a strict ancestor of the running
-api commit, and sshd passes no `ROLLBACK` variable from the key (`PermitUserEnvironment no`,
-`AcceptEnv LANG LC_*`). A redeploy of the running SHA and a newer SHA pass. A running commit that
-was never on `main` (a hand deploy of a branch) cannot be ordered, so the guard lets any SHA pass.
-
-Operator procedure, as root on the box:
-
-```bash
-# 1. Pick the main commit to go back to and read what it changes in apps/api/drizzle:
-#    the database is NOT rolled back; older code must work on the newer schema.
-# 2. Its scripts/verify-image.sh must equal /usr/local/lib/ce-oss/verify-image.sh, or the
-#    script refuses (install that commit's verifier first, see above, and put it back after).
-ROLLBACK=1 SSH_ORIGINAL_COMMAND=<sha> /usr/local/bin/ce-oss-deploy
-```
-
-The image `<app-uuid>:<sha>` is reused when it still exists on the box. The next push to `main`
-deploys forward again.
-
 ## Follow-ups
 
 - `verify-image.sh`: the "empty /app" check never fails in practice (`find /app` prints `/app`
-  itself). Require `/app/package.json` instead. This changes the verifier, so it needs a verifier
-  roll-out (section above) in the same change.
-- Build images in CI, push them to GHCR, and deploy by digest, so the box never runs repo build
-  steps (plan section 8; Phase 1, owner decision pending).
+  itself). Require `/app/package.json` instead (CI only now; no box roll-out needed).
 
 ## Operator checklist — merge gate for B4
 
