@@ -108,18 +108,21 @@ describe('metrics', () => {
     expect(haversineM({ lat: -9, lng: -78 }, { lat: -8, lng: -78 })).toBeCloseTo(111_195.08, 1);
   });
 
-  it('counts steps at or above the threshold', () => {
-    expect(elevationChange([100, 104, 108, 112])).toEqual({ gainM: 12, lossM: 0 });
-    expect(elevationChange([100, 105])).toEqual({ gainM: 5, lossM: 0 });
-    expect(elevationChange([100, 110, 100])).toEqual({ gainM: 10, lossM: 10 });
-  });
-
-  it('ignores oscillation below the threshold', () => {
-    expect(elevationChange([100, 103, 100, 103, 100])).toEqual({ gainM: 0, lossM: 0 });
-  });
-
-  it('is symmetric for a descent', () => {
-    expect(elevationChange([112, 108, 104, 100])).toEqual({ gainM: 0, lossM: 12 });
+  // Plan M11: extrema hysteresis, T = 5. Every counted leg is at least T.
+  it.each([
+    [[100, 104, 108, 112], 12, 0],
+    [[100, 104, 108, 112, 106, 100], 12, 12],
+    [[100, 103, 100, 103, 100], 0, 0],
+    [[100, 110, 100], 10, 10],
+    [[100, 110, 100, 110], 20, 10],
+    [[100, 105], 5, 0],
+    [[100, 104], 0, 0],
+    [[100, 102, 90], 0, 10],
+    [[100, 96, 92, 88, 94, 100], 12, 12],
+    // Not in M11: a dip below T inside a climb is not a reversal (kills "confirm on any reversal step").
+    [[100, 110, 108, 120], 20, 0],
+  ])('elevation %j → gain %i, loss %i', (eles, gainM, lossM) => {
+    expect(elevationChange(eles)).toEqual({ gainM, lossM });
   });
 
   it('keeps at most 300 profile points, with the first, the last, the min and the max', () => {
@@ -156,8 +159,8 @@ describe('metrics', () => {
     const metrics = trackMetrics(points, elevations);
     // 5 steps of 0.001° of latitude: 5 × 111.195 m.
     expect(metrics.distanceM).toBe(556);
-    expect(metrics.elevationGainM).toBe(8); // 100→108 counts; 108→112 is below T
-    expect(metrics.elevationLossM).toBe(8);
+    expect(metrics.elevationGainM).toBe(12);
+    expect(metrics.elevationLossM).toBe(12);
     expect(metrics.elevationProfile?.at(-1)).toEqual([556, 100]);
   });
 

@@ -120,8 +120,8 @@ describe('POST /api/trails: import', () => {
       start: { lat: -9.09, lng: -78.52 },
       end: { lat: -9.095, lng: -78.52 },
       distanceM: 556,
-      elevationGainM: 8,
-      elevationLossM: 8,
+      elevationGainM: 12,
+      elevationLossM: 12,
       elevationMinM: 100,
       elevationMaxM: 112,
     });

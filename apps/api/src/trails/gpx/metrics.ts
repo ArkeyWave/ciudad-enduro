@@ -16,23 +16,35 @@ export function haversineM(a: LngLat, b: LngLat): number {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-/** Threshold filter: a change counts once it reaches T from the last counted level. */
+/**
+ * Extrema hysteresis (plan M11): a leg counts from one confirmed extremum to the next, and an
+ * extremum is confirmed once the track turns back by T. Every counted leg is at least T; a final
+ * tail smaller than T after the last candidate is ignored.
+ */
 export function elevationChange(eles: number[], threshold = ELEVATION_THRESHOLD_M): { gainM: number; lossM: number } {
   let gainM = 0;
   let lossM = 0;
-  let level = eles[0] ?? 0;
+  let ref = eles[0] ?? 0; // last confirmed extremum
+  let cand = ref; // candidate extremum
+  let dir: 'none' | 'up' | 'down' = 'none';
   for (const e of eles.slice(1)) {
-    if (e - level >= threshold) {
-      gainM += e - level;
-      level = e;
-    } else if (level - e >= threshold) {
-      lossM += level - e;
-      level = e;
+    if (dir === 'none') {
+      if (e - ref >= threshold) [dir, cand] = ['up', e];
+      else if (ref - e >= threshold) [dir, cand] = ['down', e];
+    } else if (dir === 'up') {
+      if (e > cand) cand = e;
+      else if (cand - e >= threshold) {
+        gainM += cand - ref;
+        [ref, dir, cand] = [cand, 'down', e];
+      }
+    } else if (e < cand) cand = e;
+    else if (e - cand >= threshold) {
+      lossM += ref - cand;
+      [ref, dir, cand] = [cand, 'up', e];
     }
   }
-  const residual = (eles.at(-1) ?? level) - level;
-  if (residual > 0) gainM += residual;
-  else lossM -= residual;
+  if (dir === 'up') gainM += cand - ref;
+  else if (dir === 'down') lossM += ref - cand;
   return { gainM, lossM };
 }
 

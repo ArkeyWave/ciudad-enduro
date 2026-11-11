@@ -74,7 +74,7 @@ Error codes of the upload (HTTP 400 unless stated):
 1. Import one earlier real ride on staging.
 2. Compare with the device: distance within 3 %, gain within 10 %. The device totals are a
    comparison, not the truth.
-3. Gain too high: raise `ELEVATION_THRESHOLD_M` in `apps/api/src/trails/gpx/metrics.ts` (up to 10 m),
+3. Gain too high: raise the hysteresis threshold `ELEVATION_THRESHOLD_M` in `apps/api/src/trails/gpx/metrics.ts` (up to 10 m),
    deploy, and import again. Still too high: a median spike filter (a code change). Distance off by
    more than 3 %: a minimum-step filter (a code change).
 4. Delete the staging import (step 5) before each new import of the same file: the same file twice
