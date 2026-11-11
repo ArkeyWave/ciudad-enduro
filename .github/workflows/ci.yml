@@ -116,7 +116,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run build --filter=web
-      - run: pnpm --filter web exec playwright install --with-deps chromium
+      # The browser comes from Playwright's CDN. The OS libraries are already on the runner image
+      # (it ships Google Chrome); apt is a best effort with a time limit, because an apt mirror
+      # outage (2026-11-11: the runners could not resolve archive.ubuntu.com) must not block CI.
+      # A missing library still fails the tests loudly.
+      - run: pnpm --filter web exec playwright install chromium
+      - run: timeout 300 pnpm --filter web exec playwright install-deps chromium || echo "::warning::playwright install-deps failed; using the runner's preinstalled libraries"
       - run: pnpm --filter web test:e2e
 
   # Builds both production images once (labels set at build time), refuses an image that ships
