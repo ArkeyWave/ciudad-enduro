@@ -1,0 +1,120 @@
+{
+  "updated": "2026-11-10",
+  "features": [
+    {
+      "id": "trail-list",
+      "description": "The home page lists published trails and hides drafts",
+      "passes": true,
+      "proof": [
+        { "type": "test", "ref": "apps/web/e2e/home.spec.ts" },
+        { "type": "test", "ref": "apps/api/test/trails.int.spec.ts" }
+      ]
+    },
+    {
+      "id": "trails-api",
+      "description": "GET /api/trails?city= and GET /api/trails/:slug",
+      "passes": true,
+      "proof": [{ "type": "test", "ref": "apps/api/test/trails.int.spec.ts" }]
+    },
+    {
+      "id": "health-revision",
+      "description": "GET /api/health reports the running revision",
+      "passes": true,
+      "proof": [
+        { "type": "test", "ref": "apps/api/test/health.int.spec.ts" },
+        { "type": "live", "ref": "CI deploy-staging revision check on https://enduro-next.vops.pe" }
+      ]
+    },
+    {
+      "id": "sign-in-email-code",
+      "description": "Sign in with a code sent by e-mail",
+      "passes": true,
+      "proof": [
+        { "type": "test", "ref": "apps/web/e2e/sign-in.spec.ts: signs in with an email code, shows the email, and signs out with fetch" },
+        { "type": "test", "ref": "apps/api/test/auth/otp.int.spec.ts" },
+        { "type": "live", "ref": "docs/plans/2026-11-10-phase-0-foundation.md §11: real Resend e-mail code → sign-in" }
+      ]
+    },
+    {
+      "id": "sign-in-google",
+      "description": "Sign in with Google (consent screen in Testing: test users only)",
+      "passes": true,
+      "proof": [
+        { "type": "test", "ref": "apps/api/test/auth/google.int.spec.ts" },
+        { "type": "test", "ref": "apps/web/e2e/sign-in.spec.ts: Continuar con Google starts the redirect flow at Google" },
+        { "type": "live", "ref": "docs/plans/2026-11-10-phase-0-foundation.md §11: Google sign-in, tokens null" }
+      ]
+    },
+    {
+      "id": "sign-out",
+      "description": "\"Salir\" ends the session in the browser and on the server",
+      "passes": true,
+      "proof": [
+        { "type": "test", "ref": "apps/web/e2e/sign-in.spec.ts: signs in with an email code, shows the email, and signs out with fetch" },
+        { "type": "live", "ref": "docs/plans/2026-11-10-phase-0-foundation.md §11: 0 session rows after Salir" }
+      ]
+    },
+    {
+      "id": "otp-throttle",
+      "description": "60 s cooldown per address and 50 codes per 24 h overall",
+      "passes": true,
+      "proof": [{ "type": "test", "ref": "apps/api/test/auth/throttle.int.spec.ts" }]
+    },
+    {
+      "id": "per-ip-rate-limit",
+      "description": "Per-IP limit on code sends and code checks, with a Spanish message",
+      "passes": true,
+      "proof": [
+        { "type": "test", "ref": "apps/api/test/auth/ratelimit.int.spec.ts" },
+        { "type": "test", "ref": "apps/web/e2e/sign-in.spec.ts: a 4th attempt from one IP within 10 s shows the rate-limit message" },
+        { "type": "live", "ref": "docs/plans/2026-11-10-phase-0-foundation.md §11: 4th code check → 429" }
+      ]
+    },
+    {
+      "id": "turnstile",
+      "description": "Cloudflare Turnstile on the e-mail code send, a fresh token per send",
+      "passes": true,
+      "proof": [
+        { "type": "test", "ref": "apps/api/test/auth/captcha.int.spec.ts" },
+        { "type": "test", "ref": "apps/web/e2e/sign-in.spec.ts: Enviar otro código really resends, with a fresh token, and the new code signs in" },
+        { "type": "live", "ref": "docs/plans/2026-11-10-phase-1a-production.md §7 A7: staging widget send passes, no token → 400 and 0 rows (PR #8)" }
+      ]
+    },
+    {
+      "id": "error-page",
+      "description": "A hung API gives the Spanish error page within 8 s, with no internal details",
+      "passes": true,
+      "proof": [{ "type": "test", "ref": "apps/web/e2e/error-page.spec.ts" }]
+    },
+    {
+      "id": "staging-deploy",
+      "description": "A push to main deploys https://enduro-next.vops.pe",
+      "passes": true,
+      "proof": [{ "type": "live", "ref": "CI deploy-staging job on main (docs/operations/deploy.md)" }]
+    },
+    {
+      "id": "ci-images-by-digest",
+      "description": "Staging runs CI-built, attested GHCR images by digest; no build on the box",
+      "passes": false,
+      "proof": [{ "type": "live", "ref": "PR #7 / issue #9: first push to main after the A5 switch" }]
+    },
+    {
+      "id": "production",
+      "description": "https://enduro.vops.pe serves the new app, with an off-box restorable backup",
+      "passes": false,
+      "proof": [{ "type": "live", "ref": "issue #10: production live checks (Phase 0 §11 list)" }]
+    },
+    {
+      "id": "trail-maps",
+      "description": "Trail pages with maps and geodata",
+      "passes": false,
+      "proof": [{ "type": "test", "ref": "issue #11 (not planned yet)" }]
+    },
+    {
+      "id": "media-gpx",
+      "description": "Trail photos and GPX import/export",
+      "passes": false,
+      "proof": [{ "type": "test", "ref": "issue #12 (not planned yet)" }]
+    }
+  ]
+}

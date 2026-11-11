@@ -2,6 +2,8 @@
 
 Open-source platform to discover and share urban MTB / enduro trails in Peru (Chimbote, Nuevo Chimbote, Trujillo).
 
+**Read [docs/progress.md](docs/progress.md) first:** what works, what is in flight, what waits on a decision.
+
 ## Stack
 
 - **API:** NestJS + PostgreSQL / PostGIS
