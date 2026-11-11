@@ -27,6 +27,8 @@ const stubTiles = (context: BrowserContext) =>
   });
 
 const fact = (page: Page, label: string) => page.locator(`dt:text-is("${label}") + dd`);
+// By name, not by label: the label is the axe scans' job (a missing label must fail axe, not this).
+const gpxInput = (page: Page) => page.locator('input[name="gpx"]');
 const axe = (page: Page) => new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
 
 test.beforeEach(async ({ context }) => {
@@ -76,10 +78,11 @@ test.describe('admin and rider', () => {
   test('the admin uploads a GPX, sees the draft with its map and profile, publishes it, and the home lists it', async ({
     page,
   }) => {
+    tileRequests = 0;
     await admin.goto('/');
     await admin.getByRole('link', { name: 'Nueva ruta' }).click();
     await expect(admin).toHaveURL(`${ORIGIN}/rutas/nueva`);
-    await admin.getByLabel('Archivo GPX').setInputFiles(GPX);
+    await gpxInput(admin).setInputFiles(GPX);
     await admin.getByLabel('Nombre').fill(UPLOADED.name);
     await admin.getByLabel('Ciudad').selectOption('Trujillo');
     await admin.getByLabel('Dificultad').selectOption({ label: 'Difícil' });
@@ -92,6 +95,7 @@ test.describe('admin and rider', () => {
     await expect(admin.getByText('Trujillo · Difícil · Cross-country · Borrador')).toBeVisible();
     await expect(admin.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(1);
     await expect(admin.getByTestId('trail-map').locator('path.trail-start')).toHaveCount(1);
+    await expect(admin.getByRole('link', { name: 'OpenStreetMap' })).toBeVisible();
     await expect(admin.getByRole('link', { name: 'OpenStreetMap' })).toHaveAttribute(
       'href',
       'https://www.openstreetmap.org/copyright',
@@ -116,6 +120,18 @@ test.describe('admin and rider', () => {
     await page.getByRole('link', { name: UPLOADED.name }).click();
     await expect(page).toHaveURL(`${ORIGIN}/rutas/${UPLOADED.slug}`);
     await expect(page.getByTestId('trail-description')).toHaveText('Bajada de prueba E2E');
+  });
+
+  test('the same GPX again shows the duplicate message with a link to the existing trail', async () => {
+    await admin.goto('/rutas/nueva');
+    await gpxInput(admin).setInputFiles(GPX);
+    await admin.getByLabel('Nombre').fill('Ruta E2E Duplicada');
+    await admin.getByRole('button', { name: 'Subir ruta' }).click();
+    const alert = admin.locator('main').getByRole('alert');
+    await expect(alert).toContainText('Este GPX ya está subido.');
+    await expect(alert.getByRole('link', { name: 'Ver la ruta' })).toHaveAttribute('href', `/rutas/${UPLOADED.slug}`);
+    await expect(admin).toHaveURL(`${ORIGIN}/rutas/nueva`);
+    expect((await axe(admin)).violations).toEqual([]);
   });
 
   test('a rider gets HTTP 404 on /rutas/nueva and sees no admin controls', async ({ page }) => {

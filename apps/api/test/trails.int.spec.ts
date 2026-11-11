@@ -126,4 +126,12 @@ describe('GET /api/trails/:slug', () => {
     expect(unknown.status).toBe(404);
     expect(await draft.text()).toBe(await unknown.text());
   });
+
+  // Postgres refuses U+0000 in a text parameter (22021): without the guard this was a 500.
+  it('answers a slug with U+0000 like an unknown slug', async () => {
+    const nul = await get('/trails/borr%00ador');
+    const unknown = await get('/trails/no-existe');
+    expect(nul.status).toBe(404);
+    expect(await nul.text()).toBe(await unknown.text());
+  });
 });

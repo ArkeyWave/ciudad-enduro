@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MESSAGES } from './auth-errors';
-import { trailErrorMessage } from './trails-client';
+import { trailErrorMessage, updateTrail } from './trails-client';
 
 describe('trailErrorMessage', () => {
   it('maps an API code to its message, before the status', () => {
@@ -21,5 +21,21 @@ describe('trailErrorMessage', () => {
 
   it('shows the generic message for a network failure', () => {
     expect(trailErrorMessage({ status: 0 })).toBe(MESSAGES.generic);
+  });
+});
+
+describe('updateTrail', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const answer = (status: number, body: string) =>
+    vi.stubGlobal('fetch', () => Promise.resolve(new Response(body, { status })));
+
+  it('is ok with the trail for a 2xx JSON body', async () => {
+    answer(200, JSON.stringify({ slug: 'cerro' }));
+    expect(await updateTrail('cerro', { status: 'published' })).toEqual({ ok: true, trail: { slug: 'cerro' } });
+  });
+
+  it('fails for a 2xx body that is not JSON (a proxy page, not the trail)', async () => {
+    answer(200, '<html>proxy</html>');
+    expect(await updateTrail('cerro', { status: 'published' })).toEqual({ ok: false, status: 200 });
   });
 });
