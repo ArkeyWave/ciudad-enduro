@@ -18,7 +18,7 @@ export function TrailAdmin({ trail }: { trail: TrailDetail }) {
   const [refreshing, startRefresh] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const busy = sending || refreshing;
-  const pending = (which: Action) => busy && action === which;
+  const pending = (which: Action) => busy && Boolean(which);
 
   async function save(which: Action, body: TrailUpdate) {
     setAction(which);
