@@ -27,8 +27,14 @@
 # deploy, ROLLBACK=1 included (fail closed).
 #
 # PRIVATE=1 (operator only, like ROLLBACK=1): a deploy that no public router serves. Both apps
-# must store the label traefik.enable=false before the deploy, and both containers must carry
-# it after; step 4 then checks /api/health and the home page on the container IPs instead.
+# must store the label traefik.enable=false (and keep their hand-written labels) before the
+# deploy; right after each app's deploy its containers must carry it, publish no host port, be
+# on the coolify network and answer on their IP there (step 4). Any failure after the first
+# change stops both apps.
+#
+# Every run is detached from the SSH session (setsid) and logs to
+# /var/lib/ce-oss/logs/<target>-<sha>-<utc>.log; the caller streams the log and gets the run's
+# exit code. A dropped connection or a cancelled CI job does not stop the run.
 set -euo pipefail
 umask 077
 
@@ -69,6 +75,41 @@ else
   sha=$request
 fi
 
+# The run is detached from the SSH session: a cancelled CI job or a dropped connection must not
+# stop it halfway. The caller's process starts the run in its own session with its output in a
+# log, streams that log back and exits with the run's code (the last line "END exit=<code>").
+# sshd passes no CE_OSS_RUN from a key, so only the detached run itself has it.
+LOGS=/var/lib/ce-oss/logs
+if [ -z "${CE_OSS_RUN:-}" ]; then
+  install -d -m 700 "$LOGS"
+  run_log=$LOGS/$target-$sha-$(date -u +%Y%m%dT%H%M%SZ).log
+  : > "$run_log"
+  # A background job of a non-interactive shell is no process group leader, so setsid does not
+  # fork again and $! is the run's own PID.
+  CE_OSS_RUN=$run_log setsid bash "$0" "$target" < /dev/null >> "$run_log" 2>&1 &
+  run_pid=$!
+  echo "run $run_pid, log $run_log"
+  tail -n +1 -f --pid="$run_pid" "$run_log" || true
+  code=$(sed -n 's/^END exit=\([0-9]\{1,3\}\)$/\1/p' "$run_log" | tail -1)
+  exit "${code:-1}"
+fi
+
+changed=0
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  # In private mode any failure after the first change stops both apps (a die in either deploy,
+  # a timeout, a cancelled Coolify deployment, a failed check).
+  if [ "$rc" != 0 ] && [ $private = 1 ] && [ $changed = 1 ]; then
+    stop_app "$API_UUID" api || true
+    stop_app "$WEB_UUID" web || true
+    echo "FAIL private: run failed after a change; both apps stopped" >&2
+  fi
+  echo "END exit=$rc"
+  exit "$rc"
+}
+trap on_exit EXIT
+
 install -d -m 700 "$STATE"
 exec 9>"$STATE/lock.$target"
 flock -w 1800 9 || refuse "another $target deploy held the lock for 30 min"
@@ -85,8 +126,12 @@ fi
 
 # Only commits reachable from main can deploy. The cache fetches main only, so a fork or
 # branch commit is not even present here.
+# The cache is shared by both targets: one fetch at a time.
+exec 8>"$STATE/lock.cache"
+flock -w 300 8 || refuse "the repo cache lock was held for 5 min"
 [ -d "$CACHE" ] || git init -q --bare "$CACHE"
 git -C "$CACHE" fetch -q --prune "$REPO_URL" '+refs/heads/main:refs/remotes/origin/main'
+exec 8>&-
 git -C "$CACHE" cat-file -e "$sha^{commit}" 2>/dev/null || refuse "$sha is not on main"
 git -C "$CACHE" merge-base --is-ancestor "$sha" refs/remotes/origin/main || refuse "$sha is not on main"
 
@@ -167,17 +212,35 @@ for app in "$API_UUID" "$WEB_UUID"; do
   [ "$bp" = dockerimage ] || refuse "app $app has build pack '${bp:-none}', expected dockerimage"
 done
 
-# PRIVATE=1: no public router may come up. Coolify stores custom_labels base64; both apps must
-# store exactly one traefik.enable label, =false, before anything changes.
+# Coolify stores custom_labels base64. With the read-only label setting on, Coolify would
+# generate its own labels and ignore the stored ones.
 stored_labels() { docker exec coolify-db psql -U coolify -d coolify -tAc "select custom_labels from applications where uuid='$1'" | base64 -d; }
-if [ $private = 1 ]; then
+label_readonly_of() {
+  docker exec coolify-db psql -U coolify -d coolify -tAc \
+    "select s.is_container_label_readonly_enabled from application_settings s join applications a on a.id = s.application_id where a.uuid='$1'"
+}
+
+# Checks before the first change (called right before the first Coolify call): both apps keep
+# their hand-written labels; PRIVATE=1: both store exactly one traefik.enable label, =false;
+# public mode: no other running container claims the host (an old app must be stopped first).
+prechange_checks() {
+  local app ro labels
   for app in "$API_UUID" "$WEB_UUID"; do
-    labels=$(stored_labels "$app") || refuse "app $app: cannot read its stored labels"
-    [ "$(grep -E '^traefik\.enable=' <<<"$labels")" = traefik.enable=false ] ||
-      refuse "PRIVATE=1: app $app does not store exactly one traefik.enable=false label"
+    ro=$(label_readonly_of "$app") || refuse "app $app: cannot read its label setting"
+    [ "$ro" = f ] || refuse "app $app has is_container_label_readonly_enabled '${ro:-none}', expected f"
   done
-  log "PRIVATE=1: both apps store traefik.enable=false"
-fi
+  if [ $private = 1 ]; then
+    for app in "$API_UUID" "$WEB_UUID"; do
+      labels=$(stored_labels "$app") || refuse "app $app: cannot read its stored labels"
+      [ "$(grep -E '^traefik\.enable=' <<<"$labels")" = traefik.enable=false ] ||
+        refuse "PRIVATE=1: app $app does not store exactly one traefik.enable=false label"
+    done
+    log "PRIVATE=1: both apps store traefik.enable=false, label setting not read-only"
+  else
+    host_owners_ok || refuse "another running container claims $HOST; stop it first"
+    log "before the deploy: only these apps claim $HOST"
+  fi
+}
 
 # Coolify API on loopback inside the coolify container. The token goes in on stdin and
 # into a curl config file there, never into any argv.
@@ -275,65 +338,56 @@ host_owners_ok() {
     { echo "FAIL host: running containers with $rule: $(echo $got); expected $(echo $want)" >&2; return 1; }
 }
 
-# PRIVATE=1: both containers keep Traefik off and publish no host port.
-private_ok() {
-  local uuid c
-  for uuid in "$API_UUID" "$WEB_UUID"; do
-    c=$(running_containers "$uuid")
-    [ -n "$c" ] || { echo "FAIL private: no running container for $uuid" >&2; return 1; }
-    for c in $c; do
-      [ "$(docker inspect "$c" -f '{{index .Config.Labels "traefik.enable"}}')" = false ] ||
-        { echo "FAIL private: $c does not carry traefik.enable=false" >&2; return 1; }
-      [ -z "$(docker port "$c")" ] || { echo "FAIL private: $c publishes a host port" >&2; return 1; }
+# PRIVATE=1, right after each app's deploy: every running container keeps Traefik off, publishes
+# no host port, is on the coolify network and answers on its own IP there (api: revision = SHA;
+# web: home 200), so a crashed new container behind an old one cannot hide. A failure dies; the
+# exit trap then stops both apps.
+private_app_ok() { # NAME APP_UUID
+  local name=$1 uuid=$2 c ip got ok seen
+  c=$(running_containers "$uuid")
+  [ -n "$c" ] || die "private: $name has no running container"
+  for c in $c; do
+    [ "$(docker inspect "$c" -f '{{index .Config.Labels "traefik.enable"}}')" = false ] ||
+      die "private: $name container $c does not carry traefik.enable=false"
+    [ -z "$(docker port "$c")" ] || die "private: $name container $c publishes a host port"
+    ip=$(docker inspect "$c" -f '{{with index .NetworkSettings.Networks "coolify"}}{{.IPAddress}}{{end}}')
+    [[ $ip =~ ^[0-9.]+$ ]] || die "private: $name container $c is not on the coolify network"
+  done
+  for _ in $(seq 18); do
+    ok=1 seen=""
+    for c in $(running_containers "$uuid"); do
+      ip=$(docker inspect "$c" -f '{{with index .NetworkSettings.Networks "coolify"}}{{.IPAddress}}{{end}}')
+      if [ "$name" = api ]; then
+        got=$(curl -fsS --max-time 10 "http://$ip:$API_PORT/api/health" | jq -r '.revision // empty' || true)
+        [ "$got" = "$sha" ] || ok=0
+        seen+=" $ip revision=${got:-none}"
+      else
+        got=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://$ip:$WEB_PORT/" || true)
+        [ "$got" = 200 ] || ok=0
+        seen+=" $ip home=${got:-none}"
+      fi
     done
+    [ $ok = 1 ] && break
+    sleep 10
   done
-}
-
-container_ips() { # APP_UUID -> the coolify network IP of each running container
-  local c
-  for c in $(running_containers "$1"); do
-    docker inspect "$c" -f '{{with index .NetworkSettings.Networks "coolify"}}{{.IPAddress}}{{end}}'
-  done
+  [ $ok = 1 ] || die "private: $name$seen (expected revision $sha, home 200)"
+  log "private: $name$seen, traefik.enable=false, no host port"
 }
 
 [ $private = 1 ] && log "PRIVATE=1: no public check; the checks run on the container IPs"
 log "deploying $sha to $target"
+prechange_checks
+changed=1
 deploy "$API_UUID" api "$API_REPO" "$api_digest"
+[ $private = 1 ] && private_app_ok api "$API_UUID"
 deploy "$WEB_UUID" web "$WEB_REPO" "$web_digest"
+[ $private = 1 ] && private_app_ok web "$WEB_UUID"
 
-if [ $private = 1 ]; then
-  if ! private_ok; then
-    stop_app "$API_UUID" api
-    stop_app "$WEB_UUID" web
-    die "private check failed; both apps stopped"
-  fi
-  log "private: both containers carry traefik.enable=false, no host ports"
-  # Each running container answers on its own IP, so a crashed new container behind an old one
-  # cannot hide.
-  ok=0 seen=""
-  for _ in $(seq 18); do
-    ok=1 seen=""
-    for ip in $(container_ips "$API_UUID"); do
-      revision=$(curl -fsS --max-time 10 "http://$ip:$API_PORT/api/health" | jq -r '.revision // empty' || true)
-      [ "$revision" = "$sha" ] || ok=0
-      seen+=" api $ip revision=${revision:-none}"
-    done
-    for ip in $(container_ips "$WEB_UUID"); do
-      home=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://$ip:$WEB_PORT/" || true)
-      [ "$home" = 200 ] || ok=0
-      seen+=" web $ip home=${home:-none}"
-    done
-    [[ $seen = *" api "* && $seen = *" web "* ]] || ok=0
-    [ $ok = 1 ] && break
-    sleep 10
-  done
-  [ $ok = 1 ] || die "private:${seen:- no container IP} (expected revision $sha and home 200)"
-  log "private:$seen"
-else
+if [ $private = 0 ]; then
   if ! origin_lock_ok || ! host_owners_ok; then
     stop_app "$API_UUID" api
     stop_app "$WEB_UUID" web
-    die "origin lock check failed; both apps stopped"
+    die "public checks failed; both apps stopped"
   fi
   log "origin lock: direct 403 for / and /api/health, every router has cloudflare-only@file, no host ports, only these apps claim $HOST"
 
