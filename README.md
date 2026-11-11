@@ -41,6 +41,9 @@ pnpm --filter api openapi:emit           # write packages/api-client/openapi.jso
 
 Endpoints: `GET /api/health`, `GET /api/trails?city=`, `GET /api/trails/:slug`, `GET /api/me`
 (needs a session), and Better Auth under `/api/auth/*` (allowlist in `src/auth/auth-paths.ts`).
+Admin only (`role = 'admin'`, `Origin` must equal `WEB_ORIGIN`): `POST /api/trails` (multipart GPX
+import, stores a draft) and `PATCH /api/trails/:slug` (metadata and status). Runbook:
+[`docs/operations/trails-import.md`](docs/operations/trails-import.md).
 
 #### Auth environment (`apps/api/.env`)
 

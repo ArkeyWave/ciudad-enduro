@@ -29,6 +29,13 @@
       "when": 1794338543681,
       "tag": "0003_otp_send_log",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794370919860,
+      "tag": "0004_trail_gpx",
+      "breakpoints": true
     }
   ]
 }

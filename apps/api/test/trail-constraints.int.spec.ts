@@ -13,7 +13,7 @@ beforeAll(async () => {
   db = drizzle(client);
 });
 afterAll(() => client.end());
-beforeEach(() => client.query('TRUNCATE trails'));
+beforeEach(() => client.query('TRUNCATE trails, trail_sources'));
 
 const chimbote: LngLat = { lng: -78.52, lat: -9.09 };
 let n = 0;

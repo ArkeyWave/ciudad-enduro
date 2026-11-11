@@ -24,6 +24,53 @@
         ],
         "type": "object"
       },
+      "CreateTrailBody": {
+        "properties": {
+          "city": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/City"
+              }
+            ]
+          },
+          "description": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "difficulty": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              }
+            ]
+          },
+          "gpx": {
+            "description": "One GPX file, at most 10 MiB",
+            "format": "binary",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "city",
+          "difficulty",
+          "type",
+          "gpx"
+        ],
+        "type": "object"
+      },
       "Difficulty": {
         "enum": [
           "facil",
@@ -82,6 +129,31 @@
             "nullable": true,
             "type": "number"
           },
+          "elevationLossM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationMaxM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationMinM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationProfile": {
+            "description": "[distance_m, ele_m] pairs, at most 300",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "nullable": true,
+            "type": "array"
+          },
           "end": {
             "allOf": [
               {
@@ -99,7 +171,7 @@
             "type": "string"
           },
           "path": {
-            "description": "[lng, lat] pairs",
+            "description": "[lng, lat] pairs, simplified for display",
             "items": {
               "items": {
                 "type": "number"
@@ -116,6 +188,13 @@
           },
           "start": {
             "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailStatus"
+              }
+            ]
           },
           "type": {
             "allOf": [
@@ -134,12 +213,25 @@
           "type",
           "start",
           "distanceM",
+          "status",
           "description",
           "end",
           "path",
-          "elevationGainM"
+          "elevationGainM",
+          "elevationLossM",
+          "elevationMinM",
+          "elevationMaxM",
+          "elevationProfile"
         ],
         "type": "object"
+      },
+      "TrailStatus": {
+        "enum": [
+          "draft",
+          "published",
+          "hidden"
+        ],
+        "type": "string"
       },
       "TrailSummaryDto": {
         "properties": {
@@ -201,6 +293,48 @@
           "urbano"
         ],
         "type": "string"
+      },
+      "UpdateTrailDto": {
+        "properties": {
+          "city": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/City"
+              }
+            ]
+          },
+          "description": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "difficulty": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              }
+            ]
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailStatus"
+              }
+            ]
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailType"
+              }
+            ]
+          }
+        },
+        "type": "object"
       }
     }
   },
@@ -281,6 +415,35 @@
         "tags": [
           "trails"
         ]
+      },
+      "post": {
+        "operationId": "TrailsController_create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTrailBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrailDetailDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "tags": [
+          "trails"
+        ]
       }
     },
     "/api/trails/{slug}": {
@@ -308,7 +471,48 @@
             "description": ""
           },
           "404": {
-            "description": "No published trail has this slug"
+            "description": "No published trail has this slug (an admin also gets drafts and hidden trails)"
+          }
+        },
+        "tags": [
+          "trails"
+        ]
+      },
+      "patch": {
+        "operationId": "TrailsController_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTrailDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrailDetailDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "description": "No trail has this slug"
           }
         },
         "tags": [

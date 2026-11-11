@@ -28,6 +28,7 @@ Everything else (uploads, GPX, maps, editor, gamification) is Phase 1+, built on
 | D8 | Same-origin routing | One domain; Traefik routes `/api/*` to the API container, the rest to web | No CORS, first-party cookies, simplest auth. Better Auth `basePath: /api/auth`. |
 | D9 | CMS | **No Payload in Phase 0** | NestJS owns all data. Payload returns only if editorial content (pages, blog) appears, in its own schema. Moderation lives in the web app behind an `admin` role. |
 | D10 | Storage | Cloudflare R2 through the S3 SDK (Phase 1) | Unchanged. Store object keys only, never a provider hostname. |
+| D10 exception | GPX sources | **PostgreSQL, table `trail_sources`** (Phase 1b-min, plan D5) | A GPX file is data, not media: the API parses it, keeps it private and never serves it; TOAST compresses the text. Long-term home, not a stopgap. Look again when the table passes 1 GB. |
 | D11 | Email | Resend | Unchanged. |
 | D12 | Tests | **Vitest** everywhere; API integration tests against a real PostGIS (CI service container); Playwright e2e for the web | One runner. Mocks never stand in for the database. |
 | D13 | TypeScript | **Pin TypeScript 6.x** | The NestJS Better Auth adapter declares `typescript ^5.9 || ^6`; TS 7 is not yet supported by it. Revisit when the peer range moves. |
