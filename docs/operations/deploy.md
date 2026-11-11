@@ -36,8 +36,9 @@ project `ciudad-enduro-oss`, environment `staging`.
      restarting api still counts; an image without the label is refused unless `ROLLBACK=1`. A Coolify
      stop removes the containers (`StopApplication`: `docker rm -f`, `removeContainers` defaults to true
      and the API stop passes no value), so with **no api container at all** the lower bound is the
-     newest promotion record in `/var/lib/ce-oss/promoted/`; no record either passes (the first v2
-     deploy). A SHA that is a strict ancestor of the bound is refused unless `ROLLBACK=1` (see
+     newest promotion record in `/var/lib/ce-oss/promoted/`, by the UTC date in the record (field 4,
+     not the file mtime); no record either passes (the first v2 deploy). A bound that is not a commit
+     on `main`, and a SHA that is a strict ancestor of the bound, are refused unless `ROLLBACK=1` (see
      [Rollback](#rollback));
    - **preflight, both images before either app changes:** `docker pull <repo>@<digest>`;
      `gh attestation verify oci://<repo>@<digest> --repo ArkeyWave/ciudad-enduro --signer-workflow
@@ -181,9 +182,12 @@ applied, so no proof can deploy.
 
 ## Rollback
 
-The CI key cannot roll back: `ce-oss-deploy` refuses a SHA that is a strict ancestor of the running
-api revision, and sshd passes no `ROLLBACK` variable from the key (`PermitUserEnvironment no`,
-`AcceptEnv LANG LC_*`). A redeploy of the running SHA and a newer SHA pass.
+The CI key cannot roll back: `ce-oss-deploy` refuses a SHA that is a strict ancestor of the lower
+bound, and sshd passes no `ROLLBACK` variable from the key (`PermitUserEnvironment no`,
+`AcceptEnv LANG LC_*`). The bound is the revision label of the image of the **newest api container in
+any state**; with no api container at all (a Coolify stop removes them), it is the **newest promotion
+record** (by the UTC date in the record). A bound that is not on `main` is refused too. A redeploy of the
+bound SHA and a newer SHA pass.
 
 Operator procedure, as root on the box:
 
@@ -206,8 +210,12 @@ together, under a merge freeze (plan §2, amendment A5). The freeze is the rules
 on the box runs the rest.
 
 1. Freeze merges to `main` (orchestrator):
-   - once, before the first freeze: rehearse it. With the ruleset active, a throwaway PR must be refused
-     by `gh pr merge`; then disable it and close the PR. Check that auto-merge is off:
+   - once, before the first freeze: rehearse it. Open a throwaway PR (an empty or docs-only commit).
+     With the ruleset still disabled, wait until its checks are green and
+     `gh pr view <N> --json mergeStateStatus -q .mergeStateStatus` prints `CLEAN` (so a refusal can only
+     come from the freeze). Then set the ruleset active (`… -f enforcement=active`, below): `gh pr merge
+     <N> --merge` must be refused, and the message must name the repository rule. Disable the ruleset
+     again and close the PR without a merge. Check that auto-merge is off:
      `gh api repos/ArkeyWave/ciudad-enduro -q .allow_auto_merge` prints `false`;
    - freeze: `gh api -X PUT repos/ArkeyWave/ciudad-enduro/rulesets/26997912 -f enforcement=active`.
 
@@ -226,22 +234,31 @@ on the box runs the rest.
    `lock`, v2 uses `lock.staging`; the two never block each other, so hold both:
    ```bash
    cd /root/ce-oss
-   curl -fsSL -o ce-oss-deploy.v2 \
-     https://raw.githubusercontent.com/ArkeyWave/ciudad-enduro/82f858b2b14fc5aaadae8a89dde5e1f369ec8b4f/docs/operations/ce-oss-deploy
-   echo 'f903bf709515ed466dd66666c095b1ae6d7218696cbcb5f11c29759cb48c450a  ce-oss-deploy.v2' | sha256sum -c
    exec 8>/var/cache/ce-oss-deploy/lock;          flock 8   # waits for a running v1 deploy
    exec 7>/var/cache/ce-oss-deploy/lock.staging;  flock 7   # no v2 deploy during the switch
-   install -o root -g root -m 755 ce-oss-deploy.v2 /usr/local/bin/ce-oss-deploy   # new inode
-   cp -p /root/.ssh/authorized_keys /root/.ssh/authorized_keys.pre-v2
-   sed -i 's|command="/usr/local/bin/ce-oss-deploy" \(.*ci-deploy@ciudad-enduro-oss\)$|command="/usr/local/bin/ce-oss-deploy staging" \1|' /root/.ssh/authorized_keys
-   grep -c 'command="/usr/local/bin/ce-oss-deploy staging" .*ci-deploy@ciudad-enduro-oss$' /root/.ssh/authorized_keys  # 1
+   rm -f ce-oss-deploy.v2
+   # One chain: nothing is installed unless the download is the reviewed file, and the forced
+   # command changes only after a verified install.
+   curl -fsSL -o ce-oss-deploy.v2 \
+     https://raw.githubusercontent.com/ArkeyWave/ciudad-enduro/1e6d7ce6d3196193b0f5eb1a0fd3aa0e206b137e/docs/operations/ce-oss-deploy &&
+     echo '23d7a9d7c172f2c12b5056c1e271004ac1af1e477ffd209582e1fe4106d8bd47  ce-oss-deploy.v2' | sha256sum -c &&
+     install -o root -g root -m 755 ce-oss-deploy.v2 /usr/local/bin/ce-oss-deploy &&   # new inode
+     echo '23d7a9d7c172f2c12b5056c1e271004ac1af1e477ffd209582e1fe4106d8bd47  /usr/local/bin/ce-oss-deploy' | sha256sum -c &&
+     cp -p /root/.ssh/authorized_keys /root/.ssh/authorized_keys.pre-v2 &&
+     sed -i 's|command="/usr/local/bin/ce-oss-deploy" \(.*ci-deploy@ciudad-enduro-oss\)$|command="/usr/local/bin/ce-oss-deploy staging" \1|' /root/.ssh/authorized_keys &&
+     grep -c 'command="/usr/local/bin/ce-oss-deploy staging" .*ci-deploy@ciudad-enduro-oss$' /root/.ssh/authorized_keys  # 1
    pgrep -af ce-oss-deploy   # nothing; a waiting v1 process would continue on the old inode: stop and ask
    ```
+   If any command of the chain fails, stop and ask (keep the locks until the orchestrator decides, or
+   release them with `exec 8>&- 7>&-`).
    The URL pins the commit that last changed the script, and the sha256 is that file's. **When a later
    commit changes `docs/operations/ce-oss-deploy`, update both values here** (the reviewed merge head
    must carry the same file).
 3. Switch both apps to `dockerimage` (same uuids; image name set; labels and runtime env unchanged). Run
    the query below first and keep its output, then:
+   `/root/ce-oss/capi METHOD PATH` reads the JSON body from stdin when stdin is not a terminal
+   (`[ -t 0 ] || body=$(cat)`) and passes it to curl with `--data-binary @-`; the token goes in on
+   stdin too and never enters an argv.
    ```bash
    cd /root/ce-oss
    echo '{"build_pack":"dockerimage","docker_registry_image_name":"ghcr.io/arkeywave/ciudad-enduro-api","git_repository":"","git_branch":"","git_commit_sha":""}' | ./capi PATCH /applications/c6mm7pwdmoysv0eg2vgwo4bi
@@ -276,8 +293,8 @@ on the box runs the rest.
    session, and follows the log:
    ```bash
    setsid -f env ROLLBACK=1 SSH_ORIGINAL_COMMAND="<sha> <api-digest> <web-digest>" \
-     /usr/local/bin/ce-oss-deploy staging > /root/ce-oss/first-v2.log 2>&1
-   tail -f /root/ce-oss/first-v2.log    # ends with "promoted: /var/lib/ce-oss/promoted/<sha>" or FAIL
+     /usr/local/bin/ce-oss-deploy staging < /dev/null > /root/ce-oss/first-v2.log 2>&1
+   tail -f /root/ce-oss/first-v2.log    # ends with "promoted: …", "FAIL …" or "refused: …"
    ```
    Check the Coolify log of both deployments (section "What runs where").
 7. Re-run the failed `deploy-staging` job (same SHA: passes without `ROLLBACK`) and run the live checks.
