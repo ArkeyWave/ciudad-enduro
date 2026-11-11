@@ -1,4 +1,4 @@
-# Phase 1b-min — GPX import and the trail detail page — Plan (rev. 2, for the final review)
+# Phase 1b-min — GPX import and the trail detail page — Plan (rev. 3, gate closed; §6 amendments are BINDING)
 
 **Goal:** the owner uploads a real GPX file, the API stores the trail as a draft with its path,
 distance, elevation gain/loss and elevation profile, the owner publishes it, and every visitor sees it on
@@ -114,7 +114,7 @@ P1a-1 (A5 switch, in progress) ─► P1a-3 (needs the owner's R2 keys, A8) ─�
 
 | Stage | Reviewers |
 |-------|-----------|
-| This plan | rev. 1: `reviewer` @ high ∥ gpt-6.1-sol @ high (done) → rev. 2: `final-reviewer` @ xhigh |
+| This plan | rev. 1: `reviewer` @ high ∥ gpt-6.1-sol @ high (done) → rev. 2: `final-reviewer` @ xhigh (approve with changes) → rev. 3. Gate CLOSED. |
 | B-A (upload, XML, auth) | `reviewer` @ high ∥ gpt-6.1-sol @ high → fixes → `final-reviewer` @ xhigh |
 | B-B | `reviewer` @ high → fixes → `final-reviewer` @ xhigh |
 
@@ -153,3 +153,46 @@ Load rules: one heavy local job at a time; reviewers run no local suites (CI is 
 | "Move to R2 later" is a stopgap | both | D5 |
 | One map stack | opus | D10 |
 | Cut: draft list, min/max columns, direct `multer`, `<!ENTITY` check | both | D2, D4, D5, D8 |
+
+## 6. Rev. 3 amendments — BINDING (they replace any conflicting text above)
+
+From the final review (`final-reviewer` @ xhigh, approve with changes, no blocking).
+
+**M1 — tests that can fail for their rule (B-A.5).** The order proof is: an admin with a foreign `Origin`
+and **7 text fields** gets 403 (not 400 "Too many fields"), which proves origin before multipart. The field
+test asserts the message matches `/Too many (fields|parts)/`. Mutations added: move the origin check into
+an interceptor after `FileInterceptor` (order proof red); delete `fields`/`parts` from the limits (field
+test red).
+
+**M2 — PATCH DTO (D8).** `@ValidateIf((_, v) => v !== undefined)` instead of `@IsOptional()` (so `null`
+is validated and refused); an empty body → 400; `updatedAt` set explicitly. Tests: `{"name": null}` → 400,
+`{}` → 400.
+
+**M3 — one `departmentOf(city)` (D8)** in create and update. Test: PATCH city Trujillo → department
+La Libertad.
+
+**M4 — no GPX in the logs (D5, D12).** `createFromGpx` maps the two 23505 cases; every other DB error is
+logged only as `{ event, code: err.cause?.code, constraint }` and rethrown as
+`InternalServerErrorException` with no `cause` (drizzle's `DrizzleQueryError` message carries the params,
+i.e. the whole GPX). Test with a capture logger (pattern of `test/auth/logging.int.spec.ts`): a forced DB
+error leaves no GPX text in the log.
+
+**M5 — small parser/metric guards.** `ele` counts only when `typeof ele === 'number'` (an empty `<ele/>`
+is not 0). A total distance of 0 → `GPX_EMPTY`. One test each.
+
+**M6 — slug retry mechanics (D7).** The retry loop is **outside** `db.transaction`; match
+`err.cause.code === '23505'` and `err.cause.constraint` (`trails_slug_unique` or the sha256 constraint), as
+`test/trail-constraints.int.spec.ts:41` does. After 5 tries → 409 `SLUG_TAKEN`.
+
+**M7 — e2e admin (B-B.3).** `prepare-db.ts` INSERTs the admin user (`email_verified` true, `role` admin);
+the admin signs in once per run (one serial `describe` or `storageState`, or `endCooldown()`), using the
+last code.
+
+**M8 — `fieldSize: 8 KiB`** (D2), so a 2000-code-point description fits on POST as on PATCH.
+
+**M9 — 409 carries the existing `slug`** and the form links to it; the D11 runbook deletes the staging
+import before a new import.
+
+**M10 — docs in B-A scope.** The D10 exception row in `docs/architecture/phase-0-foundation.md`; a runbook
+`docs/operations/trails-import.md` with the role SQL (per environment), the trim step (D12), a segment
+merge in a GPX editor for a device that writes one `trkseg` per pause, and the staging delete.
