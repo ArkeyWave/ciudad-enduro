@@ -113,21 +113,27 @@ describe('parseGpx', () => {
     expect(codeOf(() => parseGpx(gpx([...points, pt(-9.2, -78.52)])))).toBe('GPX_TOO_LARGE');
   });
 
-  it('refuses too many elements for the point count before it builds the tree, and accepts the bound (S2)', () => {
-    const two = [pt(-9.09, -78.52, '10'), pt(-9.1, -78.52, '20')];
-    const padded = (n: number) => gpx([two[0]!, `<trkpt lat="-9.1" lon="-78.52"><extensions>${'<e/>'.repeat(n)}</extensions></trkpt>`]);
-    const base = new TextDecoder().decode(padded(0)).split('<').length - 1;
-    // The bound for 2 points is 2000 + 24 × 2 = 2048 `<`.
-    expect(codeOf(() => parseGpx(padded(2048 - base)))).toBeUndefined();
-    expect(codeOf(() => parseGpx(padded(2049 - base)))).toBe('GPX_TOO_COMPLEX');
-    expect(codeOf(() => parseGpx(padded(250_000)))).toBe('GPX_TOO_COMPLEX');
+  it('ignores fake <trkpt> tokens in <metadata>', () => {
+    const head = `<gpx><metadata>${'<trkpt/>'.repeat(10_800)}</metadata>`;
+    expect(parseGpx(gpx([pt(-9.09, -78.52), pt(-9.1, -78.52)], head)).points).toHaveLength(2);
   });
 
-  it('accepts a Garmin-style file with 8 elements (16 `<`) per point, where the points outweigh the base budget', () => {
-    const garmin = (i: number) =>
-      `<trkpt lat="${-9.09 - i / 1000}" lon="-78.52"><ele>10</ele><time>2026-01-01T00:00:00Z</time><extensions><t:TrackPointExtension><t:hr>140</t:hr><t:cad>80</t:cad><t:atemp>20</t:atemp></t:TrackPointExtension></extensions></trkpt>`;
-    expect(parseGpx(gpx(Array.from({ length: 2000 }, (_, i) => garmin(i / 10)))).points).toHaveLength(2000);
+  it('reads an <ele> given as CDATA', () => {
+    const doc = gpx([pt(-9.09, -78.52, '<![CDATA[10]]>'), pt(-9.1, -78.52, '2<![CDATA[0]]>')]);
+    expect(parseGpx(doc).elevations).toEqual([10, 20]);
   });
+
+  it('gives no elevations when a point has two <ele>, and keeps them with one each', () => {
+    const two = '<trkpt lat="-9.1" lon="-78.52"><ele>20</ele><ele>30</ele></trkpt>';
+    expect(parseGpx(gpx([pt(-9.09, -78.52, '10'), two])).elevations).toBeNull();
+    expect(parseGpx(gpx([pt(-9.09, -78.52, '10'), pt(-9.1, -78.52, '20')])).elevations).toEqual([10, 20]);
+  });
+
+  it('accepts the largest real shape: 100 000 Garmin points with 8 elements each', () => {
+    const garmin = (i: number) =>
+      `<trkpt lat="${-9 - i * 1e-6}" lon="-78.52"><ele>10</ele><time>2026-01-01T00:00:00Z</time><extensions><t:TrackPointExtension><t:hr>140</t:hr><t:cad>80</t:cad><t:atemp>20</t:atemp></t:TrackPointExtension></extensions></trkpt>`;
+    expect(parseGpx(gpx(Array.from({ length: 100_000 }, (_, i) => garmin(i)))).points).toHaveLength(100_000);
+  }, 30_000);
 
   it('refuses a point outside the Peru box, and accepts the box edge', () => {
     expect(codeOf(() => parseGpx(gpx([pt(-9.09, -78.52), pt(-34.6, -58.38)])))).toBe('GPX_OUT_OF_AREA');

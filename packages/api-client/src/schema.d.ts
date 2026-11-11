@@ -126,8 +126,8 @@ export interface components {
         Difficulty: "facil" | "intermedio" | "dificil";
         ErrorBodyDto: {
             /** @example TOO_MANY_PENDING */
-            code: string;
-            message: string;
+            code?: string;
+            message: string | string[];
             /** @description GPX_DUPLICATE only, when the uploader may see that trail */
             slug?: string;
         };
@@ -375,7 +375,7 @@ export interface operations {
                     "application/json": components["schemas"]["TrailDetailDto"];
                 };
             };
-            /** @description GPX_* or SLUG_EMPTY, or a validation error */
+            /** @description GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -395,6 +395,15 @@ export interface operations {
             };
             /** @description TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description PARSE_BUSY: two GPX parses already run; try again */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

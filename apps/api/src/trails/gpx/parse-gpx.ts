@@ -1,13 +1,15 @@
-import { BadRequestException } from '@nestjs/common';
-import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import { SaxesParser } from 'saxes';
 import type { LngLat } from '../../db/types/geo.js';
 
 export type GpxErrorCode = 'GPX_INVALID' | 'GPX_EMPTY' | 'GPX_TOO_LARGE' | 'GPX_TOO_COMPLEX' | 'GPX_MULTI_SEGMENT' | 'GPX_OUT_OF_AREA';
 
-/** A 400 with a constant code. It never carries a snippet of the uploaded file. */
-export class GpxError extends BadRequestException {
+/**
+ * A refused file, with a constant code and never a snippet of it. A plain Error, so the worker
+ * imports no framework; the trails service answers it with 400.
+ */
+export class GpxError extends Error {
   constructor(readonly code: GpxErrorCode) {
-    super({ statusCode: 400, code, message: code });
+    super(code);
   }
 }
 
@@ -20,52 +22,38 @@ export type Track = {
 };
 
 export const MAX_POINTS = 100_000;
-
-// Tag budget (S2): a Garmin point with ele, time and three extension values has 8 elements, i.e. 16
-// `<`; 24 per point leaves margin, and 2000 covers the metadata. A 100 000-point file may have
-// 2 402 000 `<`; a 2-point file only 2048, so padding a short track cannot inflate the tree.
-const TAGS_PER_POINT = 24;
-const TAGS_BASE = 2000;
-
-/** Counts `<` and `<trkpt` (any prefix) in one pass, before the validator builds anything. */
-function tooComplex(text: string): boolean {
-  let tags = 0;
-  for (let i = text.indexOf('<'); i !== -1; i = text.indexOf('<', i + 1)) tags++;
-  const points = text.match(/<(?:[\w.-]+:)?trkpt[\s>/]/g)?.length ?? 0;
-  return tags > TAGS_BASE + TAGS_PER_POINT * points;
-}
+const MAX_DEPTH = 100;
 // The trails_*_in_peru check constraints (drizzle/0001_trail_constraints.sql).
 const PERU = { minLng: -81.4, maxLng: -68.6, minLat: -18.4, maxLat: 0 };
 const ELE_MIN = -500;
 const ELE_MAX = 7000;
+// Names an object-building parser would treat as prototype keys; refused, as before the stream.
+const RESERVED = new Set(['constructor', '__proto__', 'prototype']);
 
-const parser = new XMLParser({
-  ignoreAttributes: false,
-  attributeNamePrefix: '',
-  removeNSPrefix: true,
-  processEntities: false,
-  isArray: (name) => name === 'trk' || name === 'trkseg' || name === 'trkpt',
-});
+const localName = (name: string) => name.slice(name.indexOf(':') + 1);
 
-type Node = Record<string, unknown>;
-const isNode = (value: unknown): value is Node => typeof value === 'object' && value !== null && !Array.isArray(value);
-/** Every occurrence of an isArray tag, unfiltered: a bare `<trk/>` or `<trkpt/>` parses to ''. */
-const all = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
-/** The points of a segment; an empty `<trkseg></trkseg>` has none and is the only skipped element. */
-function trkptsOf(segment: unknown): unknown[] {
-  if (segment === '') return [];
-  if (!isNode(segment)) throw new GpxError('GPX_INVALID');
-  return all(segment.trkpt);
-}
-
-function coordinate(value: unknown): number {
-  if (typeof value !== 'string' || value.trim() === '') throw new GpxError('GPX_INVALID');
+function coordinate(value: string | undefined): number {
+  if (value === undefined || value.trim() === '') throw new GpxError('GPX_INVALID');
   const n = Number(value);
   if (!Number.isFinite(n)) throw new GpxError('GPX_INVALID');
   return n;
 }
 
-/** Parses one continuous ride: exactly one track with exactly one non-empty segment. */
+/** A usable `<ele>`: one number in range; an empty or a repeated `<ele>` does not count. */
+function elevation(texts: string[]): number | undefined {
+  if (texts.length !== 1) return undefined;
+  const text = texts[0]!.trim();
+  const n = text === '' ? NaN : Number(text);
+  return Number.isFinite(n) && n >= ELE_MIN && n <= ELE_MAX ? n : undefined;
+}
+
+/**
+ * Parses one continuous ride: exactly one track with exactly one non-empty segment.
+ * A SAX stream (S2): only the points of gpx/trk/trkseg/trkpt are kept, so the result grows with the
+ * points, never with other elements; the point cap stops the stream early. saxes still buffers a
+ * whole comment, text node or attribute value: the API calls this through parseGpxIsolated (B1).
+ * saxes refuses an entity XML does not define, such as `&eacute;` (GPX_INVALID).
+ */
 export function parseGpx(bytes: Uint8Array): Track {
   let text: string;
   try {
@@ -73,43 +61,68 @@ export function parseGpx(bytes: Uint8Array): Track {
   } catch {
     throw new GpxError('GPX_INVALID');
   }
-  // processEntities: false stops replacement, but the parser still reads a DOCTYPE.
-  if (/<!DOCTYPE/i.test(text)) throw new GpxError('GPX_INVALID');
-  if (tooComplex(text)) throw new GpxError('GPX_TOO_COMPLEX');
-  let doc: unknown;
+  // Before saxes: it would buffer the whole DOCTYPE first.
+  if (/<!doctype/i.test(text)) throw new GpxError('GPX_INVALID');
+
+  const stack: string[] = [];
+  const points: LngLat[] = [];
+  const elevations: (number | undefined)[] = [];
+  let tracks = 0;
+  let filledSegments = 0;
+  let segmentHasPoints = false;
+  let eles: string[] | null = null; // the <ele> texts of the open trkpt
+  let eleText: string | null = null; // the text of the open <ele>
+
+  const sax = new SaxesParser();
+  sax.on('opentag', (tag) => {
+    const name = localName(tag.name);
+    if (RESERVED.has(name) || Object.keys(tag.attributes).some((key) => RESERVED.has(localName(key)))) throw new GpxError('GPX_INVALID');
+    if (stack.length === 0 && name !== 'gpx') throw new GpxError('GPX_INVALID');
+    stack.push(name);
+    const depth = stack.length; // gpx = 1, trk = 2, trkseg = 3, trkpt = 4, ele = 5
+    if (depth > MAX_DEPTH) throw new GpxError('GPX_INVALID');
+    if (depth === 2 && name === 'trk' && ++tracks > 1) throw new GpxError('GPX_MULTI_SEGMENT');
+    if (depth === 3 && name === 'trkseg' && stack[1] === 'trk') segmentHasPoints = false;
+    if (depth === 4 && name === 'trkpt' && stack[2] === 'trkseg' && stack[1] === 'trk') {
+      if (!segmentHasPoints && ++filledSegments > 1) throw new GpxError('GPX_MULTI_SEGMENT');
+      segmentHasPoints = true;
+      if (points.length === MAX_POINTS) throw new GpxError('GPX_TOO_LARGE');
+      const attributes = Object.fromEntries(Object.entries(tag.attributes).map(([k, v]) => [localName(k), v]));
+      const lat = coordinate(attributes.lat);
+      const lng = coordinate(attributes.lon);
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) throw new GpxError('GPX_INVALID');
+      if (lng < PERU.minLng || lng > PERU.maxLng || lat < PERU.minLat || lat > PERU.maxLat) throw new GpxError('GPX_OUT_OF_AREA');
+      points.push({ lat, lng });
+      eles = [];
+    }
+    if (depth === 5 && name === 'ele' && eles) eleText = '';
+  });
+  sax.on('text', (chunk) => {
+    if (eleText !== null) eleText += chunk;
+  });
+  sax.on('cdata', (chunk) => {
+    if (eleText !== null) eleText += chunk;
+  });
+  sax.on('closetag', () => {
+    const name = stack.pop();
+    if (stack.length === 4 && name === 'ele' && eleText !== null) {
+      eles?.push(eleText);
+      eleText = null;
+    }
+    if (stack.length === 3 && name === 'trkpt' && eles) {
+      elevations.push(elevation(eles));
+      eles = null;
+    }
+  });
+
   try {
-    // Both throw on hostile input (nesting above 100, a name such as `constructor`): a 400, never a 500.
-    if (XMLValidator.validate(text) !== true) throw new GpxError('GPX_INVALID');
-    doc = parser.parse(text);
-  } catch {
+    sax.write(text).close();
+  } catch (error) {
+    // A malformed document, an undefined entity, a closed root followed by text: a 400 without a cause.
+    if (error instanceof GpxError) throw error;
     throw new GpxError('GPX_INVALID');
   }
-  if (!isNode(doc) || !('gpx' in doc)) throw new GpxError('GPX_INVALID');
-  const tracks = isNode(doc.gpx) ? all(doc.gpx.trk) : [];
-  if (tracks.length > 1) throw new GpxError('GPX_MULTI_SEGMENT');
-  const track = tracks[0];
-  if (track !== undefined && track !== '' && !isNode(track)) throw new GpxError('GPX_INVALID');
-  const segments = all(isNode(track) ? track.trkseg : undefined)
-    .map(trkptsOf)
-    .filter((trkpts) => trkpts.length > 0);
-  if (segments.length > 1) throw new GpxError('GPX_MULTI_SEGMENT');
-
-  const trkpts = segments[0] ?? [];
-  if (trkpts.length < 2) throw new GpxError('GPX_EMPTY');
-  if (trkpts.length > MAX_POINTS) throw new GpxError('GPX_TOO_LARGE');
-
-  const points: LngLat[] = [];
-  const elevations: number[] = [];
-  for (const trkpt of trkpts) {
-    if (!isNode(trkpt)) throw new GpxError('GPX_INVALID');
-    const lat = coordinate(trkpt.lat);
-    const lng = coordinate(trkpt.lon);
-    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) throw new GpxError('GPX_INVALID');
-    if (lng < PERU.minLng || lng > PERU.maxLng || lat < PERU.minLat || lat > PERU.maxLat) throw new GpxError('GPX_OUT_OF_AREA');
-    points.push({ lat, lng });
-    // An empty <ele/> parses to '' and does not count as 0.
-    const { ele } = trkpt;
-    if (typeof ele === 'number' && Number.isFinite(ele) && ele >= ELE_MIN && ele <= ELE_MAX) elevations.push(ele);
-  }
-  return { text, points, elevations: elevations.length === points.length ? elevations : null };
+  if (points.length < 2) throw new GpxError('GPX_EMPTY');
+  const usable = elevations.filter((ele): ele is number => ele !== undefined);
+  return { text, points, elevations: usable.length === points.length ? usable : null };
 }

@@ -86,7 +86,17 @@
             "type": "string"
           },
           "message": {
-            "type": "string"
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
           },
           "slug": {
             "description": "GPX_DUPLICATE only, when the uploader may see that trail",
@@ -94,7 +104,6 @@
           }
         },
         "required": [
-          "code",
           "message"
         ],
         "type": "object"
@@ -734,7 +743,7 @@
                 }
               }
             },
-            "description": "GPX_* or SLUG_EMPTY, or a validation error"
+            "description": "GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error"
           },
           "409": {
             "content": {
@@ -755,6 +764,16 @@
               }
             },
             "description": "TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "PARSE_BUSY: two GPX parses already run; try again"
           }
         },
         "tags": [

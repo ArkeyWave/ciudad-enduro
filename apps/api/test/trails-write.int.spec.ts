@@ -4,8 +4,9 @@ import { format } from 'node:util';
 import type { LoggerService } from '@nestjs/common';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type pg from 'pg';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trails } from '../src/db/schema/index.js';
+import { parseWorkersRunning } from '../src/trails/gpx/parse-gpx-isolated.js';
 import { UploadAttempts } from '../src/trails/upload-throttle.js';
 import { openTestClient } from './test-db.js';
 import { createAuthTestApp, signInWithOtp, truncateAuth, uniqueIp, WEB_ORIGIN, type AuthTestApp } from './support/test-app.js';
@@ -153,17 +154,25 @@ describe('POST /api/trails: a rider (R-D1, R-D2)', () => {
   it('serializes concurrent uploads: a rider with 2 drafts gets exactly one more', async () => {
     await seed('a', 'draft', riderId);
     await seed('b', 'draft', riderId);
-    // A slow insert widens the window between the count and the insert: without the lock, all four pass.
+    // A slow insert widens the window between the count and the insert: without the lock, both pass.
+    // Two uploads: the parse cap (2 workers) would answer more with 503; wait for earlier workers.
     await client.query(`create or replace function slow_trail() returns trigger language plpgsql as $$ begin perform pg_sleep(0.3); return new; end $$`);
     await client.query('create trigger slow_trail before insert on trails for each row execute function slow_trail()');
     try {
-      const results = await Promise.all([1, 2, 3, 4].map((n) => upload(as(rider), { ...fields, name: `Ruta ${n}` }, variant(n))));
-      expect(results.map((res) => res.status).sort()).toEqual([201, 429, 429, 429]);
+      await vi.waitFor(() => expect(parseWorkersRunning()).toBe(0), { timeout: 10_000, interval: 20 });
+      const results = await Promise.all([1, 2].map((n) => upload(as(rider), { ...fields, name: `Ruta ${n}` }, variant(n))));
+      expect(results.map((res) => res.status).sort()).toEqual([201, 429]);
       expect(await count('trails')).toBe(3);
     } finally {
       await client.query('drop trigger slow_trail on trails');
     }
   });
+
+  it('parses through the capped worker: a 9.6 MB comment answers 400 GPX_TOO_COMPLEX', async () => {
+    const res = await upload(as(rider), fields, new TextEncoder().encode(`<gpx><!--${'-x'.repeat(4_800_000)}--></gpx>`));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'GPX_TOO_COMPLEX' });
+  }, 30_000);
 
   it('answers 429 before it parses the file, and parses it below the limit', async () => {
     const broken = new TextEncoder().encode('<gpx><trk>');
