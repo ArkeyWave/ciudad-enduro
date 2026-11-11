@@ -55,7 +55,6 @@ export function TrailAdmin({ trail }: { trail: TrailDetail }) {
       </h2>
       <button
         type="button"
-        disabled={busy}
         onClick={() => void save('status', { status: published ? 'hidden' : 'published' })}
         style={published ? secondaryButton : primaryButton}
       >
