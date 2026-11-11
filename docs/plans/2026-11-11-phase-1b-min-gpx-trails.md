@@ -196,3 +196,16 @@ import before a new import.
 **M10 — docs in B-A scope.** The D10 exception row in `docs/architecture/phase-0-foundation.md`; a runbook
 `docs/operations/trails-import.md` with the role SQL (per environment), the trim step (D12), a segment
 merge in a GPX editor for a device that writes one `trkseg` per pause, and the staging delete.
+
+**M11 (from the B-A build) — extrema hysteresis replaces the D6 threshold filter.** The D6 filter moves
+its reference only when T is crossed, so each peak loses up to T (`100,104,108,112,106,100` gave gain 8,
+loss 8 instead of 12, 12). Replacement (state machine; `ref` = last confirmed extremum, starts at `ele[0]`;
+`cand` = candidate extremum; `dir` ∈ {none, up, down}):
+- `none`: if `e − ref ≥ T` → `dir = up, cand = e`; else if `ref − e ≥ T` → `dir = down, cand = e`.
+- `up`: if `e > cand` → `cand = e`; else if `cand − e ≥ T` → `gain += cand − ref; ref = cand; dir = down; cand = e`.
+- `down`: if `e < cand` → `cand = e`; else if `e − cand ≥ T` → `loss += ref − cand; ref = cand; dir = up; cand = e`.
+- End: `up` → `gain += cand − ref`; `down` → `loss += ref − cand`; `none` → nothing. A final tail smaller than T after `cand` is ignored.
+Every counted leg is ≥ T. Test vectors (exact): `100,104,108,112` → 12/0; `100,104,108,112,106,100` → 12/12;
+`100,103,100,103,100` → 0/0; `100,110,100` → 10/10; `100,110,100,110` → 20/10; `100,105` → 5/0; `100,104` → 0/0;
+`100,102,90` → 0/10; descending mirror of the second vector → 12/12. Mutations: `≥` → `>` (the `100,105` test red);
+drop the end rule (the `100,104,108,112` test red); confirm on the first reversal step (the `100,103,…` test red).
