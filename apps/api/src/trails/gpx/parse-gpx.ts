@@ -1,13 +1,15 @@
-import { BadRequestException } from '@nestjs/common';
 import { SaxesParser } from 'saxes';
 import type { LngLat } from '../../db/types/geo.js';
 
 export type GpxErrorCode = 'GPX_INVALID' | 'GPX_EMPTY' | 'GPX_TOO_LARGE' | 'GPX_TOO_COMPLEX' | 'GPX_MULTI_SEGMENT' | 'GPX_OUT_OF_AREA';
 
-/** A 400 with a constant code. It never carries a snippet of the uploaded file. */
-export class GpxError extends BadRequestException {
+/**
+ * A refused file, with a constant code and never a snippet of it. A plain Error, so the worker
+ * imports no framework; the trails service answers it with 400.
+ */
+export class GpxError extends Error {
   constructor(readonly code: GpxErrorCode) {
-    super({ statusCode: 400, code, message: code });
+    super(code);
   }
 }
 

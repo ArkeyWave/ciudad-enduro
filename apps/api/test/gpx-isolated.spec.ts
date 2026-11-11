@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { parseGpxIsolated } from '../src/trails/gpx/parse-gpx-isolated.js';
+import { describe, expect, it, vi } from 'vitest';
+import { parseGpxIsolated, parseWorkersRunning } from '../src/trails/gpx/parse-gpx-isolated.js';
 import type { GpxErrorCode } from '../src/trails/gpx/parse-gpx.js';
 
 const MB = 1024 * 1024;
@@ -57,6 +57,27 @@ describe('parseGpxIsolated (B1)', () => {
     await expect(parseGpxIsolated(file, 1)).rejects.toMatchObject({ code: 'GPX_TOO_COMPLEX' });
     expect(file.byteLength).toBeGreaterThan(0);
     expect((await parseGpxIsolated(file)).points).toHaveLength(2);
+  });
+
+  const small = bytes(`<gpx><trk><trkseg><trkpt lat="-9.09" lon="-78.52"/><trkpt lat="-9.1" lon="-78.52"/></trkseg></trk></gpx>`);
+  const allExited = () => vi.waitFor(() => expect(parseWorkersRunning()).toBe(0), { timeout: 10_000, interval: 20 });
+
+  it('answers 503 PARSE_BUSY to a third parse while two run, and parses again once they exit', async () => {
+    await allExited();
+    const first = parseGpxIsolated(small);
+    const second = parseGpxIsolated(small);
+    await expect(parseGpxIsolated(small)).rejects.toMatchObject({ status: 503, response: { code: 'PARSE_BUSY' } });
+    await Promise.all([first, second]);
+    await allExited();
+    expect((await parseGpxIsolated(small)).points).toHaveLength(2);
+  });
+
+  it('keeps the slot of a timed-out worker until it exits', async () => {
+    await allExited();
+    await expect(parseGpxIsolated(small, 1)).rejects.toMatchObject({ code: 'GPX_TOO_COMPLEX' });
+    // The rejection arrives as a microtask; the exit event of the terminated worker comes later.
+    expect(parseWorkersRunning()).toBe(1);
+    await allExited();
   });
 
   it('passes a parse error code through', async () => {

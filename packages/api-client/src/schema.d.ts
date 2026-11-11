@@ -402,6 +402,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBodyDto"];
                 };
             };
+            /** @description PARSE_BUSY: two GPX parses already run; try again */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
         };
     };
     TrailsController_get: {

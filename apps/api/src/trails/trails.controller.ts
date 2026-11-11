@@ -24,6 +24,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
+  ApiServiceUnavailableResponse,
   ApiTooManyRequestsResponse,
 } from '@nestjs/swagger';
 import type { Auth } from '../auth/auth.factory.js';
@@ -96,6 +97,7 @@ export class TrailsController {
   @ApiCreatedResponse({ type: TrailDetailDto })
   @ApiBadRequestResponse({ type: ErrorBodyDto, description: 'GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error' })
   @ApiConflictResponse({ type: ErrorBodyDto, description: 'GPX_DUPLICATE (slug only when visible to the uploader) or SLUG_TAKEN' })
+  @ApiServiceUnavailableResponse({ type: ErrorBodyDto, description: 'PARSE_BUSY: two GPX parses already run; try again' })
   @ApiTooManyRequestsResponse({
     type: ErrorBodyDto,
     description: 'TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts',

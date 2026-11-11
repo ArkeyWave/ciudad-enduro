@@ -62,7 +62,7 @@ Error codes of the upload (HTTP 400 unless stated):
 
 | Code | Meaning |
 |------|---------|
-| `GPX_INVALID` | Not UTF-8, a DOCTYPE, malformed XML, root is not `gpx`, elements nested deeper than 100, a reserved name such as `constructor`, a `<trkpt>` without a valid `lat`/`lon`, or a distance or a gain above the int4 range |
+| `GPX_INVALID` | Not UTF-8, the text `<!DOCTYPE` anywhere and in any case (also inside a comment), malformed XML, root is not `gpx`, elements nested deeper than 100, a reserved name such as `constructor`, a `<trkpt>` without a valid `lat`/`lon`, or a distance or a gain above the int4 range |
 | `GPX_EMPTY` | Fewer than 2 points, or a total distance of 0 |
 | `GPX_TOO_LARGE` | More than 100 000 points (a file above 10 MiB gets HTTP 413) |
 | `GPX_TOO_COMPLEX` | The parse needs more than 96 MB or 5 s (a huge comment, text or attribute, not a ride) |
@@ -73,6 +73,7 @@ Error codes of the upload (HTTP 400 unless stated):
 | `SLUG_TAKEN` (409) | The name and its suffixes `-2` … `-5` are all taken; choose another name |
 | `TOO_MANY_UPLOADS` (429) | A non-admin made 10 upload attempts in 10 minutes (per API process) |
 | `TOO_MANY_PENDING` (429) | A non-admin already has 3 drafts |
+| `PARSE_BUSY` (503) | Two GPX parses already run in this API process; try again in a few seconds |
 
 ## 4. Calibration on staging (before the first production import, plan D11)
 

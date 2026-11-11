@@ -16,6 +16,7 @@ import type { CoordinatesDto, MyTrailDto, QueueTrailDto, TrailDetailDto, TrailSu
 import type { CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
 import { trackMetrics } from './gpx/metrics.js';
 import { parseGpxIsolated } from './gpx/parse-gpx-isolated.js';
+import { GpxError } from './gpx/parse-gpx.js';
 
 // Geo columns are read through PostGIS functions, never as raw driver values.
 const summaryColumns = {
@@ -88,6 +89,17 @@ export function slugify(name: string): string {
 
 const coded = (code: string, extra: Record<string, unknown> = {}) => ({ code, message: code, ...extra });
 
+/** The parse (in a worker) and the metrics; a refused file is a 400 with its code. */
+async function parseAndMeasure(bytes: Uint8Array) {
+  try {
+    const track = await parseGpxIsolated(bytes);
+    return { track, metrics: trackMetrics(track.points, track.elevations) };
+  } catch (error) {
+    if (error instanceof GpxError) throw new BadRequestException({ statusCode: 400, ...coded(error.code) });
+    throw error;
+  }
+}
+
 type PgCause = { code?: string; constraint?: string };
 const pgCause = (error: unknown): PgCause | undefined => (error as { cause?: PgCause } | undefined)?.cause;
 
@@ -157,8 +169,7 @@ export class TrailsService {
     const authorId = uploader.id;
     // A shortcut before the parse; the locked count in the transaction decides.
     if (!uploader.admin) await this.refuseTooManyPending(this.db, authorId);
-    const track = await parseGpxIsolated(bytes);
-    const metrics = trackMetrics(track.points, track.elevations);
+    const { track, metrics } = await parseAndMeasure(bytes);
     const base = slugify(input.name);
     if (!base) throw new BadRequestException(coded('SLUG_EMPTY'));
     const sha256 = createHash('sha256').update(bytes).digest('hex');
