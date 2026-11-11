@@ -165,12 +165,13 @@ not matching the attestation, attestation from another workflow/ref, label misma
    promotion record (refuses a SHA without one), re-verifies the attestations, and runs the same checks.
 4. **First deploy, private:** with `traefik.enable=false`, check `/api/health` revision and the home page
    from the `coolify` network (`docker run --rm --network coolify curlimages/curl …`).
-5. **Cutover (maintenance window, minutes):**
+5. **Cutover (maintenance window, minutes):** precondition: the L2 guard with R12 is live and its
+   must-deny tests are green ([deploy.md, residual risk](../operations/deploy.md#residual-risk-the-owners-local-gh-token)).
    a. save the old app's config; verify its routers carry `cloudflare-only@file`;
    b. stop the old app; confirm its container is gone;
    c. enable the new apps' locked labels and deploy;
    d. verify: public 200 + revision, direct origin 403, every router has the middleware, no host ports,
-      and the set of running containers with ``Host(`enduro.vops.pe`)`` == {new api, new web};
+      and the set of containers that `docker ps` lists (running, restarting, paused) with ``Host(`enduro.vops.pe`)`` == {new api, new web};
    e. **rollback** (exact reverse): stop the new apps → confirm gone → start the old app with its stored
       labels → same checks. Rehearse once inside the window (the old repo's pull key must still work;
       the old images survive on the box).

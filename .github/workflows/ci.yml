@@ -43,6 +43,11 @@ jobs:
         with:
           persist-credentials: false
 
+      # The deploy-production preflight against a fake gh (seconds; no token, no network).
+      - name: Test the deploy-production preflight
+        if: github.event_name == 'pull_request'
+        run: scripts/test-deploy-production-preflight.sh
+
       # pnpm must exist before setup-node can use `cache: pnpm`.
       # The version comes from "packageManager" in package.json.
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1

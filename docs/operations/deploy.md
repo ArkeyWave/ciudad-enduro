@@ -1,7 +1,8 @@
-# Staging deploy
+# Deploy (staging and production)
 
 Staging host: **https://enduro-next.vops.pe** (Cloudflare proxied) on the `vops-infra` box, Coolify
-project `ciudad-enduro-oss`, environment `staging`.
+project `ciudad-enduro-oss`, environment `staging`. Production: see [Production](#production)
+(host `enduro.vops.pe`, environment `production`; not live yet).
 
 ## How a deploy happens
 
@@ -26,11 +27,14 @@ project `ciudad-enduro-oss`, environment `staging`.
    `ssh root@104.152.209.8 "<sha> <api-digest> <web-digest>"` with a pinned host key. On the box that key
    can only run `/usr/local/bin/ce-oss-deploy staging` (`restrict,command=...` in
    `/root/.ssh/authorized_keys`); the target is fixed by the key.
-5. `ce-oss-deploy` v2 (copy in [`ce-oss-deploy`](ce-oss-deploy)):
+5. `ce-oss-deploy` v3 (copy in [`ce-oss-deploy`](ce-oss-deploy); the box runs v2 until the P1a-3
+   install, see [Install v3](#install-v3-after-the-merge)):
    - refuses anything that does not match `^[0-9a-f]{40} sha256:[0-9a-f]{64} sha256:[0-9a-f]{64}$`;
+   - **detaches the run from the SSH session** and streams its log back
+     ([Detached run](#how-a-production-deploy-happens), same code path for both targets);
    - holds `flock /var/cache/ce-oss-deploy/lock.<target>` (one lock per target);
-   - fetches `main` of the public repo into `/var/cache/ce-oss-deploy/repo.git` and refuses a SHA that
-     is not an ancestor of `origin/main`;
+   - fetches `main` of the public repo into `/var/cache/ce-oss-deploy/repo.git` under `lock.cache` and
+     refuses a SHA that is not an ancestor of `origin/main`;
    - **rollback guard:** reads the api revision from the `org.opencontainers.image.revision` label of
      the image of the **newest api container in any state** (`docker ps -a --latest`), so a stopped or
      restarting api still counts; an image without the label is refused unless `ROLLBACK=1`. A Coolify
@@ -46,18 +50,22 @@ project `ciudad-enduro-oss`, environment `staging`.
      --deny-self-hosted-runners`; revision label == `<sha>`;
    - refuses unless both apps have build pack `dockerimage` (any other build pack would ignore the digest
      and build from source on the box);
+   - **checks before the first change** ([Production step 5](#how-a-production-deploy-happens)): both
+     apps have the read-only label setting off, and no other container claims
+     ``Host(`enduro-next.vops.pe`)`` (refused, no Coolify call);
    - per app, api first (the api container migrates the database on start), then web: PATCH
      `docker_registry_image_name` = the repository and `docker_registry_image_tag` = `sha256-<hex>`,
-     deploy, and require every running container of the app to run exactly
-     `docker image inspect <repo>@<digest> -f {{.Id}}`. The script records the app's running image IDs
+     deploy, and require every container of the app that `docker ps` lists (running, restarting, paused) to run exactly
+     `docker image inspect <repo>@<digest> -f {{.Id}}`. The script records the image IDs of those containers
      before the deploy and checks in two passes, so the order of the IDs does not matter: any image that
      is neither the pulled one nor a recorded one is unchecked, so the script stops the app and exits 1;
      then, if a recorded image still runs, the rolling update failed and the old container stays
      (exit 1). A deployment UUID that is not alphanumeric is refused before it reaches SQL;
    - re-checks the origin lock: direct requests to the box for `/` and `/api/health` answer 403,
      every `traefik.http.routers.*.rule` label on both running containers has a `.middlewares`
-     label with `cloudflare-only@file`, and `docker port` is empty for both. On failure it stops
-     both apps and exits 1;
+     label with `cloudflare-only@file`, `docker port` is empty for both, and the containers that claim
+     the host are exactly the two apps' own (the same host check as before the change). On failure it
+     stops both apps and exits 1 ("public checks failed; both apps stopped");
    - fails unless, within 3 minutes, `https://enduro-next.vops.pe/api/health` answers `revision`
      = the SHA and `/` answers 200 (both retried in the same loop);
    - writes the **promotion record** `/var/lib/ce-oss/promoted/<sha>` (root 600, written by rename):
@@ -113,12 +121,15 @@ Without a valid token every deploy is refused. A GitHub or Sigstore outage also 
 | GHCR packages | `ghcr.io/arkeywave/ciudad-enduro-api`, `…-web`: public, pulled anonymously (the box has no GHCR login) |
 | Database | `ciudad-enduro-oss-postgres-staging` (`zsr9gmrfd3sfdthyxxaikmoc`), Docker network only |
 | Revision | CI passes `BUILD_SHA=<sha>` (api) and the label `org.opencontainers.image.revision=<sha>` (both images) |
-| Deploy script | `/usr/local/bin/ce-oss-deploy` (root 755), v2 |
+| Deploy script | `/usr/local/bin/ce-oss-deploy` (root 755), v2; v3 (adds `production` and `PRIVATE=1`) is installed after the P1a-3 merge ([Install v3](#install-v3-after-the-merge)) |
 | gh | `/usr/local/lib/ce-oss/gh/bin/gh`; `/usr/local/lib/ce-oss/gh` → `gh-2.103.3` (release tarball, sha256 checked against the release checksums) |
 | Attestation token | `/root/.secrets/ce-oss-gh-attest.env` (root 600), fine-grained, no permissions, no expiration |
-| State | `/var/cache/ce-oss-deploy/` (root 700): `repo.git` (main only), `lock.staging` |
-| Promotion records | `/var/lib/ce-oss/promoted/<sha>` (root 700 / 600) |
+| State | `/var/cache/ce-oss-deploy/` (root 700): `repo.git` (main only), `lock.staging`, `lock.production` (one lock per target), `lock.cache` (the shared `repo.git` fetch) |
+| Run logs | `/var/lib/ce-oss/logs/<target>-<sha>-<utc>-<random>.log` (root 700 / 600, v3): one per run, last line `END exit=<code>` |
+| Promotion records | `/var/lib/ce-oss/promoted/<sha>` (root 700 / 600), written by staging only |
+| Production records | `/var/lib/ce-oss/production/<sha>` (root 700 / 600), the lower bound of the production rollback guard |
 | Deploy key | `ci-deploy@ciudad-enduro-oss` in `/root/.ssh/authorized_keys`, `restrict,command="/usr/local/bin/ce-oss-deploy staging"` |
+| Prod deploy key | `ci-deploy-prod@ciudad-enduro-oss` (`SHA256:HQJnfKsK8W0kuC8tGhjKYwuQgoZ/Y8zkDyZEonzCY/A`), same options with `command="/usr/local/bin/ce-oss-deploy production"`; private half only in the Environment `production` secret `CE_OSS_PROD_DEPLOY_KEY` |
 | API env | Coolify runtime env on the api app; `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET` were generated on the box; `TURNSTILE_SECRET_KEY` (staging widget, runtime only) |
 | Web env | Coolify runtime env on the web app: `API_INTERNAL_URL`, `TURNSTILE_SITE_KEY` (staging widget, runtime only: the server component of `/ingresar` reads it, so one image serves both hosts) |
 
@@ -330,6 +341,151 @@ on the box runs the rest.
 
 After this, `/usr/local/lib/ce-oss/verify-image.sh` is no longer used on the box (A10: CI runs the
 verifier before publish; the digest and the attestation bind the checked image).
+
+## Production
+
+Host **`enduro.vops.pe`** (today it still serves the old app; the cutover is plan P1a-3.5). Coolify
+project `ciudad-enduro-oss`, environment `production` (`e04m00q08bl1d6yop2rsfdgr`). Created on
+2026-11-11; **not deployed yet**.
+
+| Piece | Value |
+|---|---|
+| Coolify app `ce-oss-api-prod` | `ith1im25jwpamnvthlikfglq`, build pack `dockerimage`, image `ghcr.io/arkeywave/ciudad-enduro-api`, port 3001, network alias `ce-oss-api-prod`, health check `/api/health`, no domain, auto-deploy off |
+| Coolify app `ce-oss-web-prod` | `gwn5ys9bnjvn7fasm6egvxw4`, build pack `dockerimage`, image `ghcr.io/arkeywave/ciudad-enduro-web`, port 3000, `API_INTERNAL_URL=http://ce-oss-api-prod:3001`, no domain, auto-deploy off |
+| Labels | `is_container_label_readonly_enabled = false`; hand-written `custom_labels` with the routers of the staging table for ``Host(`enduro.vops.pe`)`` (api priority 100, web 10, both `cloudflare-only@file`) and **`traefik.enable=false`** until the cutover |
+| Database | `ciudad-enduro-oss-postgres` (`k9ysrxe4vuaqge54kkqivfpa`), app role `ciudadenduro_app` (no superuser, owner of `ciudad_enduro`); the container superuser `ciudadenduro` is not in the app env |
+| API env | `NODE_ENV=production`, `PORT=3001`, `BETTER_AUTH_URL = WEB_ORIGIN = https://enduro.vops.pe`, `DATABASE_URL` (app role), `BETTER_AUTH_SECRET` and `OTP_HMAC_SECRET` (new, generated on the box), `TURNSTILE_SECRET_KEY` (prod widget), `GOOGLE_CLIENT_ID/SECRET` (shared with staging by decision), `EMAIL_FROM`. **`RESEND_API_KEY` is missing**: a prod sending-only key from the owner |
+| Web env | `API_INTERNAL_URL`, `TURNSTILE_SITE_KEY` (prod widget) |
+| Secrets | Coolify and the owner's machine only (`~/.secrets/ciudad-enduro-oss.env`, `PROD_*`); no copy on the box |
+| Backup | **none yet** (plan P1a-3.1, A8: daily, off-box on Cloudflare R2, restore proved before the cutover) |
+
+### How a production deploy happens
+
+1. The owner opens Actions → **Deploy production** → Run workflow on `main` and types the 40-hex
+   SHA of a `main` commit that staging deployed.
+2. `preflight` (no secret, `actions: read`, `contents: read`) refuses unless the input is 40 hex, the
+   compare API says `main` contains the SHA (`identical` or `ahead`), a `ci.yml` run of the push of
+   that SHA to `main` succeeded, and its `deploy-staging` job (latest attempt) succeeded.
+3. `deploy` needs `preflight` and runs in the Environment **`production`**: required reviewer
+   `ArkeyWave`, prevent self-review off (single maintainer), administrators cannot bypass, deployment
+   branches `main` only. Its only secret is `CE_OSS_PROD_DEPLOY_KEY`; a step without the secret
+   checks the SHA regex again before the step that holds it. It runs
+   `ssh root@104.152.209.8 "<sha>"` with the pinned host key.
+4. On the box the key can only run `/usr/local/bin/ce-oss-deploy production`. The request is the SHA
+   alone (`^[0-9a-f]{40}$`). The run is **detached from the SSH session** (below). It takes
+   `lock.production`, reads the digests from the staging promotion record
+   `/var/lib/ce-oss/promoted/<sha>` (refuses a SHA without one, and a record whose first field is not
+   the SHA), and then runs the same steps as staging: SHA on `main` (the shared `repo.git` fetch holds
+   `lock.cache`), rollback guard, preflight of both images (pull, attestation verified again, label),
+   build pack `dockerimage`, the checks before the first change (below), api then web by digest,
+   image check (every listed container), origin lock, live revision and home page on `https://enduro.vops.pe`.
+5. **Checks before the first change** (both targets): both apps have
+   `is_container_label_readonly_enabled = f` (otherwise Coolify would generate its own labels and
+   ignore the stored ones), and in public mode no container that `docker ps` lists (running,
+   restarting or paused) other than the apps' own carries the fixed string ``Host(`<host>`)`` in a
+   label (an old app must be stopped first; refused, no Coolify call). After the deploys the origin
+   check requires the same again: the containers that claim the host are the apps' own containers
+   that `docker ps` lists, and the image check of each deploy has already required every one of
+   them to run the new image (an old image in any listed state fails: "the old image … still runs").
+   On a failure there: "public checks failed; both apps stopped".
+6. On success it writes `/var/lib/ce-oss/production/<sha>` (same format, by rename). The production
+   rollback guard reads these records, not the staging ones, when no prod api container exists.
+
+**Detached run (both targets, one code path).** The caller's process checks the request, starts the
+run with `setsid` in its own session, its output in `/var/lib/ce-oss/logs/<target>-<sha>-<utc>-<random>.log`
+(`mktemp`, a random suffix before `.log`; root 700 / 600), streams that log back (`tail --pid`) and exits with the run's code, read from the
+last line `END exit=<code>` (the line before it is `recorded: …`, `PRIVATE=1: no promotion record`,
+`FAIL …` or `refused: …`; when a command fails under `set -e` without a message of the script, the
+line before is that command's own error output, or nothing, and the code is not 0). A cancelled CI job or a dropped SSH connection stops only the stream: the
+run continues to its end and its log keeps the result. sshd passes no `CE_OSS_RUN` from a key, so a
+caller cannot skip the detach. Read a run's result later with `tail -3 /var/lib/ce-oss/logs/<file>`.
+
+### `PRIVATE=1` (first deploy, before the cutover)
+
+Operator only, as root on the box (sshd passes no variable from a CI key). The script detaches
+itself; a dropped session does not stop it:
+
+```bash
+PRIVATE=1 SSH_ORIGINAL_COMMAND="<sha>" /usr/local/bin/ce-oss-deploy production
+# prints "run <pid>, log /var/lib/ce-oss/logs/production-<sha>-<utc>-<random>.log", then the log; the last
+# line is "END exit=<code>"
+```
+
+- Before any change, both apps must store exactly one `traefik.enable` label, `=false`, in
+  `custom_labels`, and have the read-only label setting off; otherwise the script refuses.
+- Right after **each** app's deploy (api first), every running container of that app must carry
+  `traefik.enable=false`, publish no host port, be on the `coolify` network and answer on its IP
+  there from the host: api `http://<ip>:3001/api/health` revision = SHA, web `http://<ip>:3000/`
+  200 (retried for 3 minutes). The public origin-lock and live checks do not run.
+- **Any failure after the first change stops both apps** (exit trap): a failed check, a failed or
+  cancelled Coolify deployment, a timeout, a die in either deploy.
+- Production writes its record; a `PRIVATE=1` staging deploy writes no promotion record.
+
+The cutover then enables the locked labels (`traefik.enable=true`, a complete `custom_labels`
+PATCH) and runs the normal deploy (plan P1a-3.5c, amendments A2, A3).
+
+### Rollback (production)
+
+The same guard as staging. As root on the box, for a `main` commit that has a staging promotion
+record: `ROLLBACK=1 SSH_ORIGINAL_COMMAND="<sha>" /usr/local/bin/ce-oss-deploy production`.
+
+### Residual risk: the owner's local `gh` token
+
+The `gh` CLI on the owner's machine is logged in as `ArkeyWave` (the required reviewer) with the
+`repo` and `workflow` scopes. A local agent with that token could dispatch `deploy-production.yml`
+and approve its pending deployment through the API: the Environment cannot tell the owner from an
+agent that holds the owner's token. **Rule: agents never call `gh workflow run deploy-production*`
+and never call the `pending_deployments` API; only the owner dispatches and approves, in the GitHub
+UI.** What still holds without the rule: a dispatch can deploy only a `main` commit that staging
+deployed and promoted (preflight + promotion record), and a rollback needs `ROLLBACK=1` on the box.
+
+**Precondition of the cutover (P1a-3.5):** the L2 guard with rule R12 (agents may not dispatch
+`deploy-production*` or call `pending_deployments`) is live on the owner's machine **and its
+must-deny tests are green**. Until both are true, the cutover does not start; record the guard
+version and the test run in the P1a-3 cutover PR.
+
+### Install v3 (after the merge)
+
+v3 is reviewed in the P1a-3 pull request and installed after its merge, with both target locks held
+(no deploy may run on a half-installed file). Same chain as the v2 install (step 2 of "First v2
+deploy"); the forced commands already name their targets, so `authorized_keys` does not change.
+**Pin the MERGE commit**, not a PR commit: after the merge, set `<merge>` to the merge commit on
+`main` and check that the file there has the sha256 below (the reviewed head must carry the same file):
+
+```bash
+cd /root/ce-oss
+exec 7>/var/cache/ce-oss-deploy/lock.staging; flock 7
+exec 6>/var/cache/ce-oss-deploy/lock.production; flock 6
+pgrep -af 'ce-oss-deploy (staging|production)'   # nothing: a waiting run would continue on the old inode
+rm -f ce-oss-deploy.v3
+curl -fsSL -o ce-oss-deploy.v3 \
+  https://raw.githubusercontent.com/ArkeyWave/ciudad-enduro/<merge>/docs/operations/ce-oss-deploy &&
+  echo 'fee830e5fa73feb263f409e3956104dcb7d6fddec3ecdfb5bfe58876384b2e3e  ce-oss-deploy.v3' | sha256sum -c &&
+  install -o root -g root -m 755 ce-oss-deploy.v3 /usr/local/bin/ce-oss-deploy &&
+  echo 'fee830e5fa73feb263f409e3956104dcb7d6fddec3ecdfb5bfe58876384b2e3e  /usr/local/bin/ce-oss-deploy' | sha256sum -c
+exec 7>&- 6>&-
+ls -A /var/lib/ce-oss/production 2>/dev/null   # nothing: no stray record may bound the prod guard
+```
+
+The sha256 (fee830e5fa73feb263f409e3956104dcb7d6fddec3ecdfb5bfe58876384b2e3e) is that of `docs/operations/ce-oss-deploy` at the reviewed head (in the P1a-3 PR;
+update it with every review fix). After the install, write the merge commit into this section in a
+docs commit. Until v3 is installed, the prod key is refused (`unknown target 'production'`).
+
+### Post-merge steps (P1a-3 part 1)
+
+1. Install v3 (above) and run the staging live checks after the next push to `main`.
+2. **Dispatch once with a refused SHA** (the owner, in the GitHub UI): Actions → Deploy production →
+   Run workflow on `main` with a SHA that `preflight` refuses (for example a PR head that is not on
+   `main`). Expected: `preflight` fails, `deploy` is **skipped** (no approval request, no SSH). Record
+   the run URL in the P1a-3 PR.
+
+### `ce-oss-deploy` v3 proofs
+
+Harness `/root/ce-oss/v3-test/` (copy of the v2 harness: `capi` is a stub in every row; stand-in
+containers carry `traefik.enable=false` and publish no public port; `HARNESS_KEEP=1` keeps a run's
+files for the detach row). Results and mutations are in the P1a-3 pull request. The preflight logic
+has its own test with a fake `gh`: `scripts/test-deploy-production-preflight.sh` (`--step` prints the
+step to mutate, `--run FILE` runs the cases on a mutated copy).
 
 ## Seed data
 
