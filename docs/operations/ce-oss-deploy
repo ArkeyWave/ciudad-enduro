@@ -33,7 +33,7 @@
 # change stops both apps.
 #
 # Every run is detached from the SSH session (setsid) and logs to
-# /var/lib/ce-oss/logs/<target>-<sha>-<utc>.log; the caller streams the log and gets the run's
+# /var/lib/ce-oss/logs/<target>-<sha>-<utc>-<random>.log (mktemp); the caller streams the log and gets the run's
 # exit code. A dropped connection or a cancelled CI job does not stop the run.
 set -euo pipefail
 umask 077
@@ -140,9 +140,9 @@ running_containers() { # APP_UUID -> IDs of its running containers
 latest_container() { # APP_UUID -> ID of its newest container in any state, empty when none
   docker ps -a --latest --filter "name=^$1-" --format '{{.ID}}'
 }
-app_images() { # APP_UUID -> sorted image IDs of its running containers
+app_images() { # APP_UUID -> sorted image IDs of its containers that docker ps lists (running, restarting, paused)
   local c
-  for c in $(running_containers "$1"); do docker inspect -f '{{.Image}}' "$c"; done | sort -u
+  for c in $(docker ps -q --filter "name=^$1-"); do docker inspect -f '{{.Image}}' "$c"; done | sort -u
 }
 label_of() { # IMAGE -> its revision label, empty when absent
   docker image inspect "$1" -f "{{with .Config.Labels}}{{index . \"$REVISION\"}}{{end}}" 2>/dev/null || true
@@ -221,7 +221,8 @@ label_readonly_of() {
 
 # Checks before the first change (called right before the first Coolify call): both apps keep
 # their hand-written labels; PRIVATE=1: both store exactly one traefik.enable label, =false;
-# public mode: no other running container claims the host (an old app must be stopped first).
+# public mode: no other container that docker ps lists (running, restarting, paused) claims the
+# host (an old app must be stopped first).
 prechange_checks() {
   local app ro labels
   for app in "$API_UUID" "$WEB_UUID"; do
@@ -264,9 +265,10 @@ deploy_status() { # DEPLOYMENT_UUID -> its Coolify queue status
     "select status from application_deployment_queues where deployment_uuid='$1'"
 }
 
-# Deploys one app by digest, then requires every running container of it to run exactly the
-# pulled image. If the old image (running before this deploy) still runs, the rolling update
-# failed and the old container stays. Any other image is unchecked: the app is stopped.
+# Deploys one app by digest, then requires every container of it that docker ps lists (running,
+# restarting, paused) to run exactly the pulled image. If an image listed before this deploy is
+# still listed, the rolling update failed and the old container stays. Any other image is
+# unchecked: the app is stopped.
 deploy() { # APP_UUID NAME REPO DIGEST
   local uuid=$1 name=$2 repo=$3 digest=$4 dep status=queued want before got id
   before=$(app_images "$uuid")
@@ -295,7 +297,7 @@ deploy() { # APP_UUID NAME REPO DIGEST
   for id in $got; do
     [ "$id" = "$want" ] || die "$name: the old image $id still runs, expected $want ($repo@$digest)"
   done
-  [ -n "$got" ] || die "$name: no running container, expected $want ($repo@$digest)"
+  [ -n "$got" ] || die "$name: no container, expected $want ($repo@$digest)"
   log "$name: finished, running $repo@$digest"
 }
 

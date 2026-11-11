@@ -121,7 +121,7 @@ Without a valid token every deploy is refused. A GitHub or Sigstore outage also 
 | GHCR packages | `ghcr.io/arkeywave/ciudad-enduro-api`, `…-web`: public, pulled anonymously (the box has no GHCR login) |
 | Database | `ciudad-enduro-oss-postgres-staging` (`zsr9gmrfd3sfdthyxxaikmoc`), Docker network only |
 | Revision | CI passes `BUILD_SHA=<sha>` (api) and the label `org.opencontainers.image.revision=<sha>` (both images) |
-| Deploy script | `/usr/local/bin/ce-oss-deploy` (root 755), v2; v3 (adds `production` and `PRIVATE=1`) is installed after the P1a-3 merge ([Install v3](#install-v3)) |
+| Deploy script | `/usr/local/bin/ce-oss-deploy` (root 755), v2; v3 (adds `production` and `PRIVATE=1`) is installed after the P1a-3 merge ([Install v3](#install-v3-after-the-merge)) |
 | gh | `/usr/local/lib/ce-oss/gh/bin/gh`; `/usr/local/lib/ce-oss/gh` → `gh-2.103.3` (release tarball, sha256 checked against the release checksums) |
 | Attestation token | `/root/.secrets/ce-oss-gh-attest.env` (root 600), fine-grained, no permissions, no expiration |
 | State | `/var/cache/ce-oss-deploy/` (root 700): `repo.git` (main only), `lock.staging`, `lock.production` (one lock per target), `lock.cache` (the shared `repo.git` fetch) |
@@ -381,10 +381,13 @@ project `ciudad-enduro-oss`, environment `production` (`e04m00q08bl1d6yop2rsfdgr
    running image check, origin lock, live revision and home page on `https://enduro.vops.pe`.
 5. **Checks before the first change** (both targets): both apps have
    `is_container_label_readonly_enabled = f` (otherwise Coolify would generate its own labels and
-   ignore the stored ones), and in public mode no running container other than the apps' own carries
-   the fixed string ``Host(`<host>`)`` in a label (an old app must be stopped first; refused, no
-   Coolify call). After the deploys the origin check requires the same set again: exactly the two
-   new app containers. On a failure there: "public checks failed; both apps stopped".
+   ignore the stored ones), and in public mode no container that `docker ps` lists (running,
+   restarting or paused) other than the apps' own carries the fixed string ``Host(`<host>`)`` in a
+   label (an old app must be stopped first; refused, no Coolify call). After the deploys the origin
+   check requires the same again: the containers that claim the host are the apps' own containers
+   that `docker ps` lists, and the image check of each deploy has already required every one of
+   them to run the new image (an old image in any listed state fails: "the old image … still runs").
+   On a failure there: "public checks failed; both apps stopped".
 6. On success it writes `/var/lib/ce-oss/production/<sha>` (same format, by rename). The production
    rollback guard reads these records, not the staging ones, when no prod api container exists.
 
@@ -457,14 +460,14 @@ pgrep -af 'ce-oss-deploy (staging|production)'   # nothing: a waiting run would 
 rm -f ce-oss-deploy.v3
 curl -fsSL -o ce-oss-deploy.v3 \
   https://raw.githubusercontent.com/ArkeyWave/ciudad-enduro/<merge>/docs/operations/ce-oss-deploy &&
-  echo 'b160c8b587121a8faa83bb50df9e4bbfd013d690e31b07a317fcd941d221a003  ce-oss-deploy.v3' | sha256sum -c &&
+  echo 'fee830e5fa73feb263f409e3956104dcb7d6fddec3ecdfb5bfe58876384b2e3e  ce-oss-deploy.v3' | sha256sum -c &&
   install -o root -g root -m 755 ce-oss-deploy.v3 /usr/local/bin/ce-oss-deploy &&
-  echo 'b160c8b587121a8faa83bb50df9e4bbfd013d690e31b07a317fcd941d221a003  /usr/local/bin/ce-oss-deploy' | sha256sum -c
+  echo 'fee830e5fa73feb263f409e3956104dcb7d6fddec3ecdfb5bfe58876384b2e3e  /usr/local/bin/ce-oss-deploy' | sha256sum -c
 exec 7>&- 6>&-
 ls -A /var/lib/ce-oss/production 2>/dev/null   # nothing: no stray record may bound the prod guard
 ```
 
-The sha256 (b160c8b587121a8faa83bb50df9e4bbfd013d690e31b07a317fcd941d221a003) is that of `docs/operations/ce-oss-deploy` at the reviewed head (in the P1a-3 PR;
+The sha256 (fee830e5fa73feb263f409e3956104dcb7d6fddec3ecdfb5bfe58876384b2e3e) is that of `docs/operations/ce-oss-deploy` at the reviewed head (in the P1a-3 PR;
 update it with every review fix). After the install, write the merge commit into this section in a
 docs commit. Until v3 is installed, the prod key is refused (`unknown target 'production'`).
 
