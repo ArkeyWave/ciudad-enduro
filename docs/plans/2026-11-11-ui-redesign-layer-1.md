@@ -156,3 +156,30 @@ layer, so its byte budgets include the fonts. Bebas one weight, Inter four, Lati
 - **Onboarding:** the post-sign-up flow.
 - **Photos on trails:** GPS-arrow photo markers and the photo hero (needs media/R2, #12).
 - **React Native:** the iOS/Android port reusing the tokens and class map.
+
+## 6. Rider routes and owner approval (goal set by the owner 2026-11-11: finish the web app, 4 h)
+
+Riders sign up (e-mail code, existing) and submit their routes; the owner approves each one.
+No new table: `trails.author_id` and `status` exist. `draft` = "En revisión", `hidden` = "No aprobada".
+
+| # | Decision |
+|---|----------|
+| R-D1 | `POST /api/trails` (multipart GPX) is open to **any signed-in user** (was admin only). It always creates `draft` with `author_id` = the session user. OriginGuard, GPX limits, sha256 refusal and the slug rules stay. |
+| R-D2 | Abuse limit: a non-admin with **3 or more `draft` trails** gets 429 `TOO_MANY_PENDING` (counted in the same transaction as the insert, `SELECT … FOR UPDATE` on the user row or an advisory lock per user). Admins have no limit. |
+| R-D3 | `GET /api/trails/:slug`: published for everyone; any status for an admin; `draft`/`hidden` also for **its author**. Others get 404 (same body as missing). |
+| R-D4 | `GET /api/me/trails` (signed in): the user's own trails, every status, newest first, summary fields + `status`. |
+| R-D5 | `GET /api/admin/trails?status=draft` (admin): the moderation queue, oldest first, summary + `status` + author e-mail. |
+| R-D6 | `PATCH /api/trails/:slug` stays **admin only** (publish = `published`, reject = `hidden`, metadata edits). Authors cannot edit in v1. |
+| R-D7 | Web: the FAB "Registrar ruta" (`/rutas/nueva`) for **every signed-in user** (anonymous users see "Ingresar"). After the upload a rider lands on the trail page with the chip "En revisión". New `/mis-rutas` (signed in; list with status chips) in the nav as "Mis rutas". New `/admin/rutas` (admin; 404 for others) lists the queue; each row links to the detail, where the existing Publicar/Ocultar controls act. |
+| R-D8 | Tests both sides: rider POST 201 + draft + author; anonymous 401; 4th pending 429 and admin not limited; author sees own draft, other rider 404; `/me/trails` only own; queue admin 200 / rider 403; rider PATCH 403. Mutations: drop the author check in R-D3 → the other-rider test red; drop the limit → 429 test red. |
+
+The first published route is built by the owner's Google Maps points: the orchestrator converts the
+lat/lng list into a GPX (elevations from the Open-Meteo elevation API, cited in the import note),
+uploads it as admin and the owner publishes it.
+
+## 7. Production (enduro.vops.pe)
+
+The cutover runs the P1a-3 part 2 steps (private deploy, checks, cutover, rehearsed rollback) as soon as
+the web is ready. **Deviation from A8, recorded:** the R2 keys arrive after the deadline, so the first
+backup layer is a daily on-box `pg_dump -Fc` of the prod DB (14 days kept) with one restore proven into a
+scratch DB before the cutover; the off-box R2 copy is added on top when the keys arrive (same dump file).
