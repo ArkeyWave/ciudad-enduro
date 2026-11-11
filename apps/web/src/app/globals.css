@@ -1,0 +1,278 @@
+/* ═══════════════════════════════════════════════════════════════
+   Ciudad Enduro · "Night Rider" (layer 1)
+   Tokens and class names copied from the approved prototype (15-ciudad-enduro/ui-redesign/styles.css).
+   Deviations, recorded in docs/plans/2026-11-11-ui-redesign-layer-1.md: D3 (44 px targets, text ≥ 11 px),
+   D4 (one 720 px column, no phone frame), D11 (dark-filtered OSM tiles).
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --bg: #0A0A0A;
+  --bg-soft: #111111;
+  --card: #141414;
+  --card-hi: #1A1A1A;
+  --border: #2A2A2A;
+  --border-hi: #3A3A3A;
+  --text: #F5F5F5;
+  --muted: #A3A3A3;
+  --dim: #8A8A8A;
+  --lime: #CCFF00;
+  --lime-dim: #99CC00;
+  --cyan: #00D4FF;
+  --red: #FF3333;
+  --green: #00E676;
+  --amber: #FFB020;
+
+  --diff-facil: #00E676;
+  --diff-inter: #FFB020;
+  --diff-dificil: #FF5555;
+
+  /* next/font sets --font-bebas and --font-inter on <html> (layout.tsx). */
+  --font-display: var(--font-bebas), Impact, "Arial Narrow", sans-serif;
+  --font-body: var(--font-inter), system-ui, -apple-system, sans-serif;
+
+  --nav-h: 80px;
+  --card-h: 212px;
+  --col: 720px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* visible keyboard focus across all interactive elements (a11y) */
+:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; border-radius: 6px; }
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--lime); }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing: 0.5px; line-height: 0.95; }
+
+/* ── Shell ───────────────────────────────────────────────────── */
+.topbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  max-width: var(--col); margin: 0 auto; padding: 12px 16px; border-bottom: 1px solid var(--border);
+}
+.wordmark {
+  font-family: var(--font-display); font-size: 26px; letter-spacing: 1px; line-height: 1;
+  color: var(--lime); text-decoration: none; text-transform: uppercase; white-space: nowrap; flex-shrink: 0;
+}
+.session { display: flex; align-items: center; gap: 12px; min-width: 0; font-size: 14px; }
+/* min-width 0 lets the e-mail shrink, so a long address never pushes "Salir" off a phone screen. */
+.session-email { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.link-button {
+  background: none; border: 0; padding: 0; color: var(--lime); cursor: pointer; font: inherit;
+  white-space: nowrap; flex-shrink: 0;
+}
+.page { max-width: var(--col); margin: 0 auto; padding: 0 16px 24px; }
+.page.narrow { max-width: 452px; }
+
+/* ── Bottom nav ──────────────────────────────────────────────── */
+.bottom-nav {
+  position: fixed; left: 0; right: 0; bottom: 0; height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+  padding: 6px 12px calc(14px + env(safe-area-inset-bottom));
+  /* five fixed slots, the FAB in the centre: nothing moves when the signed-in items stream in */
+  display: grid; grid-template-columns: repeat(5, 1fr); justify-items: center; align-items: center;
+  background: rgba(10,10,10,0.92); backdrop-filter: blur(20px);
+  border-top: 1px solid var(--border);
+  /* above the maps, each isolated at z-index 0 (.map-box) */
+  z-index: 10;
+}
+.nav-item {
+  min-width: 64px; min-height: 48px; padding: 6px 8px; text-decoration: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  color: var(--muted); transition: color .15s;
+}
+.nav-item[aria-current="page"] { color: var(--lime); }
+.nav-item span { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; }
+.nav-fab {
+  width: 52px; height: 52px; border-radius: 18px; background: var(--lime); color: #0A0A0A;
+  display: flex; align-items: center; justify-content: center; margin-top: -24px;
+  box-shadow: 0 6px 20px rgba(204,255,0,0.45); transition: transform .12s;
+}
+.nav-fab:active { transform: scale(0.94); }
+.nav-explore { grid-area: 1 / 1; }
+.nav-mine { grid-area: 1 / 2; }
+.nav-fab { grid-area: 1 / 3; }
+.nav-review { grid-area: 1 / 4; }
+.nav-item:active { transform: scale(0.96); }
+
+@media (max-width: 719px) {
+  body { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom)); }
+}
+@media (min-width: 720px) {
+  .bottom-nav {
+    position: static; height: auto; max-width: var(--col); margin: 0 auto; padding: 6px 16px;
+    display: flex; justify-content: flex-start; gap: 8px; background: none; backdrop-filter: none;
+    border-top: 0; border-bottom: 1px solid var(--border);
+  }
+  .nav-item { flex-direction: row; gap: 6px; }
+  .nav-fab { margin-top: 0; width: 44px; height: 44px; border-radius: 14px; margin-left: auto; order: 1; }
+}
+
+/* ── Headers ─────────────────────────────────────────────────── */
+.head { padding: 24px 0 12px; }
+.eyebrow {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 1.6px;
+  display: flex; align-items: center; gap: 6px; margin: 0 0 8px;
+}
+.eyebrow .loc-dot { color: var(--cyan); display: inline-flex; }
+.h-display {
+  font-family: var(--font-display); font-weight: 400;
+  line-height: 0.92; letter-spacing: 0.5px; font-size: 42px; margin: 0;
+}
+.h-display b { color: var(--lime); font-weight: 400; }
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.muted { color: var(--muted); }
+
+/* ── Toggle (list/map) ───────────────────────────────────────── */
+.toggle {
+  display: inline-flex; padding: 3px; border-radius: 14px;
+  background: var(--card); border: 1px solid var(--border);
+}
+.toggle a {
+  width: 46px; height: 44px; border-radius: 11px;
+  color: var(--muted); display: flex; align-items: center; justify-content: center;
+  transition: all .2s;
+}
+.toggle a[aria-current="page"] { background: var(--lime); color: #0A0A0A; }
+.toggle a:active { transform: scale(0.94); }
+
+/* ── Difficulty pill / chips ─────────────────────────────────── */
+.diff-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.8px;
+}
+.diff-pill .dot { width: 5px; height: 5px; border-radius: 3px; }
+.diff-pill.facil   { background: rgba(0,230,118,0.14); color: var(--diff-facil); }
+.diff-pill.inter   { background: rgba(255,176,32,0.14); color: var(--diff-inter); }
+.diff-pill.dificil { background: rgba(255,51,51,0.16); color: var(--diff-dificil); }
+.facil .dot   { background: var(--diff-facil); }
+.inter .dot   { background: var(--diff-inter); }
+.dificil .dot { background: var(--diff-dificil); }
+.type-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+.status-chip {
+  display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+  background: rgba(0,212,255,0.14); color: var(--cyan);
+}
+
+/* ── Stat block ──────────────────────────────────────────────── */
+.stats { display: flex; gap: 18px; margin: 0; }
+.stat { display: flex; flex-direction: column-reverse; gap: 2px; margin: 0; }
+.stat .val {
+  font-family: var(--font-display); font-size: 26px; line-height: 1;
+  letter-spacing: 0.5px; color: var(--text); margin: 0;
+}
+.stat .val u { font-family: var(--font-body); font-size: 12px; color: var(--muted); margin-left: 2px; text-decoration: none; }
+.stat .lbl {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 1.2px;
+}
+
+/* ── Cards / list ────────────────────────────────────────────── */
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 18px;
+  overflow: hidden;
+}
+.card-pad { padding: 16px; }
+.trail-card { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px 18px; color: var(--text); text-decoration: none; }
+.trail-card:active { transform: scale(0.99); }
+.swipe-title { font-family: var(--font-display); font-size: 30px; line-height: 0.95; letter-spacing: 0.5px; margin: 0; text-transform: uppercase; }
+.trail-card .stats { padding-top: 10px; border-top: 1px solid var(--border); }
+.elev { width: 100%; height: 34px; display: block; }
+.elev polyline { stroke: var(--lime); }
+.skeleton { background: var(--card); border: 1px solid var(--border); border-radius: 18px; }
+/* The card skeleton and every card share one height, so the list does not move when it streams in. */
+.trail-card, .card-skeleton { min-height: var(--card-h); }
+.skeleton-line { height: 1.2em; width: 7em; background: var(--card); border-radius: 6px; }
+
+/* ── Forms / CTA ─────────────────────────────────────────────── */
+.cta {
+  width: 100%; height: 54px; border-radius: 16px; border: none; cursor: pointer;
+  background: var(--lime); color: #0A0A0A; font-family: var(--font-display);
+  font-size: 22px; letter-spacing: 1px; display: flex; align-items: center;
+  justify-content: center; gap: 8px; box-shadow: 0 8px 24px rgba(204,255,0,0.3);
+  transition: transform .12s; text-decoration: none;
+}
+.cta:active { transform: scale(0.98); }
+.cta:disabled { opacity: 0.5; cursor: default; }
+.cta.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+.form { display: flex; flex-direction: column; gap: 12px; }
+.form .field { margin-bottom: 4px; }
+.field { margin-bottom: 16px; }
+.field label, label.field { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); display: block; margin-bottom: 6px; }
+.field input, .field textarea, .field select {
+  display: block; width: 100%; margin-top: 6px; background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; color: var(--text); font-family: var(--font-body); font-size: 16px;
+  text-transform: none; letter-spacing: normal; font-weight: 400;
+}
+.field input:focus, .field textarea:focus, .field select:focus { outline: none; border-color: var(--lime); }
+.dropzone {
+  border: 1.5px dashed var(--border-hi); border-radius: 16px; padding: 28px; text-align: center;
+  color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer;
+  margin-bottom: 16px; font-weight: 600;
+}
+.dropzone input { max-width: 100%; color: var(--text); font: inherit; font-weight: 400; }
+.alert { color: var(--red); margin: 8px 0 0; }
+.notice { margin: 8px 0 0; }
+
+/* ── Detail screen ───────────────────────────────────────────── */
+/* The map is the hero, full-bleed. No fade and no pull-up over it: the attribution stays clear (F2). */
+.detail-hero { position: relative; margin: 0 -16px; }
+/* consistent, accessible back button across all screens */
+.back {
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  background: rgba(18,18,18,0.9); border: 1px solid var(--border-hi);
+  backdrop-filter: blur(10px); color: var(--text); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.back:active { transform: scale(0.94); }
+.detail-hero .back { position: absolute; top: 12px; left: 16px; z-index: 1; }
+.detail-body { display: flex; flex-direction: column; gap: 16px; padding-top: 16px; }
+.meta-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.meta-row .type-label { margin-left: auto; }
+.detail-title { font-family: var(--font-display); font-size: 40px; line-height: 0.9; letter-spacing: 0.5px; margin: 0 0 10px; text-transform: uppercase; }
+.description { color: var(--muted); line-height: 1.5; font-size: 14px; white-space: pre-line; margin: 0; }
+.profile-card .eyebrow { margin-bottom: 10px; }
+.profile-svg { width: 100%; height: 60px; display: block; }
+.profile-svg polyline { stroke: var(--lime); }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 12px 0 0; font-size: 14px; }
+.fact { display: contents; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+.admin { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--border); margin-top: 8px; padding-top: 16px; }
+.empty p { margin-top: 0; }
+
+/* ── Map ─────────────────────────────────────────────────────── */
+/* Each map is its own stacking context, so Leaflet's panes (400–1000) stay inside it. */
+.map-box { position: relative; z-index: 0; }
+.map-box.rounded { border-radius: 18px; }
+.mini-card {
+  background: var(--card); border-radius: 20px; border: 1px solid var(--border);
+  padding: 14px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 -10px 30px rgba(0,0,0,0.4);
+  color: var(--text); text-decoration: none; margin-top: 12px;
+}
+.mini-stats { display: flex; gap: 12px; font-size: 11px; color: var(--muted); font-weight: 500; }
+
+/* ── Leaflet ─────────────────────────────────────────────────── */
+.leaflet-container { background: #0B0F0A; font: inherit; }
+/* D11: the dark look on the OSM tiles only, so the path, pins and attribution keep their colours. */
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) grayscale(.4); }
+.leaflet-control-attribution {
+  background: #0A0A0A !important; color: var(--muted) !important; font-size: 11px !important;
+}
+.leaflet-control-attribution a { color: var(--text) !important; }
+.leaflet-bar a { width: 44px !important; height: 44px !important; line-height: 44px !important; }
+.trail-path { stroke: var(--lime); }
+
+/* ── Reduced motion ──────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}

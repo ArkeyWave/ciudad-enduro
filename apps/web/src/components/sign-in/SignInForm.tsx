@@ -3,10 +3,7 @@
 import { useCallback, useState, type SubmitEvent } from 'react';
 import { sendCode, startGoogleSignIn, verifyCode } from '../../lib/auth-client';
 import { MESSAGES, sendErrorMessage, verifyErrorMessage } from '../../lib/auth-errors';
-import { input, primaryButton, secondaryButton } from './styles';
 import { TurnstileWidget, useTurnstile } from './Turnstile';
-
-const column = { display: 'flex', flexDirection: 'column', gap: 12 } as const;
 
 export function SignInForm({ initialMessage, siteKey }: { initialMessage: string | null; siteKey: string }) {
   const turnstile = useTurnstile();
@@ -61,11 +58,11 @@ export function SignInForm({ initialMessage, siteKey }: { initialMessage: string
     });
 
   return (
-    <div style={column}>
+    <div className="form">
       {codeSent ? (
-        <form onSubmit={submitCode} style={column}>
-          <p style={{ margin: 0 }}>Te enviamos un código a {email}.</p>
-          <label style={column}>
+        <form onSubmit={submitCode} className="form">
+          <p className="notice">Te enviamos un código a {email}.</p>
+          <label className="field">
             Código
             <input
               name="otp"
@@ -75,13 +72,12 @@ export function SignInForm({ initialMessage, siteKey }: { initialMessage: string
               autoComplete="one-time-code"
               pattern="\d{6}"
               maxLength={6}
-              style={input}
             />
           </label>
-          <button type="submit" disabled={busy} style={primaryButton}>
+          <button type="submit" disabled={busy} className="cta">
             Ingresar
           </button>
-          <button type="button" disabled={!canSend} onClick={() => void requestCode()} style={secondaryButton}>
+          <button type="button" disabled={!canSend} onClick={() => void requestCode()} className="cta ghost">
             Enviar otro código
           </button>
         </form>
@@ -91,9 +87,9 @@ export function SignInForm({ initialMessage, siteKey }: { initialMessage: string
             event.preventDefault();
             void requestCode();
           }}
-          style={column}
+          className="form"
         >
-          <label style={column}>
+          <label className="field">
             Correo
             <input
               type="email"
@@ -102,21 +98,20 @@ export function SignInForm({ initialMessage, siteKey }: { initialMessage: string
               autoComplete="email"
               value={email}
               onChange={(event) => setEmail(event.target.value.trim())}
-              style={input}
             />
           </label>
-          <button type="submit" disabled={!canSend} style={primaryButton}>
+          <button type="submit" disabled={!canSend} className="cta">
             Enviar código
           </button>
         </form>
       )}
       {/* Mounted once for both steps, so the resend gets a fresh token from the same widget. */}
       <TurnstileWidget siteKey={siteKey} onToken={turnstile.setToken} onError={showCaptchaError} widgetId={turnstile.widgetId} />
-      <button type="button" disabled={busy} onClick={() => void google()} style={secondaryButton}>
+      <button type="button" disabled={busy} onClick={() => void google()} className="cta ghost">
         Continuar con Google
       </button>
       {message && (
-        <p role="alert" style={{ margin: 0, color: '#FF3333' }}>
+        <p role="alert" className="alert">
           {message}
         </p>
       )}

@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/api/admin/trails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["TrailListsController_queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -28,6 +44,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["MeController_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/trails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["TrailListsController_mine"];
         put?: never;
         post?: never;
         delete?: never;
@@ -92,11 +124,52 @@ export interface components {
         };
         /** @enum {string} */
         Difficulty: "facil" | "intermedio" | "dificil";
+        ErrorBodyDto: {
+            /** @example TOO_MANY_PENDING */
+            code?: string;
+            message: string | string[];
+            /** @description GPX_DUPLICATE only, when the uploader may see that trail */
+            slug?: string;
+        };
         MeDto: {
             email: string;
             id: string;
             name: string;
             role: string;
+        };
+        MyTrailDto: {
+            city: components["schemas"]["City"];
+            difficulty: components["schemas"]["Difficulty"];
+            distanceM: number | null;
+            elevationGainM: number | null;
+            elevationLossM: number | null;
+            /** @description [distance_m, ele_m] pairs, at most 300 */
+            elevationProfile: number[][] | null;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            slug: string;
+            start: components["schemas"]["CoordinatesDto"];
+            status: components["schemas"]["TrailStatus"];
+            type: components["schemas"]["TrailType"];
+        };
+        QueueTrailDto: {
+            /** @description Null when the author was deleted */
+            authorEmail: string | null;
+            city: components["schemas"]["City"];
+            difficulty: components["schemas"]["Difficulty"];
+            distanceM: number | null;
+            elevationGainM: number | null;
+            elevationLossM: number | null;
+            /** @description [distance_m, ele_m] pairs, at most 300 */
+            elevationProfile: number[][] | null;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            slug: string;
+            start: components["schemas"]["CoordinatesDto"];
+            status: components["schemas"]["TrailStatus"];
+            type: components["schemas"]["TrailType"];
         };
         TrailDetailDto: {
             city: components["schemas"]["City"];
@@ -126,6 +199,10 @@ export interface components {
             city: components["schemas"]["City"];
             difficulty: components["schemas"]["Difficulty"];
             distanceM: number | null;
+            elevationGainM: number | null;
+            elevationLossM: number | null;
+            /** @description [distance_m, ele_m] pairs, at most 300 */
+            elevationProfile: number[][] | null;
             /** Format: uuid */
             id: string;
             name: string;
@@ -152,6 +229,41 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    TrailListsController_queue: {
+        parameters: {
+            query: {
+                status: components["schemas"]["TrailStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueTrailDto"][];
+                };
+            };
+            /** @description No valid session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     HealthController_check: {
         parameters: {
             query?: never;
@@ -184,6 +296,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeDto"];
+                };
+            };
+            /** @description No valid session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TrailListsController_mine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyTrailDto"][];
                 };
             };
             /** @description No valid session */
@@ -237,6 +375,42 @@ export interface operations {
                     "application/json": components["schemas"]["TrailDetailDto"];
                 };
             };
+            /** @description GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description GPX_DUPLICATE (slug only when visible to the uploader) or SLUG_TAKEN */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description PARSE_BUSY: two GPX parses already run; try again */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
         };
     };
     TrailsController_get: {
@@ -258,7 +432,7 @@ export interface operations {
                     "application/json": components["schemas"]["TrailDetailDto"];
                 };
             };
-            /** @description No published trail has this slug (an admin also gets drafts and hidden trails) */
+            /** @description No published trail has this slug (an admin gets every trail, an author also their own drafts and hidden trails) */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -116,8 +116,21 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run build --filter=web
-      - run: pnpm --filter web exec playwright install --with-deps chromium
+      # The browser comes from Playwright's CDN. The OS libraries are already on the runner image
+      # (it ships Google Chrome); apt is a best effort with a time limit, because an apt mirror
+      # outage (2026-11-11: the runners could not resolve archive.ubuntu.com) must not block CI.
+      # A missing library still fails the tests loudly.
+      - run: pnpm --filter web exec playwright install chromium
+      - run: timeout 300 pnpm --filter web exec playwright install-deps chromium || echo "::warning::playwright install-deps failed; using the runner's preinstalled libraries"
       - run: pnpm --filter web test:e2e
+      # The screens.spec screenshots (plan D14) and the traces of any failure, on every run.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: e2e-test-results
+          path: apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Builds both production images once (labels set at build time), refuses an image that ships
   # test code or a file from the build context's .env (scripts/verify-image.sh), smoke-runs them
@@ -204,6 +217,18 @@ jobs:
           for i in $(seq 30); do curl -fsS http://127.0.0.1:3000/ -o home.html && break; sleep 2; done
           grep -q 'Aún no hay senderos publicados.' home.html
           curl -fsS http://127.0.0.1:3000/ingresar | grep -q ci-site-key
+
+      # The GPX parser runs in a worker loaded from dist/ at run time: prove the image ships it.
+      - name: Parse a GPX through the API image's worker
+        env:
+          API_IMAGE: ${{ steps.ids.outputs.api }}
+        run: |
+          docker run --rm --entrypoint node "$API_IMAGE" --input-type=module -e "
+            const { parseGpxIsolated } = await import('/app/dist/trails/gpx/parse-gpx-isolated.js');
+            const gpx = '<gpx><trk><trkseg><trkpt lat=\"-9.09\" lon=\"-78.52\"/><trkpt lat=\"-9.1\" lon=\"-78.52\"/></trkseg></trk></gpx>';
+            const track = await parseGpxIsolated(new TextEncoder().encode(gpx));
+            if (track.points.length !== 2) throw new Error('worker parse: ' + JSON.stringify(track));
+            console.log('ok worker parse in the image');"
 
       - name: Container logs
         if: failure()

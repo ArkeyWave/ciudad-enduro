@@ -1,16 +1,15 @@
-import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { NewTrailForm } from '../../../components/trail/NewTrailForm';
-import { getMe } from '../../../lib/api';
-import { isAdmin } from '../../../lib/roles';
+import { currentUser } from '../../../lib/session';
 
-// Admin only. Everyone else gets the 404 page: the route does not exist for them.
+// Signed-in users only (plan §6 R-D7). Anonymous visitors get the 404 page.
 export default async function NewTrailPage() {
-  const me = await getMe((await headers()).get('cookie') ?? '');
-  if (!isAdmin(me)) notFound();
+  if (!(await currentUser())) notFound();
   return (
-    <main style={{ maxWidth: 420, margin: '0 auto', padding: 16 }}>
-      <h1 style={{ color: '#CCFF00' }}>Nueva ruta</h1>
+    <main className="page narrow">
+      <div className="head">
+        <h1 className="h-display">Importar GPX</h1>
+      </div>
       <NewTrailForm />
     </main>
   );

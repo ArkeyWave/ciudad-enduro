@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MESSAGES } from './auth-errors';
-import { trailErrorMessage, updateTrail } from './trails-client';
+import { trailErrorMessage, updateTrail, uploadTrail } from './trails-client';
 
 describe('trailErrorMessage', () => {
   it('maps an API code to its message, before the status', () => {
@@ -21,6 +21,14 @@ describe('trailErrorMessage', () => {
     expect(trailErrorMessage({ status: 401, code })).toBe('Tu sesión venció. Ingresa de nuevo.');
   });
 
+  it('maps TOO_MANY_PENDING, TOO_MANY_UPLOADS, GPX_TOO_COMPLEX and PARSE_BUSY to their messages, not the generic one', () => {
+    expect(trailErrorMessage({ status: 429, code: 'TOO_MANY_PENDING' })).toBe('Tienes 3 rutas en revisión. Espera la aprobación.');
+    expect(trailErrorMessage({ status: 429, code: 'TOO_MANY_UPLOADS' })).toBe('Demasiados intentos. Prueba en unos minutos.');
+    expect(trailErrorMessage({ status: 400, code: 'GPX_TOO_COMPLEX' })).toBe('El archivo GPX es demasiado complejo.');
+    expect(trailErrorMessage({ status: 503, code: 'PARSE_BUSY' })).toBe('El servidor está ocupado. Prueba en unos segundos.');
+    expect(trailErrorMessage({ status: 429 })).toBe(MESSAGES.generic);
+  });
+
   it('shows the generic message for a network failure', () => {
     expect(trailErrorMessage({ status: 0 })).toBe(MESSAGES.generic);
   });
@@ -34,6 +42,20 @@ describe('updateTrail', () => {
   it('is ok with the trail for a 2xx JSON body', async () => {
     answer(200, JSON.stringify({ slug: 'cerro' }));
     expect(await updateTrail('cerro', { status: 'published' })).toEqual({ ok: true, trail: { slug: 'cerro' } });
+  });
+
+  it('reads a 409 GPX_DUPLICATE without a slug as the duplicate, with no slug', async () => {
+    answer(409, JSON.stringify({ code: 'GPX_DUPLICATE' }));
+    const result = await uploadTrail(new FormData());
+    expect(result).toEqual({ ok: false, status: 409, code: 'GPX_DUPLICATE', slug: undefined });
+    expect(trailErrorMessage(result as { status: number; code?: string })).toBe('Esta ruta ya fue registrada.');
+  });
+
+  it('keeps the slug of a 409 that sends one', async () => {
+    answer(409, JSON.stringify({ code: 'GPX_DUPLICATE', slug: 'cerro' }));
+    const result = await uploadTrail(new FormData());
+    expect(result).toEqual({ ok: false, status: 409, code: 'GPX_DUPLICATE', slug: 'cerro' });
+    expect(trailErrorMessage(result as { status: number; code?: string; slug?: string })).toBe('Este GPX ya está subido.');
   });
 
   it('fails for a 2xx body that is not JSON (a proxy page, not the trail)', async () => {

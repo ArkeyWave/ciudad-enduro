@@ -7,5 +7,5 @@ import { MAP_HEIGHT } from './map-size';
 // wrapper loads the map in the browser only.
 export const TrailMapLoader = dynamic(() => import('./TrailMap'), {
   ssr: false,
-  loading: () => <div aria-hidden="true" style={{ height: MAP_HEIGHT, borderRadius: 8, background: '#141414' }} />,
+  loading: () => <div aria-hidden="true" className="map-box skeleton" style={{ height: MAP_HEIGHT }} />,
 });

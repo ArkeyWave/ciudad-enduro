@@ -15,14 +15,26 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiConsumes,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiTags,
+  ApiServiceUnavailableResponse,
+  ApiTooManyRequestsResponse,
+} from '@nestjs/swagger';
 import type { Auth } from '../auth/auth.factory.js';
 import { OriginGuard } from '../auth/origin.guard.js';
 import { hasRole } from '../auth/roles.js';
 import { ListTrailsQuery } from './dto/list-trails.query.js';
-import { TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
+import { ErrorBodyDto, TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
 import { CreateTrailBody, CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
 import { TrailsService } from './trails.service.js';
+import { UploadThrottleGuard } from './upload-throttle.js';
 
 const MiB = 1024 * 1024;
 // Multer limits (plan D2, M8): one file, at most 6 text fields, 8 KiB per field. Field names are
@@ -66,28 +78,36 @@ export class TrailsController {
   @Get(':slug')
   @AllowAnonymous()
   @ApiOkResponse({ type: TrailDetailDto })
-  @ApiNotFoundResponse({ description: 'No published trail has this slug (an admin also gets drafts and hidden trails)' })
+  @ApiNotFoundResponse({ description: 'No published trail has this slug (an admin gets every trail, an author also their own drafts and hidden trails)' })
   async get(@Param('slug', SlugPipe) slug: string, @Session() session: UserSession<Auth> | null): Promise<TrailDetailDto> {
-    const trail = await this.trails.findBySlug(slug, isAdmin(session));
+    const trail = await this.trails.findBySlug(slug, { id: session?.user.id ?? null, admin: isAdmin(session) });
     // Missing and unpublished trails get the same response.
     if (!trail) throw new NotFoundException();
     return trail;
   }
 
-  // Order: auth guard (401) → role (403) → origin (403) → multipart parser → GPX parser.
+  // Any signed-in user (plan R-D1). Order: auth guard (401) → origin (403) → upload throttle for a
+  // non-admin (429 TOO_MANY_UPLOADS) → multipart parser → pending limit for a non-admin (429
+  // TOO_MANY_PENDING, rechecked under a lock at the insert) → GPX parser.
   @Post()
-  @Roles(['admin']) // the guard applies hasRole's rule (auth/roles.ts)
-  @UseGuards(OriginGuard)
+  @UseGuards(OriginGuard, UploadThrottleGuard)
   @UseInterceptors(FileInterceptor('gpx', { limits: GPX_UPLOAD_LIMITS }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: CreateTrailBody })
   @ApiCreatedResponse({ type: TrailDetailDto })
+  @ApiBadRequestResponse({ type: ErrorBodyDto, description: 'GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error' })
+  @ApiConflictResponse({ type: ErrorBodyDto, description: 'GPX_DUPLICATE (slug only when visible to the uploader) or SLUG_TAKEN' })
+  @ApiServiceUnavailableResponse({ type: ErrorBodyDto, description: 'PARSE_BUSY: two GPX parses already run; try again' })
+  @ApiTooManyRequestsResponse({
+    type: ErrorBodyDto,
+    description: 'TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts',
+  })
   create(
     @Body() body: CreateTrailDto,
     @UploadedFile(new ParseFilePipe()) file: { buffer: Buffer },
     @Session() session: UserSession<Auth>,
   ): Promise<TrailDetailDto> {
-    return this.trails.createFromGpx(body, session.user.id, file.buffer);
+    return this.trails.createFromGpx(body, { id: session.user.id, admin: isAdmin(session) }, file.buffer);
   }
 
   @Patch(':slug')

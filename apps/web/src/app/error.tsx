@@ -4,9 +4,11 @@
 // fixed message: never the error, which could carry an internal host or a stack trace.
 export default function ErrorPage() {
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: 16 }}>
-      <h1 style={{ color: '#CCFF00' }}>No pudimos cargar esta página</h1>
-      <a href="/" style={{ color: '#CCFF00' }}>
+    <main className="page">
+      <div className="head" role="alert">
+        <h1 className="h-display">No pudimos cargar esta página</h1>
+      </div>
+      <a href="/" className="cta">
         Reintentar
       </a>
     </main>
