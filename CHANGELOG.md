@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased] - Rider routes (API)
+
+### Added
+- Rider routes and owner approval, API part (plan `docs/plans/2026-11-11-ui-redesign-layer-1.md` §6, R-D1…R-D8): `POST /api/trails` is open to any signed-in user (was admin only) and always stores a `draft` with the session user as the author; OriginGuard, the GPX limits, the sha256 refusal and the slug rules stay. A non-admin with 3 drafts gets 429 `TOO_MANY_PENDING`; the count and the insert run in one transaction under `pg_advisory_xact_lock(hashtext(author_id))`, so concurrent uploads cannot pass the limit together. Admins have no limit.
+- `GET /api/trails/:slug` also shows a `draft` or `hidden` trail to its author; every other user still gets the 404 of a missing slug.
+- `GET /api/me/trails` (signed in): the user's own trails, every status, newest first, summary fields + `status`. `GET /api/admin/trails?status=draft` (admin, `@Roles`): the moderation queue, oldest first, summary fields + `status` + `authorEmail` (null when the author was deleted).
+- `GET /api/trails` summary (D8): `elevationGainM`, `elevationLossM`, `elevationProfile` (nullable). The detail inherits them from the summary DTO. API client regenerated.
+
+### Security
+- `PATCH /api/trails/:slug` stays admin only (a rider gets 403). A rider cannot set `status` or any other unknown field through the multipart body (400, `forbidNonWhitelisted`). Mutation proofs: dropping the author clause, loosening it to any signed-in user, dropping the limit, the advisory lock, the draft filter in the count, or `@Roles` on the queue each turn a test red.
+
 ## [Unreleased] - Phase 1b-min
 
 ### Fixed

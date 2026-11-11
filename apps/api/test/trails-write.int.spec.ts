@@ -25,6 +25,9 @@ let client: pg.Client;
 let db: NodePgDatabase;
 let admin: string;
 let rider: string;
+let other: string;
+let riderId: string;
+let adminId: string;
 
 const FIXTURE = readFileSync(new URL('./fixtures/one-segment.gpx', import.meta.url), 'utf8');
 /** The fixture with a different creator: other bytes, same ride. */
@@ -38,7 +41,11 @@ beforeAll(async () => {
   await truncateAuth(client);
   admin = await signInWithOtp(t, 'admin@x.pe');
   rider = await signInWithOtp(t, 'rider@x.pe');
+  other = await signInWithOtp(t, 'otro@x.pe');
   await client.query(`update "user" set role = 'admin' where email = 'admin@x.pe'`);
+  const idOf = async (email: string) => (await client.query<{ id: string }>(`select id from "user" where email = $1`, [email])).rows[0]!.id;
+  riderId = await idOf('rider@x.pe');
+  adminId = await idOf('admin@x.pe');
 });
 afterAll(async () => {
   await client.end();
@@ -68,7 +75,8 @@ const patch = (slug: string, headers: Headers, body: unknown) =>
   fetch(`${t.url}/api/trails/${slug}`, { method: 'PATCH', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 const get = (path: string, headers: Headers = as(null, null)) => fetch(`${t.url}/api${path}`, { headers });
 
-async function seed(slug: string, status: 'draft' | 'published' | 'hidden' = 'draft') {
+async function seed(slug: string, status: 'draft' | 'published' | 'hidden' = 'draft', authorId: string | null = null, day = 1) {
+  const at = new Date(Date.UTC(2026, 0, day));
   await db.insert(trails).values({
     slug,
     name: slug,
@@ -78,8 +86,9 @@ async function seed(slug: string, status: 'draft' | 'published' | 'hidden' = 'dr
     type: 'urbano',
     status,
     startPoint: { lng: -78.52, lat: -9.09 },
-    createdAt: new Date('2026-01-01T00:00:00Z'),
-    updatedAt: new Date('2026-01-01T00:00:00Z'),
+    authorId,
+    createdAt: at,
+    updatedAt: at,
   });
 }
 
@@ -88,10 +97,6 @@ const count = async (table: string) => Number((await client.query<{ n: string }>
 describe('POST /api/trails: who may upload', () => {
   it('answers 401 to an anonymous user', async () => {
     expect((await upload(as(null))).status).toBe(401);
-  });
-
-  it('answers 403 to a rider', async () => {
-    expect((await upload(as(rider))).status).toBe(403);
   });
 
   it('answers 403 to an admin with a foreign or a missing Origin', async () => {
@@ -103,6 +108,67 @@ describe('POST /api/trails: who may upload', () => {
   it('checks the origin before it parses the multipart body', async () => {
     const seven = { ...fields, description: 'x', a: '1', b: '2' };
     expect((await upload(as(admin, 'https://other.vops.pe'), seven)).status).toBe(403);
+  });
+});
+
+describe('POST /api/trails: a rider (R-D1, R-D2)', () => {
+  it('creates a draft authored by the rider', async () => {
+    const res = await upload(as(rider));
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({ slug: 'cerro-de-prueba', status: 'draft' });
+    const { rows } = await client.query(`select t.status, u.email from trails t join "user" u on u.id = t.author_id`);
+    expect(rows).toEqual([{ status: 'draft', email: 'rider@x.pe' }]);
+  });
+
+  it('answers 403 to a rider with a foreign Origin', async () => {
+    expect((await upload(as(rider, 'https://other.vops.pe'))).status).toBe(403);
+    expect(await count('trails')).toBe(0);
+  });
+
+  it('answers 429 TOO_MANY_PENDING to a rider with 3 drafts', async () => {
+    for (const slug of ['a', 'b', 'c']) await seed(slug, 'draft', riderId);
+    const res = await upload(as(rider));
+    expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({ code: 'TOO_MANY_PENDING' });
+    expect(await count('trails')).toBe(3);
+    expect(await count('trail_sources')).toBe(0);
+  });
+
+  it('counts only own drafts: 2 drafts, a published, a hidden trail and foreign drafts do not stop a rider', async () => {
+    await seed('a', 'draft', riderId);
+    await seed('b', 'draft', riderId);
+    await seed('c', 'published', riderId);
+    await seed('d', 'hidden', riderId);
+    for (const slug of ['e', 'f', 'g']) await seed(slug, 'draft', adminId);
+    expect((await upload(as(rider))).status).toBe(201);
+  });
+
+  it('does not limit an admin', async () => {
+    for (const slug of ['a', 'b', 'c']) await seed(slug, 'draft', adminId);
+    expect((await upload(as(admin))).status).toBe(201);
+  });
+
+  it('serializes concurrent uploads: a rider with 2 drafts gets exactly one more', async () => {
+    await seed('a', 'draft', riderId);
+    await seed('b', 'draft', riderId);
+    // A slow insert widens the window between the count and the insert: without the lock, all four pass.
+    await client.query(`create or replace function slow_trail() returns trigger language plpgsql as $$ begin perform pg_sleep(0.3); return new; end $$`);
+    await client.query('create trigger slow_trail before insert on trails for each row execute function slow_trail()');
+    try {
+      const results = await Promise.all([1, 2, 3, 4].map((n) => upload(as(rider), { ...fields, name: `Ruta ${n}` }, variant(n))));
+      expect(results.map((res) => res.status).sort()).toEqual([201, 429, 429, 429]);
+      expect(await count('trails')).toBe(3);
+    } finally {
+      await client.query('drop trigger slow_trail on trails');
+    }
+  });
+
+  it('refuses an admin-only field (status) in the multipart body of a rider', async () => {
+    const res = await upload(as(rider), { ...fields, status: 'published' });
+    expect(res.status).toBe(400);
+    expect(await count('trails')).toBe(0);
+    expect((await upload(as(rider))).status).toBe(201);
+    expect((await client.query(`select status from trails`)).rows).toEqual([{ status: 'draft' }]);
   });
 });
 
@@ -299,6 +365,72 @@ describe('GET /api/trails/:slug for an admin', () => {
     } finally {
       await setRole('rider');
     }
+  });
+});
+
+describe('GET /api/trails/:slug for the author (R-D3)', () => {
+  it('shows a draft and a hidden trail to its author', async () => {
+    await seed('mia', 'draft', riderId);
+    await seed('oculta', 'hidden', riderId);
+    expect(await (await get('/trails/mia', as(rider, null))).json()).toMatchObject({ slug: 'mia', status: 'draft' });
+    expect((await get('/trails/oculta', as(rider, null))).status).toBe(200);
+  });
+
+  it('answers 404 to another rider and an anonymous user, with the body of a missing slug', async () => {
+    await seed('mia', 'draft', riderId);
+    const foreign = await get('/trails/mia', as(other, null));
+    const unknown = await get('/trails/no-existe', as(other, null));
+    expect(foreign.status).toBe(404);
+    expect(await foreign.text()).toBe(await unknown.text());
+    expect((await get('/trails/mia')).status).toBe(404);
+  });
+});
+
+describe('GET /api/me/trails (R-D4)', () => {
+  it('lists only own trails, every status, newest first, with the status', async () => {
+    await seed('vieja', 'published', riderId, 1);
+    await seed('oculta', 'hidden', riderId, 2);
+    await seed('nueva-mia', 'draft', riderId, 3);
+    await seed('ajena', 'draft', adminId, 4);
+    const res = await get('/me/trails', as(rider, null));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { slug: string; status: string }[];
+    expect(body.map(({ slug, status }) => [slug, status])).toEqual([
+      ['nueva-mia', 'draft'],
+      ['oculta', 'hidden'],
+      ['vieja', 'published'],
+    ]);
+    expect(body[0]).toMatchObject({ city: 'Chimbote', start: { lat: -9.09, lng: -78.52 }, elevationProfile: null });
+  });
+
+  it('answers 401 to an anonymous user', async () => {
+    expect((await get('/me/trails')).status).toBe(401);
+  });
+});
+
+describe('GET /api/admin/trails (R-D5)', () => {
+  it('lists the drafts, oldest first, with the author e-mail, to an admin', async () => {
+    await seed('segunda', 'draft', riderId, 2);
+    await seed('primera', 'draft', adminId, 1);
+    await seed('sin-autor', 'draft', null, 3);
+    await seed('publicada', 'published', riderId, 4);
+    const res = await get('/admin/trails?status=draft', as(admin, null));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { slug: string; status: string; authorEmail: string | null }[];
+    expect(body.map(({ slug, status, authorEmail }) => [slug, status, authorEmail])).toEqual([
+      ['primera', 'draft', 'admin@x.pe'],
+      ['segunda', 'draft', 'rider@x.pe'],
+      ['sin-autor', 'draft', null],
+    ]);
+  });
+
+  it('answers 403 to a rider and 401 to an anonymous user', async () => {
+    expect((await get('/admin/trails?status=draft', as(rider, null))).status).toBe(403);
+    expect((await get('/admin/trails?status=draft')).status).toBe(401);
+  });
+
+  it('refuses an unknown status with 400', async () => {
+    expect((await get('/admin/trails?status=borrado', as(admin, null))).status).toBe(400);
   });
 });
 

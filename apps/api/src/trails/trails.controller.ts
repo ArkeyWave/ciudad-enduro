@@ -15,7 +15,15 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBody, ApiConsumes, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiTags,
+  ApiTooManyRequestsResponse,
+} from '@nestjs/swagger';
 import type { Auth } from '../auth/auth.factory.js';
 import { OriginGuard } from '../auth/origin.guard.js';
 import { hasRole } from '../auth/roles.js';
@@ -66,28 +74,29 @@ export class TrailsController {
   @Get(':slug')
   @AllowAnonymous()
   @ApiOkResponse({ type: TrailDetailDto })
-  @ApiNotFoundResponse({ description: 'No published trail has this slug (an admin also gets drafts and hidden trails)' })
+  @ApiNotFoundResponse({ description: 'No published trail has this slug (an admin gets every trail, an author also their own drafts and hidden trails)' })
   async get(@Param('slug', SlugPipe) slug: string, @Session() session: UserSession<Auth> | null): Promise<TrailDetailDto> {
-    const trail = await this.trails.findBySlug(slug, isAdmin(session));
+    const trail = await this.trails.findBySlug(slug, { id: session?.user.id ?? null, admin: isAdmin(session) });
     // Missing and unpublished trails get the same response.
     if (!trail) throw new NotFoundException();
     return trail;
   }
 
-  // Order: auth guard (401) → role (403) → origin (403) → multipart parser → GPX parser.
+  // Any signed-in user (plan R-D1). Order: auth guard (401) → origin (403) → multipart parser →
+  // GPX parser → pending limit for a non-admin (429).
   @Post()
-  @Roles(['admin']) // the guard applies hasRole's rule (auth/roles.ts)
   @UseGuards(OriginGuard)
   @UseInterceptors(FileInterceptor('gpx', { limits: GPX_UPLOAD_LIMITS }))
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: CreateTrailBody })
   @ApiCreatedResponse({ type: TrailDetailDto })
+  @ApiTooManyRequestsResponse({ description: 'TOO_MANY_PENDING: a non-admin already has 3 drafts' })
   create(
     @Body() body: CreateTrailDto,
     @UploadedFile(new ParseFilePipe()) file: { buffer: Buffer },
     @Session() session: UserSession<Auth>,
   ): Promise<TrailDetailDto> {
-    return this.trails.createFromGpx(body, session.user.id, file.buffer);
+    return this.trails.createFromGpx(body, session.user.id, !isAdmin(session), file.buffer);
   }
 
   @Patch(':slug')

@@ -11,6 +11,14 @@ import {
   type TrailType,
 } from '../../db/schema/index.js';
 
+const pairs = (description: string) =>
+  ({
+    description,
+    type: 'array',
+    items: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 },
+    nullable: true,
+  }) as const;
+
 export class CoordinatesDto {
   @ApiProperty() lat!: number;
   @ApiProperty() lng!: number;
@@ -25,15 +33,21 @@ export class TrailSummaryDto {
   @ApiProperty({ enum: TRAIL_TYPES, enumName: 'TrailType' }) type!: TrailType;
   @ApiProperty({ type: CoordinatesDto }) start!: CoordinatesDto;
   @ApiProperty({ type: Number, nullable: true }) distanceM!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) elevationGainM!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) elevationLossM!: number | null;
+  @ApiProperty(pairs('[distance_m, ele_m] pairs, at most 300'))
+  elevationProfile!: ProfilePoint[] | null;
 }
 
-const pairs = (description: string) =>
-  ({
-    description,
-    type: 'array',
-    items: { type: 'array', items: { type: 'number' }, minItems: 2, maxItems: 2 },
-    nullable: true,
-  }) as const;
+/** A trail in the author's own list (every status). */
+export class MyTrailDto extends TrailSummaryDto {
+  @ApiProperty({ enum: TRAIL_STATUSES, enumName: 'TrailStatus' }) status!: TrailStatus;
+}
+
+/** A trail in the admin moderation queue. */
+export class QueueTrailDto extends MyTrailDto {
+  @ApiProperty({ type: String, nullable: true, description: 'Null when the author was deleted' }) authorEmail!: string | null;
+}
 
 export class TrailDetailDto extends TrailSummaryDto {
   @ApiProperty({ enum: TRAIL_STATUSES, enumName: 'TrailStatus' }) status!: TrailStatus;
@@ -41,10 +55,6 @@ export class TrailDetailDto extends TrailSummaryDto {
   @ApiProperty({ type: CoordinatesDto, nullable: true }) end!: CoordinatesDto | null;
   @ApiProperty(pairs('[lng, lat] pairs, simplified for display'))
   path!: [number, number][] | null;
-  @ApiProperty({ type: Number, nullable: true }) elevationGainM!: number | null;
-  @ApiProperty({ type: Number, nullable: true }) elevationLossM!: number | null;
   @ApiProperty({ type: Number, nullable: true }) elevationMinM!: number | null;
   @ApiProperty({ type: Number, nullable: true }) elevationMaxM!: number | null;
-  @ApiProperty(pairs('[distance_m, ele_m] pairs, at most 300'))
-  elevationProfile!: ProfilePoint[] | null;
 }
