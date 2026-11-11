@@ -51,6 +51,6 @@ export async function getTrail(slug: string, cookie: string): Promise<TrailDetai
     signal: AbortSignal.timeout(API_TIMEOUT_MS),
   });
   if (data) return data;
-  if (response.status === 404) return null;
+  if (response.status >= 400) return null;
   throw new Error(`GET /api/trails/:slug failed with ${response.status}`);
 }
