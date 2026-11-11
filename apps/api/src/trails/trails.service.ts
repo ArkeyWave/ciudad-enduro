@@ -86,8 +86,6 @@ export class TrailsService {
 
   /** A published trail, or any trail when `includeUnpublished` (admins). */
   async findBySlug(slug: string, includeUnpublished: boolean): Promise<TrailDetailDto | undefined> {
-    // No stored slug holds U+0000, and Postgres refuses it in a text parameter (a 500).
-    if (slug.includes('\0')) return undefined;
     const [row] = await this.db
       .select(detailColumns)
       .from(trails)

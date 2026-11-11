@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   ParseFilePipe,
+  type PipeTransform,
   Patch,
   Post,
   Query,
@@ -37,6 +38,15 @@ export const GPX_UPLOAD_LIMITS = {
   fieldArrayIndexLimit: 0,
 };
 
+// No stored slug holds U+0000, and Postgres refuses it in a text parameter (a 500): such a slug is
+// unknown. On both :slug handlers; a pipe runs after the guards, so PATCH still checks auth first.
+export const SlugPipe: PipeTransform<string, string> = {
+  transform(slug) {
+    if (slug.includes('\0')) throw new NotFoundException();
+    return slug;
+  },
+};
+
 const isAdmin = (session: UserSession<Auth> | null) => hasRole(session?.user.role, ['admin']);
 
 // @AllowAnonymous() stays on the GET handlers: on the class it would turn @Roles off, because the
@@ -57,7 +67,7 @@ export class TrailsController {
   @AllowAnonymous()
   @ApiOkResponse({ type: TrailDetailDto })
   @ApiNotFoundResponse({ description: 'No published trail has this slug (an admin also gets drafts and hidden trails)' })
-  async get(@Param('slug') slug: string, @Session() session: UserSession<Auth> | null): Promise<TrailDetailDto> {
+  async get(@Param('slug', SlugPipe) slug: string, @Session() session: UserSession<Auth> | null): Promise<TrailDetailDto> {
     const trail = await this.trails.findBySlug(slug, isAdmin(session));
     // Missing and unpublished trails get the same response.
     if (!trail) throw new NotFoundException();
@@ -85,7 +95,7 @@ export class TrailsController {
   @UseGuards(OriginGuard)
   @ApiOkResponse({ type: TrailDetailDto })
   @ApiNotFoundResponse({ description: 'No trail has this slug' })
-  async update(@Param('slug') slug: string, @Body() body: UpdateTrailDto): Promise<TrailDetailDto> {
+  async update(@Param('slug', SlugPipe) slug: string, @Body() body: UpdateTrailDto): Promise<TrailDetailDto> {
     const trail = await this.trails.update(slug, body);
     if (!trail) throw new NotFoundException();
     return trail;

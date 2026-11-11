@@ -95,6 +95,7 @@ test.describe('admin and rider', () => {
     await expect(admin.getByText('Trujillo · Difícil · Cross-country · Borrador')).toBeVisible();
     await expect(admin.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(1);
     await expect(admin.getByTestId('trail-map').locator('path.trail-start')).toHaveCount(1);
+    await expect(admin.getByTestId('trail-map').locator('path.trail-end')).toHaveCount(1);
     await expect(admin.getByRole('link', { name: 'OpenStreetMap' })).toBeVisible();
     await expect(admin.getByRole('link', { name: 'OpenStreetMap' })).toHaveAttribute(
       'href',
@@ -102,15 +103,36 @@ test.describe('admin and rider', () => {
     );
     await expect.poll(() => tileRequests).toBeGreaterThan(0);
     await expect(admin.getByTestId('elevation-profile')).toBeVisible();
+    await expect(fact(admin, 'Distancia')).toHaveText('0.6 km'); // 556 m
     await expect(fact(admin, 'Desnivel positivo')).toHaveText('12 m');
     await expect(fact(admin, 'Desnivel negativo')).toHaveText('12 m');
     await expect(fact(admin, 'Altura mínima')).toHaveText('100 m');
     await expect(fact(admin, 'Altura máxima')).toHaveText('112 m');
     expect((await page.request.get(`/rutas/${UPLOADED.slug}`)).status()).toBe(404);
 
+    // The refresh after a save keeps the map: the tagged line is still the drawn one.
+    await admin.locator('path.trail-path').evaluate((line) => line.setAttribute('data-e2e', 'before-refresh'));
     await admin.getByRole('button', { name: 'Publicar' }).click();
     await expect(admin.getByText('Trujillo · Difícil · Cross-country · Publicada')).toBeVisible();
+    await expect(admin.locator('path.trail-path[data-e2e="before-refresh"]')).toHaveCount(1);
     await expect(admin.getByRole('button', { name: 'Ocultar' })).toBeVisible();
+
+    // A save in flight: its own pending label, the other control disabled; then a 401 answer.
+    const patchRoute = `**/api/trails/${UPLOADED.slug}`;
+    let release = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await admin.route(patchRoute, async (route) => {
+      if (route.request().method() !== 'PATCH') return route.fallback();
+      await held;
+      await route.fulfill({ status: 401, contentType: 'application/json', body: '{"statusCode":401}' });
+    });
+    await admin.getByRole('button', { name: 'Guardar' }).click();
+    await expect(admin.getByRole('button', { name: 'Guardando…' })).toBeDisabled();
+    await expect(admin.getByRole('button', { name: 'Ocultar' })).toBeDisabled();
+    release();
+    await expect(admin.locator('main').getByRole('alert')).toHaveText('Tu sesión venció. Ingresa de nuevo.');
+    await expect(admin.getByRole('button', { name: 'Guardar' })).toBeEnabled();
+    await admin.unroute(patchRoute);
 
     await admin.getByLabel('Descripción').fill('Bajada de prueba E2E');
     await admin.getByRole('button', { name: 'Guardar' }).click();

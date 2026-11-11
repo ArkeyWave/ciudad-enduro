@@ -12,6 +12,8 @@ const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
 export interface TrailMapProps {
+  /** The map is built once per trail: a `router.refresh()` gives new prop arrays, not a new trail. */
+  slug: string;
   /** `[lng, lat]` pairs (GeoJSON order), or null when the trail has only a start point. */
   path: number[][] | null;
   start: Coordinates;
@@ -21,7 +23,7 @@ export interface TrailMapProps {
 const point = (c: Coordinates): L.LatLngTuple => [c.lat, c.lng];
 const dot = (className: string) => ({ className, radius: 6, color: '#0A0A0A', weight: 2, fillColor: LIME, fillOpacity: 1 });
 
-export default function TrailMap({ path, start, end }: TrailMapProps) {
+export default function TrailMap({ slug, path, start, end }: TrailMapProps) {
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,7 +43,7 @@ export default function TrailMap({ path, start, end }: TrailMapProps) {
     return () => {
       map.remove();
     };
-  }, [path, start, end]);
+  }, [slug]); // the geometry of this render; a refresh of the same trail keeps the map
 
   return (
     <div

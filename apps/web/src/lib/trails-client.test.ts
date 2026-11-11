@@ -8,6 +8,8 @@ describe('trailErrorMessage', () => {
       'El GPX tiene más de un tramo. Sube un solo recorrido continuo.',
     );
     expect(trailErrorMessage({ status: 409, code: 'GPX_DUPLICATE', slug: 'cerro' })).toBe('Este GPX ya está subido.');
+    // 413 also has a status message: the code must still win.
+    expect(trailErrorMessage({ status: 413, code: 'GPX_TOO_LARGE' })).toBe('El GPX tiene demasiados puntos.');
   });
 
   it('maps a file over the multipart limit (413, no code) to the size message', () => {

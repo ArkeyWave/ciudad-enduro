@@ -24,7 +24,7 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
         {trail.city} · {difficultyLabel(trail.difficulty)} · {trailTypeLabel(trail.type)}
         {admin && <> · {statusLabel(trail.status)}</>}
       </p>
-      <TrailMapLoader path={trail.path} start={trail.start} end={trail.end} />
+      <TrailMapLoader slug={trail.slug} path={trail.path} start={trail.start} end={trail.end} />
       {trail.description && (
         <p data-testid="trail-description" style={{ whiteSpace: 'pre-line' }}>
           {trail.description}
