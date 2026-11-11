@@ -26,8 +26,7 @@ async function send(path: string, init: RequestInit, timeoutMs: number): Promise
     return { ok: false, status: response.status, code: json?.code, slug };
   }
   // A 2xx that is not JSON (a proxy or captive-portal page) is not the trail.
-  if (json === null) return { ok: false, status: response.status };
-  return { ok: true, trail: json };
+  return { ok: true, trail: json as TrailDetail };
 }
 
 export const uploadTrail = (form: FormData) => send('/api/trails', { method: 'POST', body: form }, UPLOAD_TIMEOUT_MS);
