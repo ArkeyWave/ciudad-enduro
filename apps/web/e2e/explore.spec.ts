@@ -38,8 +38,7 @@ test('the bare card shows no Pendiente, no Desnivel and no mini profile', async 
   await expect(bare.locator('svg.elev')).toHaveCount(0);
 });
 
-// Needs the summary fields of the API PR #50 (elevationGainM, elevationProfile on GET /api/trails).
-test.fixme('the profiled card shows Distancia, Desnivel (the gain), Pendiente and one mini profile', async ({ page }) => {
+test('the profiled card shows Distancia, Desnivel (the gain), Pendiente and one mini profile', async ({ page }) => {
   await page.goto('/');
   const profiled = card(page, PROFILED_TRAIL.name);
   await expect(stat(profiled, 'Distancia')).toHaveText('4.2 km');

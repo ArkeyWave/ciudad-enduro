@@ -3,7 +3,7 @@ import { Bebas_Neue, Inter } from 'next/font/google';
 import { Suspense, type ReactNode } from 'react';
 import { AppNav } from '../components/AppNav';
 import { SessionHeader } from '../components/SessionHeader';
-import { UploadFab } from '../components/UploadFab';
+import { UserNavItems } from '../components/UserNavItems';
 import './globals.css';
 
 // Self-hosted at build time with a size-adjusted fallback: no layout shift, no request to Google.
@@ -20,9 +20,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <SessionHeader />
         <AppNav
-          fab={
+          user={
             <Suspense fallback={null}>
-              <UploadFab />
+              <UserNavItems />
             </Suspense>
           }
         />

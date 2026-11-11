@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Difficulty, TrailDetail, TrailType } from 'api-client';
-import { CITIES, difficultyLabel, statusLabel, trailTypeLabel } from './labels';
+import { CITIES, difficultyLabel, reviewLabel, statusLabel, trailTypeLabel } from './labels';
 
 // The slugs come from the API contract, so a new enum value without a label fails here.
 const contract = JSON.parse(
@@ -40,5 +40,15 @@ describe('labels', () => {
   it.each(['extremo', 'toString'])('throws on the unknown slug %s', (slug) => {
     expect(() => difficultyLabel(slug as Difficulty)).toThrow(/Unknown difficulty/);
     expect(() => trailTypeLabel(slug as TrailType)).toThrow(/Unknown trail type/);
+  });
+});
+
+describe('reviewLabel', () => {
+  it('names a pending and a refused trail', () => {
+    expect(reviewLabel('draft')).toBe('En revisión');
+    expect(reviewLabel('hidden')).toBe('No aprobada');
+  });
+  it('gives a published trail no chip', () => {
+    expect(reviewLabel('published')).toBeNull();
   });
 });

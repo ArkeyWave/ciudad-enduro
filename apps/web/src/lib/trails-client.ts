@@ -48,6 +48,7 @@ const CODE_MESSAGES: Record<string, string> = {
   GPX_DUPLICATE: 'Este GPX ya está subido.',
   SLUG_EMPTY: 'El nombre necesita letras o números.',
   SLUG_TAKEN: 'Ya hay varias rutas con este nombre. Usa otro nombre.',
+  TOO_MANY_PENDING: 'Ya tienes 3 rutas en revisión. Espera la aprobación antes de registrar otra.',
 };
 
 /** The Spanish message for a failed upload or edit, by error code first, then by status. */

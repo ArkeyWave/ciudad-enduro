@@ -6,19 +6,23 @@ import { DifficultyPill, TrailStats } from './TrailStats';
 const W = 300;
 const H = 34;
 
-/**
- * The elevation fields come with the summary once the API sends them (plan D8); until then, and for a
- * trail without them, the card hides those stats and the mini profile.
- */
-export type CardTrail = TrailSummary & { elevationGainM?: number | null; elevationProfile?: number[][] | null };
+/** A trail without elevation numbers hides those stats and the mini profile. */
+export type CardTrail = TrailSummary;
 
 /** One trail as the prototype's card, laid out in a list; the whole card is one link. */
-export function TrailCard({ trail }: { trail: CardTrail }) {
+export function TrailCard({ trail, chip, note }: { trail: CardTrail; chip?: string | null; note?: string }) {
   const profile = trail.elevationProfile;
   return (
     <a href={`/rutas/${trail.slug}`} className="card trail-card" data-testid="trail-card">
       <span className="row-between">
-        <DifficultyPill difficulty={trail.difficulty} />
+        <span className="meta-row">
+          <DifficultyPill difficulty={trail.difficulty} />
+          {chip && (
+            <span className="status-chip" data-testid="trail-status">
+              {chip}
+            </span>
+          )}
+        </span>
         <span className="type-label">
           {trail.city} · {trailTypeLabel(trail.type)}
         </span>
@@ -35,6 +39,7 @@ export function TrailCard({ trail }: { trail: CardTrail }) {
         </svg>
       )}
       <TrailStats distanceM={trail.distanceM} gainM={trail.elevationGainM} />
+      {note && <span className="muted">{note}</span>}
     </a>
   );
 }

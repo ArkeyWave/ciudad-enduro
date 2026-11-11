@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, type Page } from '@playwright/test';
 import { ADMIN_EMAIL, PROFILED, PUBLISHED } from './fixtures.ts';
@@ -10,6 +11,12 @@ const ORIGIN = `http://127.0.0.1:${ORIGIN_PORT}`;
 // Six points, gain 12 m, loss 12 m, min 100 m, max 112 m (the API's own fixture).
 const GPX = fileURLToPath(new URL('../../api/test/fixtures/one-segment.gpx', import.meta.url));
 const UPLOADED = { name: 'Ruta E2E Subida', slug: 'ruta-e2e-subida' };
+// The same ride with another metadata name: another sha256, so not a duplicate.
+const gpxVariant = (tag: string) => ({
+  name: `${tag}.gpx`,
+  mimeType: 'application/gpx+xml',
+  buffer: Buffer.from(readFileSync(GPX, 'utf8').replace('<metadata><name>Cerro de prueba</name>', `<metadata><name>${tag}</name>`)),
+});
 // Seeded with a start point only: no path, no profile.
 const NO_PATH = PUBLISHED[0] as (typeof PUBLISHED)[number];
 const NOT_FOUND = 'No encontramos esta página';
@@ -95,6 +102,14 @@ test.describe('admin and rider', () => {
 
   let admin: Page;
   let rider: Page;
+  let riderEmail: string;
+
+  async function riderUpload(name: string) {
+    await rider.goto('/rutas/nueva');
+    await gpxInput(rider).setInputFiles(gpxVariant(name.replaceAll(' ', '-')));
+    await rider.getByLabel('Nombre').fill(name);
+    await rider.getByRole('button', { name: 'Subir ruta' }).click();
+  }
 
   test.beforeAll(async ({ browser }) => {
     const signedIn = async (email: string) => {
@@ -106,7 +121,8 @@ test.describe('admin and rider', () => {
       return page;
     };
     admin = await signedIn(ADMIN_EMAIL);
-    rider = await signedIn(`rider-trails-${Date.now()}@example.com`);
+    riderEmail = `rider-trails-${Date.now()}@example.com`;
+    rider = await signedIn(riderEmail);
   });
 
   test.afterAll(async () => {
@@ -220,6 +236,55 @@ test.describe('admin and rider', () => {
     await admin.keyboard.press('Tab');
     await expect(gpxInput(admin)).toBeFocused();
     await expectMinFontSize(admin);
+  });
+
+  test('a rider registers a route: "En revisión", in Mis rutas and the admin queue, then published', async ({ page }) => {
+    await riderUpload('Ruta Rider E2E');
+    await expect(rider).toHaveURL(`${ORIGIN}/rutas/ruta-rider-e2e`);
+    await expect(meta(rider).getByTestId('trail-status')).toHaveText('En revisión');
+    await expect(rider.getByRole('button', { name: 'Publicar' })).toHaveCount(0);
+    expect((await page.request.get('/rutas/ruta-rider-e2e')).status()).toBe(404);
+
+    const nav = rider.getByRole('navigation', { name: 'Principal' });
+    await nav.getByRole('link', { name: 'Mis rutas' }).click();
+    await expect(rider).toHaveURL(`${ORIGIN}/mis-rutas`);
+    await expect(nav.getByRole('link', { name: 'Mis rutas' })).toHaveAttribute('aria-current', 'page');
+    const mine = rider.getByTestId('trail-card').filter({ hasText: 'Ruta Rider E2E' });
+    await expect(mine.getByTestId('trail-status')).toHaveText('En revisión');
+    await expect(nav.getByRole('link', { name: 'Revisión' })).toHaveCount(0);
+    expect((await rider.request.get('/admin/rutas')).status()).toBe(404);
+    expect((await page.request.get('/mis-rutas')).status()).toBe(404);
+    expect((await axe(rider)).violations).toEqual([]);
+
+    await admin.goto('/');
+    await admin.getByRole('navigation', { name: 'Principal' }).getByRole('link', { name: 'Revisión' }).click();
+    await expect(admin).toHaveURL(`${ORIGIN}/admin/rutas`);
+    const queued = admin.getByTestId('trail-card').filter({ hasText: 'Ruta Rider E2E' });
+    await expect(queued).toContainText(`Registrada por ${riderEmail}`);
+    expect((await axe(admin)).violations).toEqual([]);
+    await queued.click();
+    await admin.getByRole('button', { name: 'Publicar' }).click();
+    await expect(meta(admin).getByTestId('trail-status')).toHaveText('Publicada');
+    await admin.goto('/admin/rutas');
+    await expect(admin.getByTestId('trail-card').filter({ hasText: 'Ruta Rider E2E' })).toHaveCount(0);
+
+    await rider.goto('/mis-rutas');
+    await expect(mine).toBeVisible();
+    await expect(mine.getByTestId('trail-status')).toHaveCount(0);
+    await rider.goto('/rutas/ruta-rider-e2e');
+    await expect(meta(rider).getByTestId('trail-status')).toHaveCount(0);
+  });
+
+  test('a rider with 3 routes in review gets the Spanish limit message on the 4th', async () => {
+    for (const n of [1, 2, 3]) {
+      await riderUpload(`Ruta Pendiente ${n}`);
+      await expect(rider).toHaveURL(`${ORIGIN}/rutas/ruta-pendiente-${n}`);
+    }
+    await riderUpload('Ruta Pendiente 4');
+    await expect(rider.locator('main').getByRole('alert')).toHaveText(
+      'Ya tienes 3 rutas en revisión. Espera la aprobación antes de registrar otra.',
+    );
+    await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
   });
 
   test('the upload form and the trail detail have no WCAG A/AA violations', async () => {

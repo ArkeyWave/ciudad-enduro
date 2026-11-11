@@ -5,7 +5,7 @@ import { TrailAdmin } from '../../../components/trail/TrailAdmin';
 import { TrailMapLoader } from '../../../components/trail/TrailMapLoader';
 import { DifficultyPill, TrailStats } from '../../../components/trail/TrailStats';
 import { getTrail } from '../../../lib/api';
-import { statusLabel, trailTypeLabel } from '../../../lib/labels';
+import { reviewLabel, statusLabel, trailTypeLabel } from '../../../lib/labels';
 import { isAdmin } from '../../../lib/roles';
 import { currentUser } from '../../../lib/session';
 import { headers } from 'next/headers';
@@ -20,6 +20,9 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
   if (!trail) notFound();
   const admin = isAdmin(me);
   const { lat, lng } = trail.start;
+  // The API shows a draft or hidden trail to an admin and to its author only, so a non-admin who
+  // gets one is its author.
+  const chip = admin ? statusLabel(trail.status) : reviewLabel(trail.status);
 
   return (
     <main className="page">
@@ -34,9 +37,9 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
           <div className="meta-row">
             <DifficultyPill difficulty={trail.difficulty} />
             <span className="type-label">{trailTypeLabel(trail.type)}</span>
-            {admin && (
+            {chip && (
               <span className="status-chip" data-testid="trail-status">
-                {statusLabel(trail.status)}
+                {chip}
               </span>
             )}
           </div>
