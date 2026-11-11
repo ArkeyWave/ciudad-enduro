@@ -14,6 +14,11 @@ export async function SessionHeader() {
       </a>
       {me ? (
         <span style={{ display: 'flex', gap: 12 }}>
+          {me.role === 'admin' && (
+            <a href="/rutas/nueva" style={{ color: LIME }}>
+              Nueva ruta
+            </a>
+          )}
           <span data-testid="session-email">{me.email}</span>
           <SignOutButton />
         </span>

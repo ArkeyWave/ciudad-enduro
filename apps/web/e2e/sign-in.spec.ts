@@ -1,8 +1,8 @@
-import { randomBytes } from 'node:crypto';
 import { expect, type Page, type Request } from '@playwright/test';
 import pg from 'pg';
 import { codesFor } from './codes.ts';
 import { ORIGIN_PORT } from './ports.ts';
+import { freshIp } from './session.ts';
 import { BAD_TOKEN, nextTokenBad, SITE_KEY, test, widgetCall, widgetState } from './turnstile.ts';
 
 const INVALID = 'Código inválido o vencido.';
@@ -11,14 +11,6 @@ const RATE_LIMITED = 'Demasiados intentos. Espera un minuto.';
 const GENERIC = 'No pudimos completar la solicitud. Intenta de nuevo.';
 const CAPTCHA = 'No pudimos verificar que eres una persona. Intenta de nuevo.';
 const SEND_PATH = '/api/auth/email-otp/send-verification-otp';
-
-// Better Auth's per-IP limiter (3 sign-in attempts per 10 s) is shared by every test in the API
-// process, and the client IP comes from cf-connecting-ip only. So each request that must not be
-// limited gets its own address. Random, not a counter: Playwright restarts the worker after a
-// failed test, and a counter would then reuse addresses inside the API's windows.
-async function freshIp(page: Page) {
-  await page.setExtraHTTPHeaders({ 'cf-connecting-ip': `10.${[...randomBytes(3)].join('.')}` });
-}
 
 let emailCounter = 0;
 const uniqueEmail = () => `rider-${Date.now()}-${++emailCounter}@example.com`;

@@ -1,0 +1,55 @@
+'use client';
+
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import { useEffect, useRef } from 'react';
+import type { Coordinates } from 'api-client';
+import { LIME } from '../sign-in/styles';
+import { MAP_HEIGHT } from './map-size';
+
+// The OSM tile policy: this exact URL and a visible, linked attribution.
+const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
+export interface TrailMapProps {
+  /** `[lng, lat]` pairs (GeoJSON order), or null when the trail has only a start point. */
+  path: number[][] | null;
+  start: Coordinates;
+  end: Coordinates | null;
+}
+
+const point = (c: Coordinates): L.LatLngTuple => [c.lat, c.lng];
+const dot = (className: string) => ({ className, radius: 6, color: '#0A0A0A', weight: 2, fillColor: LIME, fillOpacity: 1 });
+
+export default function TrailMap({ path, start, end }: TrailMapProps) {
+  const container = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!container.current) return;
+    const map = L.map(container.current, { scrollWheelZoom: false, zoomControl: false });
+    L.control.zoom({ zoomInTitle: 'Acercar', zoomOutTitle: 'Alejar' }).addTo(map);
+    L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIBUTION }).addTo(map);
+    const line = path && path.length >= 2 ? path.map(([lng = 0, lat = 0]): L.LatLngTuple => [lat, lng]) : null;
+    if (line) {
+      const layer = L.polyline(line, { className: 'trail-path', color: LIME, weight: 4 }).addTo(map);
+      map.fitBounds(layer.getBounds(), { padding: [16, 16] });
+    } else {
+      map.setView(point(start), 14);
+    }
+    L.circleMarker(point(start), dot('trail-start')).addTo(map);
+    if (line && end) L.circleMarker(point(end), dot('trail-end')).addTo(map);
+    return () => {
+      map.remove();
+    };
+  }, [path, start, end]);
+
+  return (
+    <div
+      ref={container}
+      role="region"
+      aria-label="Mapa del sendero"
+      data-testid="trail-map"
+      style={{ height: MAP_HEIGHT, borderRadius: 8 }}
+    />
+  );
+}

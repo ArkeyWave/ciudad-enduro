@@ -142,7 +142,11 @@ pnpm --filter web dev                          # http://localhost:3000
 `pnpm dev` from the root builds `api-client` first (the `dev` task depends on `^build`).
 In development, `next dev` rewrites `/api/*` to the API. In production Traefik routes `/api`.
 
-Pages: `/` (trail list) and `/ingresar` (sign-in by e-mail code or Google). `/ingresar` reads
+Pages: `/` (trail list), `/rutas/<slug>` (trail detail: Leaflet map with OpenStreetMap tiles and the
+elevation profile; an admin also sees drafts and the publish and edit controls), `/rutas/nueva` (GPX
+upload, admin only; everyone else gets 404) and `/ingresar` (sign-in by e-mail code or Google). The
+trail detail loads the trail before any Suspense boundary, so do not add `app/rutas/[slug]/loading.tsx`:
+a streamed `notFound()` answers 200 instead of 404. `/ingresar` reads
 `TURNSTILE_SITE_KEY` per request (not `NEXT_PUBLIC_`, so one image serves every host) and fails
 without it. The Turnstile widget stays mounted for both steps; every send, "Enviar otro código"
 and a retry included, uses a new token, and the widget resets after each send. The web calls the auth
@@ -159,7 +163,9 @@ like Traefik. The browser uses port 3100 only. Ports 3103 and 3104 hold a second
 API that never answers, for the error-page test. The tests read OTP codes from the file in
 `e2e/codes.ts` and send their own `cf-connecting-ip` per auth request. `e2e/turnstile.ts` routes
 Cloudflare's widget script to a stub widget, and the e2e API checks its tokens against the
-in-process siteverify stub, so the suite never calls Cloudflare. They recreate and seed
+in-process siteverify stub, so the suite never calls Cloudflare. The seed inserts the admin
+`admin-e2e@example.com` (role `admin`); the trails spec signs it in once per run, and routes OSM tiles
+to a blank PNG. They recreate and seed
 `ciudad_enduro_test_<TEST_DB_SUFFIX>` on localhost.
 
 ```bash

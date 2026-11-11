@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { Difficulty, TrailType } from 'api-client';
-import { difficultyLabel, trailTypeLabel } from './labels';
+import type { Difficulty, TrailDetail, TrailType } from 'api-client';
+import { CITIES, difficultyLabel, statusLabel, trailTypeLabel } from './labels';
 
 // The slugs come from the API contract, so a new enum value without a label fails here.
 const contract = JSON.parse(
@@ -21,6 +21,15 @@ describe('labels', () => {
 
   it.each(slugs('TrailType'))('trail type %s has a label', (slug) => {
     expect(trailTypeLabel(slug as TrailType)).toMatch(/\S/);
+  });
+
+  it.each(slugs('TrailStatus'))('trail status %s has a label', (slug) => {
+    expect(statusLabel(slug as TrailDetail['status'])).toMatch(/\S/);
+  });
+
+  // The upload and edit forms offer exactly the cities the API accepts.
+  it('offers the cities of the contract', () => {
+    expect([...CITIES]).toEqual(slugs('City'));
   });
 
   it('shows Spanish labels', () => {

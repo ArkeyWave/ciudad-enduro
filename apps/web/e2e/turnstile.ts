@@ -2,7 +2,7 @@
 // The stub widget issues `stub~<action>~<hostname>~<n>`: the e2e API's siteverify stub
 // (apps/api/test/support/turnstile-stub.ts) accepts each such token once and reports that action
 // and hostname, so a wrong `action`, a wrong host or a reused token fails as with Cloudflare.
-import { test as base, type Page } from '@playwright/test';
+import { test as base, type BrowserContext, type Page } from '@playwright/test';
 
 export const SITE_KEY = 'e2e-site-key';
 /** The token the stub issues after `nextTokenBad`; the siteverify stub refuses it. */
@@ -54,13 +54,17 @@ export type WidgetState = {
   delivered: string | null;
 };
 
+/** Routes Cloudflare's widget script to the stub for every page of `context`. */
+export const stubTurnstile = (context: BrowserContext) =>
+  context.route('https://challenges.cloudflare.com/turnstile/**', (route) =>
+    route.fulfill({ contentType: 'text/javascript', body: WIDGET_SCRIPT }),
+  );
+
 /** `test` with the stub widget script routed in for every page. */
 export const test = base.extend<{ turnstileStub: void }>({
   turnstileStub: [
     async ({ context }, use) => {
-      await context.route('https://challenges.cloudflare.com/turnstile/**', (route) =>
-        route.fulfill({ contentType: 'text/javascript', body: WIDGET_SCRIPT }),
-      );
+      await stubTurnstile(context);
       await use();
     },
     { auto: true },
