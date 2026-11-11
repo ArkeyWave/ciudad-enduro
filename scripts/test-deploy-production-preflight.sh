@@ -9,7 +9,8 @@ set -u
 wf=$(cd "$(dirname "$0")/.." && pwd)/.github/workflows/deploy-production.yml
 here=$(mktemp -d); trap 'rm -rf "$here"' EXIT
 step=$here/step.sh
-python - "$wf" "$step" <<'EOF'
+py=$(command -v python3 || command -v python) || { echo "no python"; exit 2; }
+"$py" - "$wf" "$step" <<'EOF'
 import re, sys
 s = open(sys.argv[1]).read()
 m = re.search(r'        run: \|\n((?:          .*\n|\n)+?)\n  deploy:', s)
@@ -30,11 +31,12 @@ case "$2" in
 esac
 EOF
 chmod +x "$here/bin/gh"
-G=0123456789abcdef0123456789abcdef01234567
+G=0123456789abcdef0123456789abcdef01234567 red=0
 t() { # NAME EXPECT(pass|refuse) SHA CMP RUN JOB
   local out rc got
   out=$(PATH="$here/bin:$PATH" SHA=$3 REPO=o/r CMP=$4 RUN=$5 JOB=$6 bash "$step" 2>&1); rc=$?
   [ $rc = 0 ] && got=pass || got=refuse
+  [ "$got" = "$2" ] || red=$((red + 1))
   printf '%-6s %-34s expect=%-6s got=%-6s | %s\n' "$([ "$got" = "$2" ] && echo ok || echo RED)" "$1" "$2" "$got" "$(tail -1 <<<"$out")"
 }
 t "all prerequisites, main ahead"      pass   $G ahead     42 success
@@ -47,3 +49,5 @@ t "deploy-staging failed"              refuse $G ahead     42  failure
 t "deploy-staging absent"              refuse $G ahead     42  ""
 t "input not 40 hex"                   refuse "${G:0:39}"  ahead 42 success
 t "input upper case"                   refuse "${G^^}"     ahead 42 success
+echo "$red case(s) with a wrong result"
+[ "$red" = 0 ]

@@ -45,6 +45,11 @@ jobs:
 
       # pnpm must exist before setup-node can use `cache: pnpm`.
       # The version comes from "packageManager" in package.json.
+      # The deploy-production preflight against a fake gh (seconds; no token, no network).
+      - name: Test the deploy-production preflight
+        if: github.event_name == 'pull_request'
+        run: scripts/test-deploy-production-preflight.sh
+
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

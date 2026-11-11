@@ -82,8 +82,7 @@ fi
 LOGS=/var/lib/ce-oss/logs
 if [ -z "${CE_OSS_RUN:-}" ]; then
   install -d -m 700 "$LOGS"
-  run_log=$LOGS/$target-$sha-$(date -u +%Y%m%dT%H%M%SZ).log
-  : > "$run_log"
+  run_log=$(mktemp "$LOGS/$target-$sha-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX.log")
   # A background job of a non-interactive shell is no process group leader, so setsid does not
   # fork again and $! is the run's own PID.
   CE_OSS_RUN=$run_log setsid bash "$0" "$target" < /dev/null >> "$run_log" 2>&1 &
@@ -237,7 +236,7 @@ prechange_checks() {
     done
     log "PRIVATE=1: both apps store traefik.enable=false, label setting not read-only"
   else
-    host_owners_ok || refuse "another running container claims $HOST; stop it first"
+    host_owners_ok || refuse "another container claims $HOST (running, restarting or paused); stop it first"
     log "before the deploy: only these apps claim $HOST"
   fi
 }
@@ -323,11 +322,13 @@ origin_lock_ok() {
   done
 }
 
-# Every running container on the box whose labels name the host (the router rule's fixed
-# string) must be one of the two apps: an old app that still claims the host fails the deploy.
+# Every container on the box that `docker ps` lists (running, restarting or paused) and whose
+# labels name the host (the router rule's fixed string) must be one of the two apps: an old app
+# that still claims the host fails the deploy. Both sides use the same set of states, so the
+# apps' own restarting containers count as theirs.
 host_owners_ok() {
   local want got c values rule="Host(\`$HOST\`)"
-  want=$({ running_containers "$API_UUID"; running_containers "$WEB_UUID"; } | sort)
+  want=$({ docker ps -q --filter "name=^$API_UUID-"; docker ps -q --filter "name=^$WEB_UUID-"; } | sort)
   # The labels go into a variable first: with pipefail, grep -q closing the pipe early would
   # turn a match into a SIGPIPE failure of docker inspect.
   got=$(for c in $(docker ps -q); do
@@ -335,7 +336,7 @@ host_owners_ok() {
     grep -qF "$rule" <<<"$values" && echo "$c"
   done | sort)
   [ "$got" = "$want" ] ||
-    { echo "FAIL host: running containers with $rule: $(echo $got); expected $(echo $want)" >&2; return 1; }
+    { echo "FAIL host: containers with $rule: $(echo $got); expected $(echo $want)" >&2; return 1; }
 }
 
 # PRIVATE=1, right after each app's deploy: every running container keeps Traefik off, publishes
@@ -367,10 +368,11 @@ private_app_ok() { # NAME APP_UUID
         seen+=" $ip home=${got:-none}"
       fi
     done
+    [ -n "$seen" ] || ok=0   # no running container in this pass: never a pass
     [ $ok = 1 ] && break
     sleep 10
   done
-  [ $ok = 1 ] || die "private: $name$seen (expected revision $sha, home 200)"
+  [ $ok = 1 ] || die "private: $name${seen:- no running container in the last pass} (expected revision $sha, home 200)"
   log "private: $name$seen, traefik.enable=false, no host port"
 }
 
