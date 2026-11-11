@@ -204,8 +204,7 @@ compound try is not refused, drop `if` from that handler.
 subagent transcript (`~/.claude/projects/<p>/<session>/subagents/agent-<id>.jsonl`); `--debug` only for
 unknown fields. Rubric path `~/.claude/skills/review-rubric/SKILL.md`. Remove `teammateMode` with the
 teams env. Implementer `disallowedTools` adds `Workflow`, `mcp__t3-code__t3_thread_launch`,
-`mcp__t3-code__create_threads`. Move the plaintext `nano-banana` API key in `~/.claude/settings.json`
-to `~/.secrets/` in the same batch (owner rule).
+`mcp__t3-code__create_threads`.
 
 **R5 — skeleton placement (L3.2-3).** Home skeleton = `<Suspense>` inside `app/page.tsx`; **no**
 `app/loading.tsx`. Mutation: move it to `app/loading.tsx` → the `/ingresar` test must go red, else delete
