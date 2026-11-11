@@ -254,33 +254,60 @@ on the box runs the rest.
    The URL pins the commit that last changed the script, and the sha256 is that file's. **When a later
    commit changes `docs/operations/ce-oss-deploy`, update both values here** (the reviewed merge head
    must carry the same file).
-3. Switch both apps to `dockerimage` (same uuids; image name set; labels and runtime env unchanged). Run
-   the query below first and keep its output, then:
-   `/root/ce-oss/capi METHOD PATH` reads the JSON body from stdin when stdin is not a terminal
-   (`[ -t 0 ] || body=$(cat)`) and passes it to curl with `--data-binary @-`; the token goes in on
-   stdin too and never enters an argv.
+3. Switch both apps to `dockerimage` (same uuids; image name set; labels and runtime env unchanged)
+   with **Coolify's own model save in tinker**. The Coolify 4.7.3 API cannot do it: `PATCH
+   /applications/<uuid>` with `build_pack: dockerimage` answers 422 `The selected build pack is
+   invalid.` (the update validates against the `BuildPackTypes` enum, which has no `dockerimage`; the
+   API sets `dockerimage` only when it creates an app from an image). Proved on 2026-11-11.
+
+   What the save changes (`Application::saving`, the only update hook): on a change away from
+   `dockerfile` it clears `dockerfile`, `dockerfile_location`, `dockerfile_target_build` and sets
+   `custom_healthcheck_found = false`; nothing else. What the `dockerimage` deploy reads:
+   `docker_registry_image_name` and `docker_registry_image_tag` (`sha256-<hex>` → `<repo>@sha256:<hex>`;
+   empty → `latest`), plus the same settings as before (ports, health check, `custom_labels`, network
+   aliases, runtime env, destination). It reads no git field and no registry credential (the packages are
+   public). The tag stays empty here: every v2 deploy PATCHes the name and the tag (an API PATCH of
+   those two fields is valid). Do not deploy or restart the apps between this step and step 6, or Coolify
+   would pull `:latest`.
    ```bash
-   cd /root/ce-oss
-   echo '{"build_pack":"dockerimage","docker_registry_image_name":"ghcr.io/arkeywave/ciudad-enduro-api","git_repository":"","git_branch":"","git_commit_sha":""}' | ./capi PATCH /applications/c6mm7pwdmoysv0eg2vgwo4bi
-   echo '{"build_pack":"dockerimage","docker_registry_image_name":"ghcr.io/arkeywave/ciudad-enduro-web","git_repository":"","git_branch":"","git_commit_sha":""}' | ./capi PATCH /applications/whfatie8ek3wh09ite3mnqn0
+   cd /root/ce-oss; umask 077
+   # Backup of both full rows, for a rollback.
+   docker exec coolify-db psql -U coolify -d coolify -tAc "select row_to_json(a) from applications a
+     where uuid in ('c6mm7pwdmoysv0eg2vgwo4bi','whfatie8ek3wh09ite3mnqn0') order by id" > a5-apps-before.json
+   # Per app, api first: switch, then the after-check (query below) before the next app.
+   docker exec coolify php artisan tinker --execute="\$a = \App\Models\Application::where('uuid', 'c6mm7pwdmoysv0eg2vgwo4bi')->firstOrFail(); \$a->build_pack = 'dockerimage'; \$a->docker_registry_image_name = 'ghcr.io/arkeywave/ciudad-enduro-api'; \$a->save();"
+   docker exec coolify php artisan tinker --execute="\$a = \App\Models\Application::where('uuid', 'whfatie8ek3wh09ite3mnqn0')->firstOrFail(); \$a->build_pack = 'dockerimage'; \$a->docker_registry_image_name = 'ghcr.io/arkeywave/ciudad-enduro-web'; \$a->save();"
    ```
-   If Coolify refuses an empty git field, send the same two lines without the three git fields (owner
-   decision: the `dockerimage` build pack does not read them, and the script refuses any other build
-   pack). The running containers keep running. Before and after, the values must be equal except
-   `build_pack`, the image name and (when sent) the git fields:
+   Before and after each switch, run this query; the running containers keep running:
    ```bash
    for u in c6mm7pwdmoysv0eg2vgwo4bi whfatie8ek3wh09ite3mnqn0; do
      docker exec coolify-db psql -U coolify -d coolify -tAc "select a.build_pack, a.docker_registry_image_name,
        md5(a.custom_labels), s.is_container_label_readonly_enabled, a.git_repository, a.git_branch, a.git_commit_sha,
        (select md5(string_agg(e.key||e.value, ',' order by e.key, e.is_preview)) from environment_variables e
-         where e.resourceable_id = a.id and e.resourceable_type like '%Application')
+         where e.resourceable_id = a.id and e.resourceable_type like '%Application'),
+       a.ports_exposes, a.health_check_path
        from applications a join application_settings s on s.application_id = a.id where a.uuid = '$u'"
    done
    ```
-   Expected after: `dockerimage`, the GHCR repository, the same label md5, `f`, empty git fields (or the
-   unchanged git fields, when Coolify refused the empty ones), the same env md5.
+   Expected after: `dockerimage`, the GHCR repository, and unchanged label md5, readonly flag `f`, git
+   fields, env md5, ports and health check path; the v1 containers still run; public `/api/health` 200;
+   no new row in `application_deployment_queues`.
+
+   **Rollback of one app** (only when its after-check fails): put back the fields the save changed, from
+   the backup, without the saving hook, then check with the query:
+   ```bash
+   j=$(jq -c --arg u <uuid> 'select(.uuid == $u) | {build_pack, docker_registry_image_name,
+     docker_registry_image_tag, dockerfile, dockerfile_location, dockerfile_target_build,
+     custom_healthcheck_found}' a5-apps-before.json)
+   docker exec coolify php artisan tinker --execute="\$a = \App\Models\Application::where('uuid', '<uuid>')->firstOrFail(); \$a->forceFill(json_decode(base64_decode('$(printf '%s' "$j" | base64 -w0)'), true)); \$a->saveQuietly();"
+   ```
+
+   Record of 2026-11-11: the API PATCH was refused (422) while both locks were held, the shell
+   stopped, and the locks were released with it; nothing had changed in Coolify. The tinker switch then
+   ran at 04:19 UTC (script `/root/ce-oss/a5-step3-tinker.sh`, log `a5-step3.log`): both apps `dockerimage`,
+   every other value unchanged, no deployment queued, origin lock 403/403, public 200.
 4. Release both locks before the merge: `exec 8>&- 7>&-`. A queued v1 request now reaches v2 and is
-   refused by the regex.
+   refused by the regex; a v2 request is refused while either app is not `dockerimage`.
 5. Merge P1a-1 (orchestrator), with the freeze off only for this merge:
    ```bash
    gh api -X PUT repos/ArkeyWave/ciudad-enduro/rulesets/26997912 -f enforcement=disabled
