@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased] - Phase 1b-min
+
+### Added
+- GPX import (B-A, plan `docs/plans/2026-11-11-phase-1b-min-gpx-trails.md`): `POST /api/trails` (multipart, one `gpx` file ≤ 10 MiB, at most 6 text fields of 8 KiB) parses one continuous ride and stores a **draft** with the full-resolution 2D path, start/end points, distance, elevation gain and loss (5 m threshold filter, `ELEVATION_THRESHOLD_M`), and an elevation profile of at most 300 `[distance_m, ele_m]` points. `department` comes from the city. Slugs: diacritics removed, ≤ 56 characters, `nueva` reserved, `-2` … `-5` on a collision (each try in its own transaction), then 409 `SLUG_TAKEN`. Error codes: `GPX_INVALID`, `GPX_EMPTY`, `GPX_TOO_LARGE`, `GPX_MULTI_SEGMENT`, `GPX_OUT_OF_AREA`, `SLUG_EMPTY`, 409 `GPX_DUPLICATE` (with the existing `slug`).
+- `PATCH /api/trails/:slug` (JSON: `status`, `name`, `description`, `city`, `difficulty`, `type`; the slug never changes; `null` and an empty body answer 400). `GET /api/trails/:slug` gives an admin drafts and hidden trails too; everyone else still gets 404. The detail adds `status`, `elevationLossM`, `elevationMinM`, `elevationMaxM`, `elevationProfile`, and a display path simplified with `ST_SimplifyPreserveTopology` (0.00002°). API client regenerated.
+- Migration `0004_trail_gpx`: `trails.elevation_loss_m`, `trails.elevation_profile` (jsonb), table `trail_sources` (the uploaded GPX, `sha256` unique, cascade on trail delete). Postgres is the long-term home of GPX sources: architecture D10 exception recorded in `docs/architecture/phase-0-foundation.md`.
+- Runbook `docs/operations/trails-import.md`: the admin role SQL per environment, the trim step, the segment merge, the staging calibration and the staging delete.
+
+### Security
+- Trail mutations need `role = 'admin'` (adapter `@Roles`; anonymous 401, rider 403). `@AllowAnonymous()` moved from the `TrailsController` class to its two GET handlers: on the class the guard returned before it checked roles.
+- `OriginGuard` (CSRF): `Origin` must equal `WEB_ORIGIN` exactly, else 403. It runs after the auth guard and before the multipart parser (an order test proves it). SameSite=Lax alone does not stop a same-site POST from another `*.vops.pe` app.
+- GPX parsing (`fast-xml-parser` 5.12.0): strict UTF-8, any DOCTYPE refused, the document validated first, entities not processed, a constant error code with no snippet of the file. The GPX source is never returned, and a database error is logged as `trail_create_failed` with the Postgres code and constraint only (drizzle's message carries the query parameters, i.e. the GPX).
+
 ## [Unreleased] - Phase 1a
 
 ### Documentation

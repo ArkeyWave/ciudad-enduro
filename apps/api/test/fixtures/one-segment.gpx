@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Ciudad Enduro test" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>Cerro de prueba</name></metadata>
+  <trk>
+    <name>Cerro de prueba</name>
+    <trkseg>
+      <trkpt lat="-9.0900" lon="-78.5200"><ele>100</ele><time>2026-11-15T07:00:00Z</time></trkpt>
+      <trkpt lat="-9.0910" lon="-78.5200"><ele>104</ele><time>2026-11-15T07:00:20Z</time></trkpt>
+      <trkpt lat="-9.0920" lon="-78.5200"><ele>108</ele><time>2026-11-15T07:00:40Z</time></trkpt>
+      <trkpt lat="-9.0930" lon="-78.5200"><ele>112</ele><time>2026-11-15T07:01:00Z</time></trkpt>
+      <trkpt lat="-9.0940" lon="-78.5200"><ele>106</ele><time>2026-11-15T07:01:20Z</time></trkpt>
+      <trkpt lat="-9.0950" lon="-78.5200"><ele>100</ele><time>2026-11-15T07:01:40Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

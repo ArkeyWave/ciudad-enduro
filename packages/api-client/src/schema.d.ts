@@ -45,7 +45,7 @@ export interface paths {
         };
         get: operations["TrailsController_list"];
         put?: never;
-        post?: never;
+        post: operations["TrailsController_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -65,7 +65,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        patch: operations["TrailsController_update"];
         trace?: never;
     };
 }
@@ -77,6 +77,18 @@ export interface components {
         CoordinatesDto: {
             lat: number;
             lng: number;
+        };
+        CreateTrailBody: {
+            city: components["schemas"]["City"];
+            description?: string;
+            difficulty: components["schemas"]["Difficulty"];
+            /**
+             * Format: binary
+             * @description One GPX file, at most 10 MiB
+             */
+            gpx: string;
+            name: string;
+            type: components["schemas"]["TrailType"];
         };
         /** @enum {string} */
         Difficulty: "facil" | "intermedio" | "dificil";
@@ -92,16 +104,24 @@ export interface components {
             difficulty: components["schemas"]["Difficulty"];
             distanceM: number | null;
             elevationGainM: number | null;
+            elevationLossM: number | null;
+            elevationMaxM: number | null;
+            elevationMinM: number | null;
+            /** @description [distance_m, ele_m] pairs, at most 300 */
+            elevationProfile: number[][] | null;
             end: components["schemas"]["CoordinatesDto"] | null;
             /** Format: uuid */
             id: string;
             name: string;
-            /** @description [lng, lat] pairs */
+            /** @description [lng, lat] pairs, simplified for display */
             path: number[][] | null;
             slug: string;
             start: components["schemas"]["CoordinatesDto"];
+            status: components["schemas"]["TrailStatus"];
             type: components["schemas"]["TrailType"];
         };
+        /** @enum {string} */
+        TrailStatus: "draft" | "published" | "hidden";
         TrailSummaryDto: {
             city: components["schemas"]["City"];
             difficulty: components["schemas"]["Difficulty"];
@@ -115,6 +135,14 @@ export interface components {
         };
         /** @enum {string} */
         TrailType: "descenso" | "cross_country" | "urbano";
+        UpdateTrailDto: {
+            city?: components["schemas"]["City"];
+            description?: string;
+            difficulty?: components["schemas"]["Difficulty"];
+            name?: string;
+            status?: components["schemas"]["TrailStatus"];
+            type?: components["schemas"]["TrailType"];
+        };
     };
     responses: never;
     parameters: never;
@@ -188,6 +216,29 @@ export interface operations {
             };
         };
     };
+    TrailsController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["CreateTrailBody"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrailDetailDto"];
+                };
+            };
+        };
+    };
     TrailsController_get: {
         parameters: {
             query?: never;
@@ -207,7 +258,39 @@ export interface operations {
                     "application/json": components["schemas"]["TrailDetailDto"];
                 };
             };
-            /** @description No published trail has this slug */
+            /** @description No published trail has this slug (an admin also gets drafts and hidden trails) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    TrailsController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTrailDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrailDetailDto"];
+                };
+            };
+            /** @description No trail has this slug */
             404: {
                 headers: {
                     [name: string]: unknown;

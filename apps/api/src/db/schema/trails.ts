@@ -1,4 +1,4 @@
-import { integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { lineStringGeom, pointGeom } from '../types/geo.js';
 import { user } from './auth.js';
 
@@ -9,8 +9,13 @@ export const TRAIL_TYPES = ['descenso', 'cross_country', 'urbano'] as const;
 export const TRAIL_STATUSES = ['draft', 'published', 'hidden'] as const;
 
 export type City = (typeof CITIES)[number];
+export type Department = (typeof DEPARTMENTS)[number];
 export type Difficulty = (typeof DIFFICULTIES)[number];
 export type TrailType = (typeof TRAIL_TYPES)[number];
+export type TrailStatus = (typeof TRAIL_STATUSES)[number];
+
+/** One `[distance_m, ele_m]` pair of the elevation profile. */
+export type ProfilePoint = [number, number];
 
 export const cityEnum = pgEnum('city', CITIES);
 export const departmentEnum = pgEnum('department', DEPARTMENTS);
@@ -33,7 +38,20 @@ export const trails = pgTable('trails', {
   path: lineStringGeom('path'),
   distanceM: integer('distance_m'),
   elevationGainM: integer('elevation_gain_m'),
+  elevationLossM: integer('elevation_loss_m'),
+  elevationProfile: jsonb('elevation_profile').$type<ProfilePoint[]>(),
   authorId: text('author_id').references(() => user.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// The uploaded GPX file, private: the API never returns it. Postgres is its long-term home
+// (architecture D10 exception, docs/architecture/phase-0-foundation.md).
+export const trailSources = pgTable('trail_sources', {
+  trailId: uuid('trail_id')
+    .primaryKey()
+    .references(() => trails.id, { onDelete: 'cascade' }),
+  gpx: text('gpx').notNull(),
+  sha256: text('sha256').notNull().unique(),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
 });
