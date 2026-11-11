@@ -162,6 +162,26 @@ describe('POST /api/trails: import', () => {
     expect((await upload(as(admin), { ...fields, description: 'x' })).status).toBe(201);
   });
 
+  it('refuses a bracketed field name in the multipart parser, fast', async () => {
+    for (const name of ['name[4294967294]', 'name[a]']) {
+      const form = new FormData();
+      form.append(name, 'x');
+      for (const [key, value] of Object.entries(fields)) if (key !== 'name') form.append(key, value);
+      form.append('gpx', new Blob([fixtureBytes]), 'ride.gpx');
+      const res = await fetch(`${t.url}/api/trails`, { method: 'POST', headers: as(admin), body: form, signal: AbortSignal.timeout(5_000) });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { message: string }).message).toMatch(/Field name (nesting too deep|array index too large)/);
+    }
+    expect(await count('trails')).toBe(0);
+  });
+
+  it('answers 400 GPX_INVALID when the XML parser throws (101 nested elements)', async () => {
+    const nested = FIXTURE.replace('</trk>', `<extensions>${'<e>'.repeat(101)}${'</e>'.repeat(101)}</extensions></trk>`);
+    const res = await upload(as(admin), fields, new TextEncoder().encode(nested));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'GPX_INVALID' });
+  });
+
   it('answers 413 to a file above 10 MiB', async () => {
     const res = await upload(as(admin), fields, new Uint8Array(10 * 1024 * 1024 + 1));
     expect(res.status).toBe(413);
@@ -200,6 +220,14 @@ describe('POST /api/trails: import', () => {
     expect(await count('trail_sources')).toBe(0);
   });
 
+  it('answers 409 GPX_DUPLICATE, not SLUG_TAKEN, to a known file when every slug is taken', async () => {
+    expect((await upload(as(admin), { ...fields, name: 'Ruta' })).status).toBe(201);
+    for (const n of [1, 2, 3, 4]) expect((await upload(as(admin), { ...fields, name: 'Ruta' }, variant(n))).status).toBe(201);
+    const res = await upload(as(admin), { ...fields, name: 'Ruta' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'GPX_DUPLICATE', slug: 'ruta' });
+  });
+
   it('refuses a name with no letter or digit (SLUG_EMPTY)', async () => {
     const res = await upload(as(admin), { ...fields, name: '🚵🚵' });
     expect(res.status).toBe(400);
@@ -235,6 +263,19 @@ describe('GET /api/trails/:slug for an admin', () => {
     await seed('oculta', 'hidden');
     expect((await get('/trails/oculta', as(admin, null))).status).toBe(200);
     expect((await get('/trails/oculta', as(rider, null))).status).toBe(404);
+  });
+
+  it('uses the @Roles rule for the admin view: a comma list counts, a longer name does not', async () => {
+    await seed('lista');
+    const setRole = (role: string) => client.query(`update "user" set role = $1 where email = 'rider@x.pe'`, [role]);
+    try {
+      await setRole('rider, admin');
+      expect((await get('/trails/lista', as(rider, null))).status).toBe(200);
+      await setRole('administrator');
+      expect((await get('/trails/lista', as(rider, null))).status).toBe(404);
+    } finally {
+      await setRole('rider');
+    }
   });
 });
 

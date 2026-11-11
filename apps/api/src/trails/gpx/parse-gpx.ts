@@ -35,8 +35,14 @@ const parser = new XMLParser({
 
 type Node = Record<string, unknown>;
 const isNode = (value: unknown): value is Node => typeof value === 'object' && value !== null && !Array.isArray(value);
-/** The children of an isArray tag; a bare `<trk/>` parses to '' and has none. */
-const nodes = (value: unknown): Node[] => (Array.isArray(value) ? value.filter(isNode) : []);
+/** Every occurrence of an isArray tag, unfiltered: a bare `<trk/>` or `<trkpt/>` parses to ''. */
+const all = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+/** The points of a segment; an empty `<trkseg></trkseg>` has none and is the only skipped element. */
+function trkptsOf(segment: unknown): unknown[] {
+  if (segment === '') return [];
+  if (!isNode(segment)) throw new GpxError('GPX_INVALID');
+  return all(segment.trkpt);
+}
 
 function coordinate(value: unknown): number {
   if (typeof value !== 'string' || value.trim() === '') throw new GpxError('GPX_INVALID');
@@ -55,22 +61,32 @@ export function parseGpx(bytes: Uint8Array): Track {
   }
   // processEntities: false stops replacement, but the parser still reads a DOCTYPE.
   if (/<!DOCTYPE/i.test(text)) throw new GpxError('GPX_INVALID');
-  if (XMLValidator.validate(text) !== true) throw new GpxError('GPX_INVALID');
-
-  const doc: unknown = parser.parse(text);
+  let doc: unknown;
+  try {
+    // Both throw on hostile input (nesting above 100, a name such as `constructor`): a 400, never a 500.
+    if (XMLValidator.validate(text) !== true) throw new GpxError('GPX_INVALID');
+    doc = parser.parse(text);
+  } catch {
+    throw new GpxError('GPX_INVALID');
+  }
   if (!isNode(doc) || !('gpx' in doc)) throw new GpxError('GPX_INVALID');
-  const tracks = isNode(doc.gpx) ? nodes(doc.gpx.trk) : [];
+  const tracks = isNode(doc.gpx) ? all(doc.gpx.trk) : [];
   if (tracks.length > 1) throw new GpxError('GPX_MULTI_SEGMENT');
-  const segments = nodes(tracks[0]?.trkseg).filter((segment) => nodes(segment.trkpt).length > 0);
+  const track = tracks[0];
+  if (track !== undefined && track !== '' && !isNode(track)) throw new GpxError('GPX_INVALID');
+  const segments = all(isNode(track) ? track.trkseg : undefined)
+    .map(trkptsOf)
+    .filter((trkpts) => trkpts.length > 0);
   if (segments.length > 1) throw new GpxError('GPX_MULTI_SEGMENT');
 
-  const trkpts = nodes(segments[0]?.trkpt);
+  const trkpts = segments[0] ?? [];
   if (trkpts.length < 2) throw new GpxError('GPX_EMPTY');
   if (trkpts.length > MAX_POINTS) throw new GpxError('GPX_TOO_LARGE');
 
   const points: LngLat[] = [];
   const elevations: number[] = [];
   for (const trkpt of trkpts) {
+    if (!isNode(trkpt)) throw new GpxError('GPX_INVALID');
     const lat = coordinate(trkpt.lat);
     const lng = coordinate(trkpt.lon);
     if (lat < -90 || lat > 90 || lng < -180 || lng > 180) throw new GpxError('GPX_INVALID');

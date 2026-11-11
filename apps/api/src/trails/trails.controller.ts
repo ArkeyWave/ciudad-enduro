@@ -17,16 +17,27 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiCreatedResponse, ApiNotFoundResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import type { Auth } from '../auth/auth.factory.js';
 import { OriginGuard } from '../auth/origin.guard.js';
+import { hasRole } from '../auth/roles.js';
 import { ListTrailsQuery } from './dto/list-trails.query.js';
 import { TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
 import { CreateTrailBody, CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
 import { TrailsService } from './trails.service.js';
 
 const MiB = 1024 * 1024;
-// Multer limits (plan D2, M8): one file, at most 6 text fields, 8 KiB per field.
-export const GPX_UPLOAD_LIMITS = { fileSize: 10 * MiB, files: 1, fields: 6, parts: 7, fieldSize: 8 * 1024, fieldNameSize: 32 };
+// Multer limits (plan D2, M8): one file, at most 6 text fields, 8 KiB per field. Field names are
+// flat: no `a[b]` nesting and no `a[0]` array (Nest's own defaults would allow depth 32, index 1000).
+export const GPX_UPLOAD_LIMITS = {
+  fileSize: 10 * MiB,
+  files: 1,
+  fields: 6,
+  parts: 7,
+  fieldSize: 8 * 1024,
+  fieldNameSize: 32,
+  fieldNestingDepth: 0,
+  fieldArrayIndexLimit: 0,
+};
 
-const isAdmin = (session: UserSession<Auth> | null) => session?.user.role === 'admin';
+const isAdmin = (session: UserSession<Auth> | null) => hasRole(session?.user.role, ['admin']);
 
 // @AllowAnonymous() stays on the GET handlers: on the class it would turn @Roles off, because the
 // auth guard returns early for a public route before it checks roles.
@@ -55,7 +66,7 @@ export class TrailsController {
 
   // Order: auth guard (401) → role (403) → origin (403) → multipart parser → GPX parser.
   @Post()
-  @Roles(['admin'])
+  @Roles(['admin']) // the guard applies hasRole's rule (auth/roles.ts)
   @UseGuards(OriginGuard)
   @UseInterceptors(FileInterceptor('gpx', { limits: GPX_UPLOAD_LIMITS }))
   @ApiConsumes('multipart/form-data')

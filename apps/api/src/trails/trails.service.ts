@@ -115,6 +115,7 @@ export class TrailsService {
     const base = slugify(input.name);
     if (!base) throw new BadRequestException(coded('SLUG_EMPTY'));
     const sha256 = createHash('sha256').update(bytes).digest('hex');
+    await this.refuseKnownSource(sha256);
     const candidates = Array.from({ length: SLUG_TRIES + 1 }, (_, i) => (i === 0 ? base : `${base}-${i + 1}`))
       .filter((slug) => !RESERVED_SLUGS.has(slug))
       .slice(0, SLUG_TRIES);
@@ -146,6 +147,7 @@ export class TrailsService {
         const cause = pgCause(error);
         if (cause?.code === '23505' && cause.constraint === 'trails_slug_unique') continue;
         if (cause?.code === '23505' && cause.constraint === 'trail_sources_sha256_unique') {
+          // A race: the same file was stored after the lookup above.
           throw new ConflictException(coded('GPX_DUPLICATE', { slug: await this.slugOfSource(sha256) }));
         }
         // drizzle's error message carries the query parameters, i.e. the whole GPX: log codes only.
@@ -154,7 +156,14 @@ export class TrailsService {
       }
       return (await this.findBySlug(slug, true))!;
     }
+    // The same file may have been stored during the tries: report it, not the slugs.
+    await this.refuseKnownSource(sha256);
     throw new ConflictException(coded('SLUG_TAKEN'));
+  }
+
+  private async refuseKnownSource(sha256: string): Promise<void> {
+    const slug = await this.slugOfSource(sha256);
+    if (slug !== undefined) throw new ConflictException(coded('GPX_DUPLICATE', { slug }));
   }
 
   /** Changes the metadata; the slug never changes. Undefined when no trail has the slug. */
