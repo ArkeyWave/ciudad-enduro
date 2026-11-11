@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { withNoPublishedTrails } from './db.ts';
+import { hidePublished, publishAgain } from './db.ts';
 import { DRAFT, PROFILED, PUBLISHED } from './fixtures.ts';
 import { signIn } from './session.ts';
 import { test } from './turnstile.ts';
@@ -59,8 +59,14 @@ test('the map toggle shows one pin per trail; a pin picks the mini-card, which o
 
   const mini = page.getByTestId('mini-card');
   const first = await mini.getAttribute('href');
-  await pins.nth(1).click({ force: true });
+  const selectedPin = page.locator('path.trail-pin-selected');
+  await expect(selectedPin).toHaveCount(1);
+  // The selected pin moves to the front (the end of the SVG), so follow the element, not an index.
+  const other = await page.locator('path.trail-pin:not(.trail-pin-selected)').first().elementHandle();
+  await other.click({ force: true });
   await expect(mini).not.toHaveAttribute('href', first as string);
+  await expect(selectedPin).toHaveCount(1);
+  expect(await other.evaluate((el) => el.classList.contains('trail-pin-selected'))).toBe(true);
   for (const button of await page.locator('.leaflet-bar a').all()) await expectTarget(button);
   expect((await axe(page)).violations).toEqual([]);
   await expectMinFontSize(page);
@@ -79,6 +85,11 @@ test('the map toggle shows one pin per trail; a pin picks the mini-card, which o
 
 test.describe('with no published trail', () => {
   test.describe.configure({ mode: 'serial', timeout: 60_000 });
+  let hidden: string[] = [];
+  test.afterEach(async () => {
+    await publishAgain(hidden);
+    hidden = [];
+  });
 
   test('the list and the map show the empty state; only a signed-in user gets "Registrar ruta"', async ({ page, browser }) => {
     const rider = page;
@@ -86,21 +97,20 @@ test.describe('with no published trail', () => {
     const anonymous = await (await browser.newContext({ baseURL: test.info().project.use.baseURL })).newPage();
     await stubTiles(anonymous.context());
     try {
-      await withNoPublishedTrails(async () => {
-        for (const path of ['/', '/mapa']) {
-          await anonymous.goto(path);
-          await expect(anonymous.getByTestId('empty-trails')).toHaveText('Aún no hay senderos publicados.');
-          await expect(anonymous.getByRole('link', { name: 'Registrar ruta' })).toHaveCount(0);
-          await expect(anonymous.getByTestId('explore-map')).toHaveCount(0);
+      hidden = await hidePublished();
+      for (const path of ['/', '/mapa']) {
+        await anonymous.goto(path);
+        await expect(anonymous.getByTestId('empty-trails')).toHaveText('Aún no hay senderos publicados.');
+        await expect(anonymous.getByRole('link', { name: 'Registrar ruta' })).toHaveCount(0);
+        await expect(anonymous.getByTestId('explore-map')).toHaveCount(0);
 
-          await rider.goto(path);
-          await expect(rider.getByTestId('empty-trails').getByRole('link', { name: 'Registrar ruta' })).toHaveAttribute(
-            'href',
-            '/rutas/nueva',
-          );
-          await expect(rider.getByTestId('explore-map')).toHaveCount(0);
-        }
-      });
+        await rider.goto(path);
+        await expect(rider.getByTestId('empty-trails').getByRole('link', { name: 'Registrar ruta' })).toHaveAttribute(
+          'href',
+          '/rutas/nueva',
+        );
+        await expect(rider.getByTestId('explore-map')).toHaveCount(0);
+      }
     } finally {
       await anonymous.context().close();
     }

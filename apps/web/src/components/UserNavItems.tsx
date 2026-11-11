@@ -12,12 +12,12 @@ export async function UserNavItems() {
       <NavLink href="/rutas/nueva" className="nav-fab" label="Registrar ruta">
         <Icon name="plus" size={26} strokeWidth={2.5} />
       </NavLink>
-      <NavLink href="/mis-rutas" className="nav-item">
+      <NavLink href="/mis-rutas" className="nav-item nav-mine">
         <Icon name="route" />
         <span>Mis rutas</span>
       </NavLink>
       {isAdmin(me) && (
-        <NavLink href="/admin/rutas" className="nav-item">
+        <NavLink href="/admin/rutas" className="nav-item nav-review">
           <Icon name="list" />
           <span>Revisión</span>
         </NavLink>

@@ -6,11 +6,11 @@ import { DifficultyPill, TrailStats } from './TrailStats';
 const W = 300;
 const H = 34;
 
-/** A trail without elevation numbers hides those stats and the mini profile. */
-export type CardTrail = TrailSummary;
-
-/** One trail as the prototype's card, laid out in a list; the whole card is one link. */
-export function TrailCard({ trail, chip, note }: { trail: CardTrail; chip?: string | null; note?: string }) {
+/**
+ * One trail as the prototype's card, laid out in a list; the whole card is one link. A trail without
+ * elevation numbers hides those stats and the mini profile.
+ */
+export function TrailCard({ trail, chip, note }: { trail: TrailSummary; chip?: string | null; note?: string }) {
   const profile = trail.elevationProfile;
   return (
     <a href={`/rutas/${trail.slug}`} className="card trail-card" data-testid="trail-card">
@@ -46,10 +46,13 @@ export function TrailCard({ trail, chip, note }: { trail: CardTrail; chip?: stri
 
 export function TrailListSkeleton() {
   return (
-    <div data-testid="trail-list-skeleton" aria-hidden="true" className="list">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="skeleton" style={{ height: 180 }} />
-      ))}
+    <div data-testid="trail-list-skeleton" aria-hidden="true">
+      <p className="muted skeleton-line" />
+      <div className="list">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="skeleton card-skeleton" />
+        ))}
+      </div>
     </div>
   );
 }

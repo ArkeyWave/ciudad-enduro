@@ -9,7 +9,7 @@ export const PATCH_TIMEOUT_MS = 10_000;
 
 export type TrailUpdate = components['schemas']['UpdateTrailDto'];
 
-/** `slug` is the existing trail when the same GPX is already uploaded (409 GPX_DUPLICATE). */
+/** `slug` is the existing trail of a 409 GPX_DUPLICATE, when the uploader may see it. */
 export type TrailFailure = { status: number; code?: string; slug?: string };
 export type TrailResult = { ok: true; trail: TrailDetail } | ({ ok: false } & TrailFailure);
 
@@ -45,14 +45,17 @@ const CODE_MESSAGES: Record<string, string> = {
   GPX_TOO_LARGE: 'El GPX tiene demasiados puntos.',
   GPX_MULTI_SEGMENT: 'El GPX tiene más de un tramo. Sube un solo recorrido continuo.',
   GPX_OUT_OF_AREA: 'El recorrido está fuera del Perú.',
-  GPX_DUPLICATE: 'Este GPX ya está subido.',
   SLUG_EMPTY: 'El nombre necesita letras o números.',
   SLUG_TAKEN: 'Ya hay varias rutas con este nombre. Usa otro nombre.',
   TOO_MANY_PENDING: 'Tienes 3 rutas en revisión. Espera la aprobación.',
+  TOO_MANY_UPLOADS: 'Demasiados intentos. Prueba en unos minutos.',
+  GPX_TOO_COMPLEX: 'El archivo GPX es demasiado complejo.',
 };
 
 /** The Spanish message for a failed upload or edit, by error code first, then by status. */
-export function trailErrorMessage({ status, code }: TrailFailure): string {
+export function trailErrorMessage({ status, code, slug }: TrailFailure): string {
+  // The API sends the slug only when the uploader may see that trail.
+  if (code === 'GPX_DUPLICATE') return slug ? 'Este GPX ya está subido.' : 'Esta ruta ya fue registrada.';
   if (code && Object.hasOwn(CODE_MESSAGES, code)) return CODE_MESSAGES[code] as string;
   if (status === 413) return 'El archivo pesa más de 10 MB.';
   if (status === 401) return 'Tu sesión venció. Ingresa de nuevo.';

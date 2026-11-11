@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Coordinates, Difficulty } from 'api-client';
 import { formatKm, formatM } from '../../lib/profile';
 import { EXPLORE_MAP_HEIGHT } from './map-size';
-import { baseMap, DIFFICULTY_COLOURS } from './tiles';
+import { baseMap, DIFFICULTY_COLOURS, LIME } from './tiles';
 import { DifficultyPill } from './TrailStats';
 
 /** Only what the map shows: no profile in the client payload. */
@@ -23,13 +23,18 @@ export interface MapTrail {
 export default function ExploreMap({ trails }: { trails: MapTrail[] }) {
   const container = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState(0);
+  const pins = useRef<L.CircleMarker[]>([]);
+  const mapRef = useRef<L.Map | null>(null);
 
   useEffect(() => {
     if (!container.current) return;
     const map = baseMap(container.current);
-    const points = trails.map((trail, index) => {
-      const point: L.LatLngTuple = [trail.start.lat, trail.start.lng];
-      L.circleMarker(point, {
+    mapRef.current = map;
+    const points = trails.map((trail): L.LatLngTuple => [trail.start.lat, trail.start.lng]);
+    if (points.length === 1) map.setView(points[0] as L.LatLngTuple, 14);
+    else map.fitBounds(L.latLngBounds(points), { padding: [32, 32], maxZoom: 15 });
+    pins.current = trails.map((trail, index) =>
+      L.circleMarker(points[index] as L.LatLngTuple, {
         className: 'trail-pin',
         radius: 10,
         color: '#0A0A0A',
@@ -38,15 +43,26 @@ export default function ExploreMap({ trails }: { trails: MapTrail[] }) {
         fillOpacity: 1,
       })
         .on('click', () => setSelected(index))
-        .addTo(map);
-      return point;
-    });
-    if (points.length === 1) map.setView(points[0] as L.LatLngTuple, 14);
-    else map.fitBounds(L.latLngBounds(points), { padding: [32, 32], maxZoom: 15 });
+        .addTo(map),
+    );
     return () => {
       map.remove();
     };
   }, [trails]);
+
+  // The selected pin: larger, with a lime ring. Leaflet may add the pins only when the map loads, so
+  // the style waits for that too.
+  useEffect(() => {
+    const apply = () =>
+      pins.current.forEach((pin, index) => {
+        const on = index === selected;
+        pin.setRadius(on ? 14 : 10);
+        pin.setStyle({ color: on ? LIME : '#0A0A0A', weight: on ? 3 : 2 });
+        pin.getElement()?.classList.toggle('trail-pin-selected', on);
+        if (on) pin.bringToFront();
+      });
+    mapRef.current?.whenReady(apply);
+  }, [selected, trails]);
 
   const trail = trails[selected] as MapTrail;
   return (

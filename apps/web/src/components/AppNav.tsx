@@ -10,7 +10,7 @@ export function AppNav({ user }: { user: ReactNode }) {
   const explore = pathname === '/' || pathname === '/mapa';
   return (
     <nav aria-label="Principal" className="bottom-nav">
-      <a href="/" className="nav-item" aria-current={explore ? 'page' : undefined}>
+      <a href="/" className="nav-item nav-explore" aria-current={explore ? 'page' : undefined}>
         <Icon name="compass" />
         <span>Explorar</span>
       </a>

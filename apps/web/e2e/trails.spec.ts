@@ -246,6 +246,8 @@ test.describe('admin and rider', () => {
     expect((await page.request.get('/rutas/ruta-rider-e2e')).status()).toBe(404);
 
     const nav = rider.getByRole('navigation', { name: 'Principal' });
+    await expectTarget(nav.getByRole('link', { name: 'Registrar ruta' }));
+    for (const link of await nav.getByRole('link').all()) await expectTarget(link);
     await nav.getByRole('link', { name: 'Mis rutas' }).click();
     await expect(rider).toHaveURL(`${ORIGIN}/mis-rutas`);
     await expect(nav.getByRole('link', { name: 'Mis rutas' })).toHaveAttribute('aria-current', 'page');
@@ -259,7 +261,10 @@ test.describe('admin and rider', () => {
     expect((await axe(rider)).violations).toEqual([]);
 
     await admin.goto('/');
-    await admin.getByRole('navigation', { name: 'Principal' }).getByRole('link', { name: 'Revisión' }).click();
+    const adminNav = admin.getByRole('navigation', { name: 'Principal' });
+    await expect(adminNav.getByRole('link')).toHaveCount(4);
+    for (const link of await adminNav.getByRole('link').all()) await expectTarget(link);
+    await adminNav.getByRole('link', { name: 'Revisión' }).click();
     await expect(admin).toHaveURL(`${ORIGIN}/admin/rutas`);
     const queued = admin.getByTestId('trail-card').filter({ hasText: 'Ruta Rider E2E' });
     await expect(queued).toContainText(`Registrada por ${riderEmail}`);

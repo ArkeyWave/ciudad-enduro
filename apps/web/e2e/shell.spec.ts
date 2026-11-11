@@ -49,6 +49,7 @@ test('at 1280 px the nav is a row under the top bar', async ({ page }) => {
   await page.goto('/');
   const box = (await nav(page).boundingBox())!;
   expect(box.y).toBeLessThan(200);
+  for (const link of await nav(page).getByRole('link').all()) await expectTarget(link);
 });
 
 test('Tab reaches the wordmark, the session, then the nav, with a lime focus ring', async ({ page }) => {

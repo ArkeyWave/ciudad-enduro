@@ -7,15 +7,18 @@ export function testDatabaseUrl(): string {
   return url.href;
 }
 
-/** Runs `body` with every published trail hidden, then publishes them again. */
-export async function withNoPublishedTrails(body: () => Promise<void>) {
+async function query<T extends pg.QueryResultRow>(sql: string, params: unknown[] = []): Promise<T[]> {
   const client = new pg.Client({ connectionString: testDatabaseUrl() });
   await client.connect();
-  const { rows } = await client.query<{ id: string }>(`UPDATE trails SET status = 'hidden' WHERE status = 'published' RETURNING id`);
   try {
-    await body();
+    return (await client.query<T>(sql, params)).rows;
   } finally {
-    await client.query(`UPDATE trails SET status = 'published' WHERE id = ANY($1::uuid[])`, [rows.map((row) => row.id)]);
     await client.end();
   }
 }
+
+/** Hides every published trail; returns their ids for `publishAgain`. */
+export const hidePublished = async () =>
+  (await query<{ id: string }>(`UPDATE trails SET status = 'hidden' WHERE status = 'published' RETURNING id`)).map((row) => row.id);
+
+export const publishAgain = (ids: string[]) => query(`UPDATE trails SET status = 'published' WHERE id = ANY($1::uuid[])`, [ids]);
