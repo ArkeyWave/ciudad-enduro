@@ -253,8 +253,13 @@ Bash handlers with `if: "Bash(git *)"` and `if: "Bash(gh *)"`, and one PowerShel
 `onFailure: "block"` refuses on a missing script, a crash, a timeout and output that starts with `{` and is not
 valid JSON (`{bad}`); output that does not parse as a JSON object (`{"hookSpecificOutput": {`) is read as
 plain text and does **not** block — the guard writes one `JSON.stringify` result, so it never emits that.
-Known limits (accident guard, not a boundary): in Bash the `if` filters do not reach `GIT`, `git.exe`,
-`/mingw64/bin/git` or `GH`; quoted flags and quoted `-c` values pass; `sudo/env/xargs/command git` pass; a
-GraphQL query read from a file passes. The server-side gates (`protect-main`, the `production` Environment
+Known limits after the final review (accident guard, not a boundary; guard sha256 `fd1e2924…`, 307
+tests, 94 mutants all red): (1) in Bash the `if` filters do not reach `GIT`, `git.exe`, `/mingw64/bin/git`,
+`GH` or `time git …` (they do reach `for … do` and `if … then` bodies); (2) commands after `sudo`, `env`,
+`command`, `xargs` are not read; (3) quoted flags and quoted `-c` values pass (`git push "-f"`); (4) a `|` or
+`;` inside `$( … )` in a `gh api` endpoint splits the word, so that endpoint passes; (5) a GraphQL query or a
+dispatch body read from a file or stdin passes; (6) truncated hook output that does not parse as a JSON
+object does not block; (7) every numeric workflow id is refused (no local id lookup). Scripts, other
+interpreters and direct API clients pass. The server-side gates (`protect-main`, the `production` Environment
 approval in the GitHub UI) stay the real gates. Process rule: a failure-mode test never changes the installed
 `guard.mjs`; it uses a copy and a temporary handler, and the installed file is replaced atomically.
