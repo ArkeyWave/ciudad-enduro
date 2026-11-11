@@ -52,6 +52,7 @@ const CODE_MESSAGES: Record<string, string> = {
 
 /** The Spanish message for a failed upload or edit, by error code first, then by status. */
 export function trailErrorMessage({ status, code }: TrailFailure): string {
+  if (status === 413) return 'El archivo pesa más de 10 MB.';
   if (code && Object.hasOwn(CODE_MESSAGES, code)) return CODE_MESSAGES[code] as string;
   if (status === 413) return 'El archivo pesa más de 10 MB.';
   if (status === 401) return 'Tu sesión venció. Ingresa de nuevo.';
