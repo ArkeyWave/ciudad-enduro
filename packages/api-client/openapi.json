@@ -79,6 +79,35 @@
         ],
         "type": "string"
       },
+      "ErrorBodyDto": {
+        "properties": {
+          "code": {
+            "example": "TOO_MANY_PENDING",
+            "type": "string"
+          },
+          "message": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "slug": {
+            "description": "GPX_DUPLICATE only, when the uploader may see that trail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
       "MeDto": {
         "properties": {
           "email": {
@@ -99,6 +128,182 @@
           "email",
           "name",
           "role"
+        ],
+        "type": "object"
+      },
+      "MyTrailDto": {
+        "properties": {
+          "city": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/City"
+              }
+            ]
+          },
+          "difficulty": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              }
+            ]
+          },
+          "distanceM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationGainM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationLossM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationProfile": {
+            "description": "[distance_m, ele_m] pairs, at most 300",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "start": {
+            "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailStatus"
+              }
+            ]
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "city",
+          "difficulty",
+          "type",
+          "start",
+          "distanceM",
+          "elevationGainM",
+          "elevationLossM",
+          "elevationProfile",
+          "status"
+        ],
+        "type": "object"
+      },
+      "QueueTrailDto": {
+        "properties": {
+          "authorEmail": {
+            "description": "Null when the author was deleted",
+            "nullable": true,
+            "type": "string"
+          },
+          "city": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/City"
+              }
+            ]
+          },
+          "difficulty": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              }
+            ]
+          },
+          "distanceM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationGainM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationLossM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationProfile": {
+            "description": "[distance_m, ele_m] pairs, at most 300",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "start": {
+            "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailStatus"
+              }
+            ]
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "city",
+          "difficulty",
+          "type",
+          "start",
+          "distanceM",
+          "elevationGainM",
+          "elevationLossM",
+          "elevationProfile",
+          "status",
+          "authorEmail"
         ],
         "type": "object"
       },
@@ -213,15 +418,15 @@
           "type",
           "start",
           "distanceM",
+          "elevationGainM",
+          "elevationLossM",
+          "elevationProfile",
           "status",
           "description",
           "end",
           "path",
-          "elevationGainM",
-          "elevationLossM",
           "elevationMinM",
-          "elevationMaxM",
-          "elevationProfile"
+          "elevationMaxM"
         ],
         "type": "object"
       },
@@ -253,6 +458,27 @@
             "nullable": true,
             "type": "number"
           },
+          "elevationGainM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationLossM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationProfile": {
+            "description": "[distance_m, ele_m] pairs, at most 300",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "nullable": true,
+            "type": "array"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -282,7 +508,10 @@
           "difficulty",
           "type",
           "start",
-          "distanceM"
+          "distanceM",
+          "elevationGainM",
+          "elevationLossM",
+          "elevationProfile"
         ],
         "type": "object"
       },
@@ -346,6 +575,45 @@
   },
   "openapi": "3.0.0",
   "paths": {
+    "/api/admin/trails": {
+      "get": {
+        "operationId": "TrailListsController_queue",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TrailStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/QueueTrailDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "description": "No valid session"
+          },
+          "403": {
+            "description": "Not an admin"
+          }
+        },
+        "tags": [
+          "trails"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "HealthController_check",
@@ -381,6 +649,33 @@
         },
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/api/me/trails": {
+      "get": {
+        "operationId": "TrailListsController_mine",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyTrailDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "description": "No valid session"
+          }
+        },
+        "tags": [
+          "trails"
         ]
       }
     },
@@ -439,6 +734,46 @@
               }
             },
             "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "GPX_* (GPX_TOO_COMPLEX: the file needs more than 96 MB or 5 s to parse) or SLUG_EMPTY, or a validation error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "GPX_DUPLICATE (slug only when visible to the uploader) or SLUG_TAKEN"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "TOO_MANY_UPLOADS: a non-admin made 10 attempts in 10 min; TOO_MANY_PENDING: a non-admin already has 3 drafts"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "PARSE_BUSY: two GPX parses already run; try again"
           }
         },
         "tags": [
@@ -471,7 +806,7 @@
             "description": ""
           },
           "404": {
-            "description": "No published trail has this slug (an admin also gets drafts and hidden trails)"
+            "description": "No published trail has this slug (an admin gets every trail, an author also their own drafts and hidden trails)"
           }
         },
         "tags": [
