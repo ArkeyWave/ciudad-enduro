@@ -245,3 +245,16 @@ same parsing as R3): `gh workflow run deploy-production…` (any spelling of the
 id) and any `gh api` call to `…/pending_deployments`. Tests: must-deny for each spelling, must-allow for
 `gh workflow run ci.yml` and `gh run list`. This is an accident guard, not a boundary; only the owner approves,
 in the GitHub UI.
+
+**R13 (L2 build record, 2026-11-11) — handlers, failure modes and known limits.** Installed handlers: two
+Bash handlers with `if: "Bash(git *)"` and `if: "Bash(gh *)"`, and one PowerShell handler with no `if`
+(R3 allowed dropping `if` for PowerShell; it was needed because `PowerShell(git *)` does not reach
+`& "C:\Program Files\Git\cmd\git.exe" …`). R12 is why `gh` handlers exist (R3's "no `gh`" is replaced).
+`onFailure: "block"` refuses on a missing script, a crash, a timeout and output that starts with `{` and is not
+valid JSON (`{bad}`); output that does not parse as a JSON object (`{"hookSpecificOutput": {`) is read as
+plain text and does **not** block — the guard writes one `JSON.stringify` result, so it never emits that.
+Known limits (accident guard, not a boundary): in Bash the `if` filters do not reach `GIT`, `git.exe`,
+`/mingw64/bin/git` or `GH`; quoted flags and quoted `-c` values pass; `sudo/env/xargs/command git` pass; a
+GraphQL query read from a file passes. The server-side gates (`protect-main`, the `production` Environment
+approval in the GitHub UI) stay the real gates. Process rule: a failure-mode test never changes the installed
+`guard.mjs`; it uses a copy and a temporary handler, and the installed file is replaced atomically.
