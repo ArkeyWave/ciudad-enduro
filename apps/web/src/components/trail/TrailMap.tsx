@@ -39,7 +39,6 @@ export default function TrailMap({ slug, path, start, end }: TrailMapProps) {
       map.setView(point(start), 14);
     }
     L.circleMarker(point(start), dot('trail-start')).addTo(map);
-    if (line && end) L.circleMarker(point(end), dot('trail-end')).addTo(map);
     return () => {
       map.remove();
     };
