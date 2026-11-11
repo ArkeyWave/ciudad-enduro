@@ -1,6 +1,6 @@
 # Progress
 
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 
 Read this file first. It tells you what works, what is in flight and what waits on a decision.
 Capabilities and their proofs are in [features.json](features.json). The backlog is in
@@ -25,18 +25,35 @@ Capabilities and their proofs are in [features.json](features.json). The backlog
 - P1a-2: Cloudflare Turnstile on the e-mail code send (#8). Staging live checks (A7) passed on PC and
   phone (IPv6), 0 residual rows.
 - `main` protected by the ruleset `protect-main` (PR + required checks, no force push) (A6).
+- P1a-1: CI-built images on GHCR with build attestations; staging deploys by digest through
+  `ce-oss-deploy` (#7, A5 switch done).
+- P1a-3 part 1: production apps prepared (not deployed), `ce-oss-deploy` v3 with the `production`
+  target, the `Deploy production` workflow with the owner as required reviewer (#21; v3 installed on
+  the box 2026-11-11).
+
+**Phase 1b-min — GPX trails on staging (2026-11-11).** Plan: [phase-1b-min-gpx-trails](plans/2026-11-11-phase-1b-min-gpx-trails.md).
+
+- Admin GPX import, draft/publish, distance, gain/loss and elevation profile (#19).
+- Trail page with the Leaflet map and the elevation profile; `/rutas/nueva` upload (#20).
+- The header fits a 390 px phone screen (#45).
+- Agent gates: named agents, review rubric, the L2 guard hook that blocks pushes to `main` and agent
+  production dispatch (plan [agents-gates-ux-standard](plans/2026-11-10-agents-gates-ux-standard.md)).
 
 ## This week
 
-- **P1a-1** CI-built images on GHCR with attestations, staging deploys by digest — PR #7, issue #9.
-  CI green, refusal proofs done. Next: review chain (opus @ high ∥ gpt-6.1-sol @ high → final
-  opus @ xhigh), then the A5 switch with a merge freeze.
+- **Production:** `enduro.vops.pe` runs the new app since 2026-11-11 (cutover with a rehearsed
+  rollback, daily on-box DB dump with a proven restore). Still open: the off-box R2 copy (A8, owner keys).
+- **Rider routes + owner approval** (riders upload GPX → "En revisión" → owner publishes one by one).
+- **UI redesign layer 1** (#13): the approved "Night Rider" prototype on the screens the API already
+  supports (Explorar list + map, Detalle, Importar GPX, Ingresar). Plan in progress, then the gate.
+- **Elevation calibration (D11)**: one real ride GPX with the device's distance and gain, before the
+  first real trails are imported (owner rides 2026-11-15).
 
 ## Next
 
-- **P1a-3** production apps and the cutover of `enduro.vops.pe` — issue #10. Starts after P1a-1.
-- **Phase 1b** (each needs a plan and a gate first): trails & geo (#11), media & GPX (#12),
-  UI redesign (#13).
+- Import and publish the owner's first real trails in production.
+- Redesign later layers: Retos, Ranking, Perfil, Comunidad, Negocios, Grabar GPS, React Native.
+- Phase 1b: media & GPX (#12), 3D trail view trial (Fable vs Opus).
 - Phase 0 follow-ups: early OAuth errors → `onAPIError.errorURL`; a "back" action on the code step;
   Cloudflare Email Obfuscation on the staging host.
 
