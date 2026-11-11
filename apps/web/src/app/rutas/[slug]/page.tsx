@@ -40,7 +40,7 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
           elevationMaxM={trail.elevationMaxM}
         />
       )}
-      {admin && <TrailAdmin trail={trail} />}
+      <TrailAdmin trail={trail} />
     </main>
   );
 }
