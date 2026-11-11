@@ -13,7 +13,7 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const cookie = (await headers()).get('cookie') ?? '';
   // The cookie is forwarded: an admin also gets drafts and hidden trails.
-  const [trail, me] = await Promise.all([getTrail(slug, cookie), getMe(cookie)]);
+  const [trail, me] = await Promise.all([getTrail(slug, ''), getMe(cookie)]);
   if (!trail) notFound();
   const admin = isAdmin(me);
 
