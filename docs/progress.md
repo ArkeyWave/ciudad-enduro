@@ -43,7 +43,10 @@ Capabilities and their proofs are in [features.json](features.json). The backlog
 
 - **Production:** `enduro.vops.pe` runs the new app since 2026-11-11 (cutover with a rehearsed
   rollback, daily on-box DB dump with a proven restore). Still open: the off-box R2 copy (A8, owner keys).
-- **Rider routes + owner approval** (riders upload GPX → "En revisión" → owner publishes one by one).
+- **Night Rider UI + rider routes live in production (2026-11-11, `5a770c1`):** Explorar list and map,
+  trail page, "Registrar ruta" for every signed-in rider (draft "En revisión", 3 pending max), "Mis rutas",
+  owner queue `/admin/rutas` with Publicar/Ocultar (#50, #52). GPX parsed in a memory-capped worker.
+  Next: the owner's admin role and the first published route.
 - **UI redesign layer 1** (#13): the approved "Night Rider" prototype on the screens the API already
   supports (Explorar list + map, Detalle, Importar GPX, Ingresar) — PR #51; rider pages wait for PR #50.
 - **Elevation calibration (D11)**: one real ride GPX with the device's distance and gain, before the
