@@ -31,7 +31,6 @@ export async function SessionHeader() {
           <span
             data-testid="session-email"
             title={me.email}
-            style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
           >
             {me.email}
           </span>
