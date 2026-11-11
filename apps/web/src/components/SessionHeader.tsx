@@ -1,5 +1,6 @@
 import { headers } from 'next/headers';
 import { getMe } from '../lib/api';
+import { isAdmin } from '../lib/roles';
 import { SignOutButton } from './sign-in/SignOutButton';
 import { LIME } from './sign-in/styles';
 
@@ -14,6 +15,11 @@ export async function SessionHeader() {
       </a>
       {me ? (
         <span style={{ display: 'flex', gap: 12 }}>
+          {isAdmin(me) && (
+            <a href="/rutas/nueva" style={{ color: LIME }}>
+              Nueva ruta
+            </a>
+          )}
           <span data-testid="session-email">{me.email}</span>
           <SignOutButton />
         </span>

@@ -15,7 +15,11 @@ export default async function HomePage() {
         <ul style={{ listStyle: 'none', padding: 0 }}>
           {trails.map((trail) => (
             <li key={trail.id} style={{ borderBottom: '1px solid #2A2A2A', padding: '12px 0' }}>
-              <h2 style={{ margin: 0, fontSize: 20 }}>{trail.name}</h2>
+              <h2 style={{ margin: 0, fontSize: 20 }}>
+                <a href={`/rutas/${trail.slug}`} style={{ color: 'inherit' }}>
+                  {trail.name}
+                </a>
+              </h2>
               <p style={{ margin: '4px 0 0' }}>
                 {trail.city} · {difficultyLabel(trail.difficulty)} · {trailTypeLabel(trail.type)}
               </p>

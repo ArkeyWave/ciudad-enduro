@@ -316,6 +316,11 @@ describe('PATCH /api/trails/:slug', () => {
     expect((await get('/trails/borrador')).status).toBe(404);
   });
 
+  // Postgres refuses U+0000 in a text parameter (22021): without the guard this was a 500.
+  it('answers 404 to an admin for a slug with U+0000', async () => {
+    expect((await patch('borr%00ador', as(admin), { status: 'published' })).status).toBe(404);
+  });
+
   it('publishes a draft: it appears in the public list', async () => {
     const res = await patch('borrador', as(admin), { status: 'published' });
     expect(res.status).toBe(200);

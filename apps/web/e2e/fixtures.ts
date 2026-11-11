@@ -10,4 +10,7 @@ export const PUBLISHED: SeedTrail[] = [
   { slug: 'e2e-quebrada-trujillo', name: 'Quebrada del Cóndor', status: 'published' },
 ];
 
+/** prepare-db.ts inserts this user with role admin; the trails spec signs in as it. */
+export const ADMIN_EMAIL = 'admin-e2e@example.com';
+
 export const DRAFT: SeedTrail = { slug: 'e2e-borrador', name: 'Sendero Borrador', status: 'draft' };

@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-10",
+  "updated": "2026-11-11",
   "features": [
     {
       "id": "trail-list",
@@ -108,13 +108,23 @@
       "id": "trail-maps",
       "description": "Trail pages with maps and geodata",
       "passes": false,
-      "proof": [{ "type": "test", "ref": "issue #11 (not planned yet)" }]
+      "proof": [
+        { "type": "test", "ref": "apps/web/e2e/trails.spec.ts: the admin uploads a GPX, sees the draft with its map and profile, publishes it, and the home lists it" },
+        { "type": "test", "ref": "apps/web/e2e/trails.spec.ts: a trail with no path shows its start point, no line and no profile" },
+        { "type": "test", "ref": "apps/web/e2e/trails.spec.ts: an unknown slug answers HTTP 404 with the Spanish page" },
+        { "type": "live", "ref": "docs/plans/2026-11-11-phase-1b-min-gpx-trails.md §2 live checks: staging import, the public page on PC and phone (pending)" }
+      ]
     },
     {
       "id": "media-gpx",
       "description": "Trail photos and GPX import/export",
       "passes": false,
-      "proof": [{ "type": "test", "ref": "issue #12 (not planned yet)" }]
+      "proof": [
+        { "type": "test", "ref": "apps/api/test/gpx.spec.ts" },
+        { "type": "test", "ref": "apps/api/test/trails-write.int.spec.ts: POST /api/trails: import" },
+        { "type": "test", "ref": "apps/web/e2e/trails.spec.ts: the same GPX again shows the duplicate message with a link to the existing trail" },
+        { "type": "live", "ref": "docs/plans/2026-11-11-phase-1b-min-gpx-trails.md §2 live checks: D11 calibration import on staging (pending); photos and GPX export: issue #12 (not planned yet)" }
+      ]
     }
   ]
 }
