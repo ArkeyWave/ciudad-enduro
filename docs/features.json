@@ -135,6 +135,15 @@
       "description": "Trail photos and GPX export",
       "passes": false,
       "proof": [{ "type": "test", "ref": "issue #12 (not planned yet)" }]
+    },
+    {
+      "id": "ui-redesign-l1",
+      "description": "Night Rider look on the web pages: shell, Explorar list and map, detail, Importar GPX, Ingresar (plan 2026-11-11-ui-redesign-layer-1)",
+      "passes": false,
+      "proof": [
+        { "type": "test", "ref": "apps/web/e2e/shell.spec.ts, apps/web/e2e/explore.spec.ts, apps/web/e2e/trails.spec.ts (detail at 390 px), apps/web/src/lib/profile.test.ts" },
+        { "type": "test", "ref": "apps/web/e2e/screens.spec.ts (CI artifact e2e-test-results); owner sign-off and the staging phone check pending" }
+      ]
     }
   ]
 }

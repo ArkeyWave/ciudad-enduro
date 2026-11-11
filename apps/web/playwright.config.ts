@@ -1,10 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 import { CODES_FILE } from './e2e/codes.ts';
+import { testDatabaseUrl } from './e2e/db.ts';
 import { API_PORT, HUNG_API_PORT, HUNG_WEB_PORT, ORIGIN_PORT, WEB_PORT } from './e2e/ports.ts';
 
-// The API runs on ciudad_enduro_test_<TEST_DB_SUFFIX>, the database e2e/prepare-db.ts recreates.
-const databaseUrl = new URL(process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5434/ciudad_enduro');
-databaseUrl.pathname = `/ciudad_enduro_test_${process.env.TEST_DB_SUFFIX ?? 'main'}`;
 const origin = `http://127.0.0.1:${ORIGIN_PORT}`;
 // Read at runtime by /ingresar; e2e/turnstile.ts (SITE_KEY) checks the widget got this value.
 const TURNSTILE_SITE_KEY = 'e2e-site-key';
@@ -27,7 +25,7 @@ export default defineConfig({
       env: {
         NODE_ENV: 'test',
         PORT: String(API_PORT),
-        DATABASE_URL: databaseUrl.href,
+        DATABASE_URL: testDatabaseUrl(),
         E2E_CODES_FILE: CODES_FILE,
         WEB_ORIGIN: origin,
         BETTER_AUTH_SECRET: 'test-better-auth-secret-0123456789abcdef',

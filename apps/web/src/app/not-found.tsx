@@ -1,8 +1,10 @@
 export default function NotFound() {
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: 16 }}>
-      <h1 style={{ color: '#CCFF00' }}>No encontramos esta página</h1>
-      <a href="/" style={{ color: '#CCFF00' }}>
+    <main className="page">
+      <div className="head">
+        <h1 className="h-display">No encontramos esta página</h1>
+      </div>
+      <a href="/" className="cta">
         Ir al inicio
       </a>
     </main>

@@ -4,8 +4,7 @@ import type { TrailDetail } from 'api-client';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition, type SubmitEvent } from 'react';
 import { trailErrorMessage, updateTrail, type TrailUpdate } from '../../lib/trails-client';
-import { primaryButton, secondaryButton } from '../sign-in/styles';
-import { column, TrailFields } from './TrailFields';
+import { TrailFields } from './TrailFields';
 
 type Action = 'status' | 'edit';
 
@@ -49,26 +48,26 @@ export function TrailAdmin({ trail }: { trail: TrailDetail }) {
   };
 
   return (
-    <section aria-labelledby="admin" style={{ ...column, borderTop: '1px solid #2A2A2A', marginTop: 24, paddingTop: 16 }}>
-      <h2 id="admin" style={{ fontSize: 20, margin: 0 }}>
+    <section aria-labelledby="admin" className="admin">
+      <h2 id="admin" className="eyebrow">
         Administrar
       </h2>
       <button
         type="button"
         disabled={busy}
         onClick={() => void save('status', { status: published ? 'hidden' : 'published' })}
-        style={published ? secondaryButton : primaryButton}
+        className={published ? 'cta ghost' : 'cta'}
       >
         {published ? (pending('status') ? 'Ocultando…' : 'Ocultar') : pending('status') ? 'Publicando…' : 'Publicar'}
       </button>
-      <form onSubmit={submit} style={column}>
+      <form onSubmit={submit} className="form">
         <TrailFields values={trail} />
-        <button type="submit" disabled={busy} style={secondaryButton}>
+        <button type="submit" disabled={busy} className="cta ghost">
           {pending('edit') ? 'Guardando…' : 'Guardar'}
         </button>
       </form>
       {message && (
-        <p role="alert" style={{ margin: 0 }}>
+        <p role="alert" className="alert">
           {message}
         </p>
       )}

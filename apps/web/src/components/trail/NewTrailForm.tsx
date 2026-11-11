@@ -3,8 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, type SubmitEvent } from 'react';
 import { trailErrorMessage, uploadTrail, type TrailFailure } from '../../lib/trails-client';
-import { input, LIME, primaryButton } from '../sign-in/styles';
-import { column, TrailFields } from './TrailFields';
+import { TrailFields } from './TrailFields';
 
 export function NewTrailForm() {
   const router = useRouter();
@@ -24,20 +23,20 @@ export function NewTrailForm() {
   };
 
   return (
-    <form onSubmit={submit} style={column}>
-      <label style={column}>
+    <form onSubmit={submit} className="form">
+      <label className="dropzone">
         Archivo GPX
-        <input name="gpx" type="file" required accept=".gpx,application/gpx+xml" style={input} />
+        <input name="gpx" type="file" required accept=".gpx,application/gpx+xml" />
       </label>
       <TrailFields />
-      <button type="submit" disabled={busy} style={primaryButton}>
+      <button type="submit" disabled={busy} className="cta">
         {busy ? 'Subiendo…' : 'Subir ruta'}
       </button>
       {failure && (
-        <p role="alert" style={{ margin: 0 }}>
+        <p role="alert" className="alert">
           {trailErrorMessage(failure)}{' '}
           {failure.slug && (
-            <a href={`/rutas/${encodeURIComponent(failure.slug)}`} style={{ color: LIME }}>
+            <a href={`/rutas/${encodeURIComponent(failure.slug)}`}>
               Ver la ruta
             </a>
           )}

@@ -4,12 +4,8 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useEffect, useRef } from 'react';
 import type { Coordinates } from 'api-client';
-import { LIME } from '../sign-in/styles';
 import { MAP_HEIGHT } from './map-size';
-
-// The OSM tile policy: this exact URL and a visible, linked attribution.
-const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+import { baseMap, LIME } from './tiles';
 
 export interface TrailMapProps {
   /** The map is built once per trail: a `router.refresh()` gives new prop arrays, not a new trail. */
@@ -28,9 +24,7 @@ export default function TrailMap({ slug, path, start, end }: TrailMapProps) {
 
   useEffect(() => {
     if (!container.current) return;
-    const map = L.map(container.current, { scrollWheelZoom: false, zoomControl: false });
-    L.control.zoom({ zoomInTitle: 'Acercar', zoomOutTitle: 'Alejar' }).addTo(map);
-    L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIBUTION }).addTo(map);
+    const map = baseMap(container.current);
     const line = path && path.length >= 2 ? path.map(([lng = 0, lat = 0]): L.LatLngTuple => [lat, lng]) : null;
     if (line) {
       const layer = L.polyline(line, { className: 'trail-path', color: LIME, weight: 4 }).addTo(map);
@@ -51,7 +45,8 @@ export default function TrailMap({ slug, path, start, end }: TrailMapProps) {
       role="region"
       aria-label="Mapa del sendero"
       data-testid="trail-map"
-      style={{ height: MAP_HEIGHT, borderRadius: 8 }}
+      className="map-box"
+      style={{ height: MAP_HEIGHT }}
     />
   );
 }

@@ -118,6 +118,14 @@ jobs:
       - run: pnpm turbo run build --filter=web
       - run: pnpm --filter web exec playwright install --with-deps chromium
       - run: pnpm --filter web test:e2e
+      # The screens.spec screenshots (plan D14) and the traces of any failure, on every run.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: e2e-test-results
+          path: apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   # Builds both production images once (labels set at build time), refuses an image that ships
   # test code or a file from the build context's .env (scripts/verify-image.sh), smoke-runs them

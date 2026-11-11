@@ -28,6 +28,7 @@ Capabilities and their proofs are in [features.json](features.json). The backlog
 
 ## This week
 
+- **UI layer 1** (Night Rider on the existing screens) — branch `phase1b/ui-layer-1`, issue #13; rider pages wait for PR #50.
 - **P1a-1** CI-built images on GHCR with attestations, staging deploys by digest — PR #7, issue #9.
   CI green, refusal proofs done. Next: review chain (opus @ high ∥ gpt-6.1-sol @ high → final
   opus @ xhigh), then the A5 switch with a merge freeze.

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased] - UI redesign layer 1 (Night Rider)
+
+### Added
+- Night Rider look on every web page (plan `docs/plans/2026-11-11-ui-redesign-layer-1.md`, issue #13): one `apps/web/src/app/globals.css` with the prototype tokens and class names, Bebas Neue and Inter self-hosted by `next/font/google`, a lime `:focus-visible` ring and the reduced-motion rule. Recorded deviations: 44 px targets (nav, toggle, "Volver", Leaflet zoom), no text under 11 px, one 720 px column on desktop, dark-filtered OSM tiles (no Esri).
+- App shell: a top bar (Bebas wordmark, session or "Ingresar") whose session slot streams in a `<Suspense>`, and a bottom nav (a row under the top bar from 720 px) with "Explorar" and, for every signed-in user, the FAB "Registrar ruta". "Nueva ruta" leaves the header.
+- Explorar: `/` lists each published trail as one card link (difficulty pill, city and type, name, Distancia / Desnivel / Pendiente, a 40-point mini profile) inside a `<Suspense>` with a card skeleton; `/mapa` shows one difficulty-coloured pin per trail start and a mini-card link (a pin selects it). A Lista/Mapa toggle of two links, an empty state with "Registrar ruta" for signed-in users. The card hides the elevation stats until the API sends them (PR #50). `lib/profile.ts`: `sampleProfile`, `slopePct` (gain / distance, prototype formula).
+- Detail: the map is the hero (300 px, full-bleed, zoom at the top right, the attribution on a solid background and never covered), a 44 px "Volver", a meta row (pill, type, city, admin status chip), the stats, the profile card and "Cómo llegar al inicio" (a Google Maps directions link to the start). Importar GPX (file input inside a `.dropzone` label), Ingresar, the error and not-found pages restyled; `sign-in/styles.ts` deleted.
+- `/rutas/nueva` is open to every signed-in user (anonymous: 404), ready for the rider upload of PR #50.
+- E2E: `shell.spec.ts` (nav, `aria-current`, 44 px targets, the nav above a map, Tab order with the lime ring, a loaded Bebas face, axe and an 11 px scan), `explore.spec.ts` (cards, pins, mini-card, toggle, empty states for anonymous and rider), detail checks in `trails.spec.ts`, the streamed skeleton before the error page, `screens.spec.ts` (390 and 1280 px screenshots) and shared helpers in `e2e/ui.ts` and `e2e/db.ts`. The seed gives `PUBLISHED[1]` a profile, numbers and a Trujillo start. CI uploads `apps/web/test-results/` (artifact `e2e-test-results`) on every e2e run.
+
 ## [Unreleased] - Phase 1b-min
 
 ### Fixed

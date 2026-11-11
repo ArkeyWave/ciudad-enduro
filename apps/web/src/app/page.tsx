@@ -1,32 +1,38 @@
+import { Suspense } from 'react';
+import { EmptyTrails } from '../components/explore/EmptyTrails';
+import { ExploreHead, trailCount } from '../components/explore/ExploreHead';
+import { TrailCard, TrailListSkeleton } from '../components/trail/TrailCard';
 import { listTrails } from '../lib/api';
-import { difficultyLabel, trailTypeLabel } from '../lib/labels';
 
 // Render on every request: the list changes at any time, and the build must not call the API.
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage() {
+async function TrailList() {
   const trails = await listTrails();
+  if (trails.length === 0) return <EmptyTrails />;
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: 16 }}>
-      <h1 style={{ color: '#CCFF00' }}>Senderos</h1>
-      {trails.length === 0 ? (
-        <p>Aún no hay senderos publicados.</p>
-      ) : (
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          {trails.map((trail) => (
-            <li key={trail.id} style={{ borderBottom: '1px solid #2A2A2A', padding: '12px 0' }}>
-              <h2 style={{ margin: 0, fontSize: 20 }}>
-                <a href={`/rutas/${trail.slug}`} style={{ color: 'inherit' }}>
-                  {trail.name}
-                </a>
-              </h2>
-              <p style={{ margin: '4px 0 0' }}>
-                {trail.city} · {difficultyLabel(trail.difficulty)} · {trailTypeLabel(trail.type)}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
+    <>
+      <p className="muted">{trailCount(trails.length)}</p>
+      <ul className="list">
+        {trails.map((trail) => (
+          <li key={trail.id}>
+            <TrailCard trail={trail} />
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+// The Suspense lives here, not in app/loading.tsx: a route-level loading file would also stream the
+// pages that must answer a real 404 (UX standard R5).
+export default function HomePage() {
+  return (
+    <main className="page">
+      <ExploreHead view="list" />
+      <Suspense fallback={<TrailListSkeleton />}>
+        <TrailList />
+      </Suspense>
     </main>
   );
 }

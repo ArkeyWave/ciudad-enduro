@@ -1,10 +1,10 @@
 import { fileURLToPath } from 'node:url';
-import AxeBuilder from '@axe-core/playwright';
-import { expect, type BrowserContext, type Page } from '@playwright/test';
-import { ADMIN_EMAIL, PUBLISHED } from './fixtures.ts';
+import { expect, type Page } from '@playwright/test';
+import { ADMIN_EMAIL, PROFILED, PUBLISHED } from './fixtures.ts';
 import { ORIGIN_PORT } from './ports.ts';
 import { signIn } from './session.ts';
 import { stubTurnstile, test } from './turnstile.ts';
+import { axe, expectMinFontSize, expectTarget, stubTiles, tiles } from './ui.ts';
 
 const ORIGIN = `http://127.0.0.1:${ORIGIN_PORT}`;
 // Six points, gain 12 m, loss 12 m, min 100 m, max 112 m (the API's own fixture).
@@ -13,23 +13,20 @@ const UPLOADED = { name: 'Ruta E2E Subida', slug: 'ruta-e2e-subida' };
 // Seeded with a start point only: no path, no profile.
 const NO_PATH = PUBLISHED[0] as (typeof PUBLISHED)[number];
 const NOT_FOUND = 'No encontramos esta página';
-const BLANK_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
-  'base64',
-);
 
-// The suite never calls OpenStreetMap; the count proves the map asks for the policy URL.
-let tileRequests = 0;
-const stubTiles = (context: BrowserContext) =>
-  context.route('https://tile.openstreetmap.org/**', (route) => {
-    tileRequests += 1;
-    return route.fulfill({ contentType: 'image/png', body: BLANK_PNG });
-  });
-
+const PROFILED_TRAIL = PUBLISHED[1] as (typeof PUBLISHED)[number];
+const meta = (page: Page) => page.getByTestId('trail-meta');
+/** The meta row of the detail: difficulty pill, type, city and (admin only) the status chip. */
+async function expectMeta(page: Page, status: string) {
+  await expect(meta(page).locator('.diff-pill')).toHaveText('Difícil');
+  await expect(meta(page).locator('.type-label')).toHaveText('Cross-country');
+  await expect(meta(page).locator('.eyebrow')).toHaveText('Trujillo');
+  await expect(meta(page).getByTestId('trail-status')).toHaveText(status);
+}
+const stat = (page: Page, label: string) => page.locator(`[data-stat="${label}"] .val`);
 const fact = (page: Page, label: string) => page.locator(`dt:text-is("${label}") + dd`);
 // By name, not by label: the label is the axe scans' job (a missing label must fail axe, not this).
 const gpxInput = (page: Page) => page.locator('input[name="gpx"]');
-const axe = (page: Page) => new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
 
 test.beforeEach(async ({ context }) => {
   await stubTiles(context);
@@ -47,6 +44,48 @@ test('a trail with no path shows its start point, no line and no profile', async
   await expect(page.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(0);
   await expect(page.getByTestId('elevation-profile')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Perfil de elevación' })).toHaveCount(0);
+});
+
+test.describe('the detail at 390 px', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('the map is the hero, with a 44 px "Volver" and zoom, a clear attribution and the stats', async ({ page }) => {
+    await page.goto(`/rutas/${PROFILED_TRAIL.slug}`);
+    const map = page.getByTestId('trail-map');
+    await expect(map.locator('path.trail-start')).toHaveCount(1);
+    const header = (await page.locator('header.topbar').boundingBox())!;
+    const box = (await map.boundingBox())!;
+    expect(box.y).toBeLessThan(header.y + header.height + 10);
+    await expectTarget(page.getByRole('link', { name: 'Volver' }));
+    for (const button of await page.locator('.leaflet-bar a').all()) await expectTarget(button);
+
+    const credit = page.getByRole('link', { name: 'OpenStreetMap' });
+    await expect(credit).toBeVisible();
+    const c = (await credit.boundingBox())!;
+    const hit = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x as number, y as number)?.closest('a')?.textContent ?? null,
+      [c.x + c.width / 2, c.y + c.height / 2],
+    );
+    expect(hit).toBe('OpenStreetMap');
+
+    // The gain, not the loss: 380 / 4200 = 9 %, 410 / 4200 would be 10 %.
+    await expect(stat(page, 'Distancia')).toHaveText('4.2 km');
+    await expect(stat(page, 'Desnivel')).toHaveText('380 m');
+    await expect(stat(page, 'Pendiente')).toHaveText('9 %');
+    await expect(meta(page).getByTestId('trail-status')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Cómo llegar al inicio' })).toHaveAttribute(
+      'href',
+      new RegExp(`destination=${PROFILED.start.lat},${PROFILED.start.lng}&`),
+    );
+    expect((await axe(page)).violations).toEqual([]);
+    await expectMinFontSize(page);
+  });
+
+  test('a trail with no numbers hides the stats', async ({ page }) => {
+    await page.goto(`/rutas/${NO_PATH.slug}`);
+    await expect(page.getByRole('heading', { level: 1, name: NO_PATH.name })).toBeVisible();
+    await expect(page.locator('[data-stat]')).toHaveCount(0);
+  });
 });
 
 // One sign-in per address and run (the API allows one code per address per 60 s), so these tests
@@ -78,9 +117,9 @@ test.describe('admin and rider', () => {
   test('the admin uploads a GPX, sees the draft with its map and profile, publishes it, and the home lists it', async ({
     page,
   }) => {
-    tileRequests = 0;
+    tiles.requests = 0;
     await admin.goto('/');
-    await admin.getByRole('link', { name: 'Nueva ruta' }).click();
+    await admin.getByRole('link', { name: 'Registrar ruta' }).click();
     await expect(admin).toHaveURL(`${ORIGIN}/rutas/nueva`);
     await gpxInput(admin).setInputFiles(GPX);
     await admin.getByLabel('Nombre').fill(UPLOADED.name);
@@ -92,7 +131,7 @@ test.describe('admin and rider', () => {
     // The draft, which only an admin's forwarded cookie can load.
     await expect(admin).toHaveURL(`${ORIGIN}/rutas/${UPLOADED.slug}`);
     await expect(admin.getByRole('heading', { level: 1, name: UPLOADED.name })).toBeVisible();
-    await expect(admin.getByText('Trujillo · Difícil · Cross-country · Borrador')).toBeVisible();
+    await expectMeta(admin, 'Borrador');
     await expect(admin.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(1);
     await expect(admin.getByTestId('trail-map').locator('path.trail-start')).toHaveCount(1);
     await expect(admin.getByTestId('trail-map').locator('path.trail-end')).toHaveCount(1);
@@ -101,7 +140,7 @@ test.describe('admin and rider', () => {
       'href',
       'https://www.openstreetmap.org/copyright',
     );
-    await expect.poll(() => tileRequests).toBeGreaterThan(0);
+    await expect.poll(() => tiles.requests).toBeGreaterThan(0);
     await expect(admin.getByTestId('elevation-profile')).toBeVisible();
     await expect(fact(admin, 'Distancia')).toHaveText('0.6 km'); // 556 m
     await expect(fact(admin, 'Desnivel positivo')).toHaveText('12 m');
@@ -113,7 +152,7 @@ test.describe('admin and rider', () => {
     // The refresh after a save keeps the map: the tagged line is still the drawn one.
     await admin.locator('path.trail-path').evaluate((line) => line.setAttribute('data-e2e', 'before-refresh'));
     await admin.getByRole('button', { name: 'Publicar' }).click();
-    await expect(admin.getByText('Trujillo · Difícil · Cross-country · Publicada')).toBeVisible();
+    await expectMeta(admin, 'Publicada');
     await expect(admin.locator('path.trail-path[data-e2e="before-refresh"]')).toHaveCount(1);
     await expect(admin.getByRole('button', { name: 'Ocultar' })).toBeVisible();
 
@@ -156,22 +195,38 @@ test.describe('admin and rider', () => {
     expect((await axe(admin)).violations).toEqual([]);
   });
 
-  test('a rider gets HTTP 404 on /rutas/nueva and sees no admin controls', async ({ page }) => {
-    await expect(rider.getByTestId('session-email')).toBeVisible();
-    const response = await rider.goto('/rutas/nueva');
-    expect(response?.status()).toBe(404);
-    await expect(rider.getByRole('heading', { name: NOT_FOUND })).toBeVisible();
-    await expect(rider.getByRole('link', { name: 'Nueva ruta' })).toHaveCount(0);
+  test('a rider opens /rutas/nueva from the FAB and sees no admin controls; anonymous gets 404', async ({ page }) => {
+    await rider.goto('/');
+    await rider.getByRole('link', { name: 'Registrar ruta' }).click();
+    await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
+    await expect(rider.getByRole('heading', { level: 1, name: 'Importar GPX' })).toBeVisible();
+    expect((await rider.request.get('/rutas/nueva')).status()).toBe(200);
     expect((await page.goto('/rutas/nueva'))?.status()).toBe(404);
+    await expect(page.getByRole('heading', { name: NOT_FOUND })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Registrar ruta' })).toHaveCount(0);
 
     await rider.goto(`/rutas/${NO_PATH.slug}`);
     await expect(rider.getByRole('heading', { level: 1, name: NO_PATH.name })).toBeVisible();
     for (const name of ['Publicar', 'Ocultar', 'Guardar']) {
       await expect(rider.getByRole('button', { name })).toHaveCount(0);
     }
+    await expect(rider.getByTestId('trail-status')).toHaveCount(0);
+  });
+
+  test('the upload file input stays keyboard-focusable inside the dropzone', async () => {
+    await admin.goto('/rutas/nueva');
+    await expect(admin.getByLabel('Archivo GPX')).toBeVisible();
+    await admin.getByRole('heading', { level: 1, name: 'Importar GPX' }).click();
+    await admin.keyboard.press('Tab');
+    await expect(gpxInput(admin)).toBeFocused();
+    await expectMinFontSize(admin);
   });
 
   test('the upload form and the trail detail have no WCAG A/AA violations', async () => {
+    await rider.goto(`/rutas/${UPLOADED.slug}`);
+    await expect(rider.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(1);
+    expect((await axe(rider)).violations).toEqual([]);
+
     await admin.goto('/rutas/nueva');
     await expect(admin.getByRole('button', { name: 'Subir ruta' })).toBeVisible();
     expect((await axe(admin)).violations).toEqual([]);

@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { signOut } from '../../lib/auth-client';
 import { MESSAGES } from '../../lib/auth-errors';
-import { linkButton } from './styles';
 
 export function SignOutButton() {
   const [failed, setFailed] = useState(false);
@@ -16,7 +15,7 @@ export function SignOutButton() {
 
   return (
     <>
-      <button type="button" onClick={() => void onClick()} style={{ ...linkButton, whiteSpace: 'nowrap', flexShrink: 0 }}>
+      <button type="button" onClick={() => void onClick()} className="link-button">
         Salir
       </button>
       {failed && <span role="alert">{MESSAGES.generic}</span>}

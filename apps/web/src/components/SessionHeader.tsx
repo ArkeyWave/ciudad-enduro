@@ -1,47 +1,33 @@
-import { headers } from 'next/headers';
-import { getMe } from '../lib/api';
-import { isAdmin } from '../lib/roles';
+import { Suspense } from 'react';
+import { currentUser } from '../lib/session';
 import { SignOutButton } from './sign-in/SignOutButton';
-import { LIME } from './sign-in/styles';
 
-export async function SessionHeader() {
-  const me = await getMe((await headers()).get('cookie') ?? '');
+async function Session() {
+  const me = await currentUser();
+  return me ? (
+    <span className="session">
+      <span data-testid="session-email" className="session-email" title={me.email}>
+        {me.email}
+      </span>
+      <SignOutButton />
+    </span>
+  ) : (
+    <a href="/ingresar" className="session">
+      Ingresar
+    </a>
+  );
+}
+
+/** The top bar. The session slot streams in, so a slow /api/me never holds the page. */
+export function SessionHeader() {
   return (
-    <header
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: 12,
-        padding: 16,
-        borderBottom: '1px solid #2A2A2A',
-      }}
-    >
-      <a href="/" style={{ color: LIME, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', flexShrink: 0 }}>
+    <header className="topbar">
+      <a href="/" className="wordmark">
         Ciudad Enduro
       </a>
-      {me ? (
-        // min-width 0 lets the e-mail shrink, so a long address never pushes "Salir" off a phone screen.
-        <span style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-          {isAdmin(me) && (
-            <a href="/rutas/nueva" style={{ color: LIME, whiteSpace: 'nowrap', flexShrink: 0 }}>
-              Nueva ruta
-            </a>
-          )}
-          <span
-            data-testid="session-email"
-            title={me.email}
-            style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-          >
-            {me.email}
-          </span>
-          <SignOutButton />
-        </span>
-      ) : (
-        <a href="/ingresar" style={{ color: LIME }}>
-          Ingresar
-        </a>
-      )}
+      <Suspense fallback={<span className="session" aria-hidden="true" />}>
+        <Session />
+      </Suspense>
     </header>
   );
 }

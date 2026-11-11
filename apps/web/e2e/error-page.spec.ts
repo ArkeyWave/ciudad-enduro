@@ -19,6 +19,13 @@ test('a hung API gives the Spanish error page within 8 s, with no internal detai
   expect(html).not.toMatch(/\bat \S+ \(/); // a stack frame
 });
 
+test('the home streams its card skeleton first, then the error page', async ({ page }) => {
+  await page.goto(`${HUNG_WEB}/`, { waitUntil: 'commit' });
+  await expect(page.getByTestId('trail-list-skeleton')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No pudimos cargar esta página' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('trail-list-skeleton')).toHaveCount(0);
+});
+
 test('with a session cookie and a hung /api/me, /ingresar still renders, signed out', async ({ page, context }) => {
   await context.addCookies([{ name: 'better-auth.session_token', value: 'stale', url: HUNG_WEB }]);
   await page.goto(`${HUNG_WEB}/ingresar`, { timeout: 15_000 });
