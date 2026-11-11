@@ -3,8 +3,9 @@ import { PUBLISHED } from './fixtures.ts';
 import { signIn } from './session.ts';
 import { test } from './turnstile.ts';
 
-// Found live at 390 px: a long address pushed "Salir" off-screen and widened the page.
-const LONG_EMAIL = 'una-direccion-muy-larga-para-probar@example.com';
+// Found live at 390 px: a long address pushed "Salir" off-screen and widened the page. No hyphen:
+// the browser wraps a word at a hyphen, and a real address often has none.
+const LONG_EMAIL = 'unadireccionmuylargaparaprobar@example.com';
 const BLANK_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
   'base64',
