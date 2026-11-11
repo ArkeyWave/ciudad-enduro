@@ -6,7 +6,7 @@ import { useState, useTransition, type SubmitEvent } from 'react';
 import { trailErrorMessage, updateTrail, type TrailUpdate } from '../../lib/trails-client';
 import { TrailFields } from './TrailFields';
 
-type Action = 'status' | 'edit';
+type Action = 'publish' | 'hide' | 'edit';
 
 /** Admin only: publish or hide the trail, and edit its metadata. No optimistic UI. */
 export function TrailAdmin({ trail }: { trail: TrailDetail }) {
@@ -29,7 +29,9 @@ export function TrailAdmin({ trail }: { trail: TrailDetail }) {
     startRefresh(() => router.refresh());
   }
 
-  const published = trail.status === 'published';
+  // A draft can be published or refused (hidden); a published trail hidden; a hidden one published.
+  const canPublish = trail.status !== 'published';
+  const canHide = trail.status !== 'hidden';
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -52,14 +54,16 @@ export function TrailAdmin({ trail }: { trail: TrailDetail }) {
       <h2 id="admin" className="eyebrow">
         Administrar
       </h2>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => void save('status', { status: published ? 'hidden' : 'published' })}
-        className={published ? 'cta ghost' : 'cta'}
-      >
-        {published ? (pending('status') ? 'Ocultando…' : 'Ocultar') : pending('status') ? 'Publicando…' : 'Publicar'}
-      </button>
+      {canPublish && (
+        <button type="button" disabled={busy} onClick={() => void save('publish', { status: 'published' })} className="cta">
+          {pending('publish') ? 'Publicando…' : 'Publicar'}
+        </button>
+      )}
+      {canHide && (
+        <button type="button" disabled={busy} onClick={() => void save('hide', { status: 'hidden' })} className="cta ghost">
+          {pending('hide') ? 'Ocultando…' : 'Ocultar'}
+        </button>
+      )}
       <form onSubmit={submit} className="form">
         <TrailFields values={trail} />
         <button type="submit" disabled={busy} className="cta ghost">

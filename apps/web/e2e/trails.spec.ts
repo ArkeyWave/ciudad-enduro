@@ -264,6 +264,17 @@ test.describe('admin and rider', () => {
     const adminNav = admin.getByRole('navigation', { name: 'Principal' });
     await expect(adminNav.getByRole('link')).toHaveCount(4);
     for (const link of await adminNav.getByRole('link').all()) await expectTarget(link);
+    await admin.setViewportSize({ width: 390, height: 844 });
+    await adminNav.getByRole('link', { name: 'Explorar' }).focus();
+    const tabbed: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      await admin.keyboard.press('Tab');
+      tabbed.push(await admin.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent?.trim() ?? ''));
+    }
+    expect(tabbed).toEqual(['Mis rutas', 'Registrar ruta', 'Revisión']);
+    const xs = await adminNav.getByRole('link').evaluateAll((links) => links.map((link) => link.getBoundingClientRect().x));
+    expect(xs).toEqual([...xs].sort((a, b) => a - b));
+    await admin.setViewportSize({ width: 1280, height: 720 });
     await adminNav.getByRole('link', { name: 'Revisión' }).click();
     await expect(admin).toHaveURL(`${ORIGIN}/admin/rutas`);
     const queued = admin.getByTestId('trail-card').filter({ hasText: 'Ruta Rider E2E' });
@@ -290,6 +301,22 @@ test.describe('admin and rider', () => {
     await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
   });
 
+  test('a 409 duplicate without a slug says "Esta ruta ya fue registrada." with no link', async () => {
+    await rider.route('**/api/trails', (route) =>
+      route.request().method() === 'POST'
+        ? route.fulfill({ status: 409, contentType: 'application/json', body: '{"code":"GPX_DUPLICATE"}' })
+        : route.fallback(),
+    );
+    try {
+      await riderUpload('Ruta Ajena');
+      const alert = rider.locator('main').getByRole('alert');
+      await expect(alert).toHaveText('Esta ruta ya fue registrada.');
+      await expect(alert.getByRole('link', { name: 'Ver la ruta' })).toHaveCount(0);
+    } finally {
+      await rider.unroute('**/api/trails');
+    }
+  });
+
   test('a rider with 3 routes in review gets the Spanish limit message on the 4th', async () => {
     for (const n of [1, 2, 3]) {
       await riderUpload(`Ruta Pendiente ${n}`);
@@ -298,6 +325,22 @@ test.describe('admin and rider', () => {
     await riderUpload('Ruta Pendiente 4');
     await expect(rider.locator('main').getByRole('alert')).toHaveText('Tienes 3 rutas en revisión. Espera la aprobación.');
     await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
+  });
+
+  test('the admin refuses a draft: the rider sees "No aprobada" on the detail and in Mis rutas', async () => {
+    await admin.goto('/rutas/ruta-pendiente-1');
+    await expect(meta(admin).getByTestId('trail-status')).toHaveText('Borrador');
+    await expect(admin.getByRole('button', { name: 'Publicar' })).toBeVisible();
+    await admin.getByRole('button', { name: 'Ocultar' }).click();
+    await expect(meta(admin).getByTestId('trail-status')).toHaveText('Oculta');
+    await expect(admin.getByRole('button', { name: 'Ocultar' })).toHaveCount(0);
+
+    await rider.goto('/rutas/ruta-pendiente-1');
+    await expect(meta(rider).getByTestId('trail-status')).toHaveText('No aprobada');
+    await rider.goto('/mis-rutas');
+    await expect(rider.getByTestId('trail-card').filter({ hasText: 'Ruta Pendiente 1' }).getByTestId('trail-status')).toHaveText(
+      'No aprobada',
+    );
   });
 
   test('the upload form and the trail detail have no WCAG A/AA violations', async () => {

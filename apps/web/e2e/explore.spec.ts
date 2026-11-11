@@ -61,12 +61,14 @@ test('the map toggle shows one pin per trail; a pin picks the mini-card, which o
   const first = await mini.getAttribute('href');
   const selectedPin = page.locator('path.trail-pin-selected');
   await expect(selectedPin).toHaveCount(1);
+  await expect(selectedPin).toHaveAttribute('stroke', '#CCFF00');
+  await expect(page.locator('path.trail-pin:not(.trail-pin-selected)').first()).toHaveAttribute('stroke', '#0A0A0A');
   // The selected pin moves to the front (the end of the SVG), so follow the element, not an index.
   const other = await page.locator('path.trail-pin:not(.trail-pin-selected)').first().elementHandle();
   await other.click({ force: true });
   await expect(mini).not.toHaveAttribute('href', first as string);
   await expect(selectedPin).toHaveCount(1);
-  expect(await other.evaluate((el) => el.classList.contains('trail-pin-selected'))).toBe(true);
+  expect(await other.evaluate((el) => [el.classList.contains('trail-pin-selected'), el.getAttribute('stroke')])).toEqual([true, '#CCFF00']);
   for (const button of await page.locator('.leaflet-bar a').all()) await expectTarget(button);
   expect((await axe(page)).violations).toEqual([]);
   await expectMinFontSize(page);
