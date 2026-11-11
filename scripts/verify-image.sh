@@ -8,8 +8,8 @@
 #    before the build; the string must not appear in any layer or config of `docker save`.
 # Any error while reading the image fails the check (fail closed).
 #
-# The staging box runs a reviewed copy of this file (/usr/local/lib/ce-oss/verify-image.sh);
-# a change here needs a new install there (docs/operations/deploy.md).
+# CI runs it on the checked images before publish; the box does not run it (the image digest and
+# its build provenance attestation bind the checked image, docs/operations/deploy.md).
 set -euo pipefail
 
 image=${1:?usage: verify-image.sh <image> [canary]}
