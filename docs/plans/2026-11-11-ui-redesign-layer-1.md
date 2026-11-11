@@ -1,6 +1,6 @@
 # UI redesign, layer 1: Night Rider on the screens the API already supports
 
-Status: rev. 1, gate pending (opus @ high ∥ gpt-6.1-sol @ high → final opus @ xhigh). Issue: #13.
+Status: **built and live on enduro.vops.pe (2026-11-11, `5a770c1`)**. Gate: opus @ high and gpt-6.1-sol @ high both REVISE; their findings (opus F1–F24, gpt F01–F18) were applied as binding rules in the build PRs (#50 API, #52 web; their bodies list each one). Issue: #13.
 
 **Goal:** the pages that work today look like the approved prototype (`15-ciudad-enduro/ui-redesign/`,
 brief `15-ciudad-enduro/docs/plans/2026-09-16-ui-redesign-design.md`) on staging (enduro-next.vops.pe):
