@@ -183,3 +183,20 @@ The cutover runs the P1a-3 part 2 steps (private deploy, checks, cutover, rehear
 the web is ready. **Deviation from A8, recorded:** the R2 keys arrive after the deadline, so the first
 backup layer is a daily on-box `pg_dump -Fc` of the prod DB (14 days kept) with one restore proven into a
 scratch DB before the cutover; the off-box R2 copy is added on top when the keys arrive (same dump file).
+
+## 8. Layer 2: register by GPS, the FAB sheet, trail photos (owner request 2026-11-12)
+
+The owner asked for GPS functions on the register page (mark the current location and points along
+the way), photos taken during a ride shown as a timeline on the trail, and a FAB with a choice
+between a trail and a "vista". The approved prototype already has these: the FAB sheet (Grabar ruta,
+Trazar en el mapa, Importar GPX, Registrar una Vista, `ui-redesign/app.js:1325-1345`), the tracer
+("Toca para marcar puntos", `:1447`) and GPS photo markers (§5 "Photos on trails").
+
+| # | Decision |
+|---|----------|
+| G1 | The FAB opens a sheet (a native `<dialog>`, 44 px options): **Sendero** (`/rutas/nueva`) and **Vista** (`/vistas/nueva`, batch L2-B). Anonymous users keep "Ingresar". |
+| G2 | `/rutas/nueva` has two tabs (links, `?modo=`): **Marcar** (default) and **Importar GPX** (today's form). |
+| G3 | Marcar: a Leaflet map. "Mi ubicación" asks `watchPosition` (high accuracy), centres the map and shows a dot with its accuracy circle. "Marcar punto" adds the current fix; it is disabled while there is no fix or the accuracy is worse than 30 m (the button says the accuracy). A tap on the map also adds a point (for a rider at home). "Deshacer" removes the last point. The line and the live distance show. With ≥ 2 points the same fields as the GPX form appear (name, city, difficulty, type, description). Denied permission: a message, the map tap still works. Points live in `sessionStorage` until the submit, so a reload does not lose a ride. |
+| G4 | Submit: the client writes a GPX 1.1 (`<trkpt>` without `<ele>`) and posts it to the existing `POST /api/trails`. Same limits, throttle, duplicate check, 3-pending rule and owner approval; no new endpoint. |
+| G5 | API: when the parsed GPX has no usable elevations, the service densifies the line to ≤ 10 m (inside the point cap) and fills the elevations from the Open-Meteo elevation API (Copernicus GLO-90, 100 points per call, 5 s timeout). On failure the trail is stored without elevations (the stats hide), never refused. `ELEVATION_API_URL` env with the public default; tests stub it. |
+| G6 | Not in this batch: continuous recording ("Grabar ruta", screen-on only on the web), photos and the "Vista" page (L2-B, needs R2 storage and owner decisions on moderation). |
