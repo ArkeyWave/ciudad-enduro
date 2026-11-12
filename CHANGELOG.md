@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased] - Trail stats: metres, descent, degrees
+
+### Changed
+- Owner decision O4 (2026-11-12): a Descenso shows its loss as Desnivel ("−30 m"), every other type its gain; Pendiente is the mean grade in degrees, atan(|desnivel| / distancia), with one decimal ("2.4°"), not a percentage; a distance under 1 km is in metres ("715 m"). Cards, the map mini-card and the detail (`lib/profile.ts`: `formatDistance`, `shownDrop`, `gradeDeg`, `formatDrop`, `formatGrade`).
+
+### Removed
+- `formatKm` and `slopePct` (`lib/profile.ts`).
+
 ## [Unreleased] - UI redesign layer 1 (Night Rider)
 
 ### Added

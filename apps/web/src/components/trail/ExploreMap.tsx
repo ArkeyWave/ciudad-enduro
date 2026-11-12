@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useEffect, useRef, useState } from 'react';
 import type { Coordinates, Difficulty } from 'api-client';
-import { formatKm, formatM } from '../../lib/profile';
+import { formatDistance, formatDrop, shownDrop } from '../../lib/profile';
 import { EXPLORE_MAP_HEIGHT } from './map-size';
 import { baseMap, DIFFICULTY_COLOURS, LIME } from './tiles';
 import { DifficultyPill } from './TrailStats';
@@ -14,9 +14,11 @@ export interface MapTrail {
   slug: string;
   name: string;
   difficulty: Difficulty;
+  type: string;
   start: Coordinates;
   distanceM: number | null;
   elevationGainM: number | null;
+  elevationLossM: number | null;
 }
 
 /** One pin per trail start. A pin selects its trail; the mini-card link is the keyboard target. */
@@ -65,6 +67,7 @@ export default function ExploreMap({ trails }: { trails: MapTrail[] }) {
   }, [selected, trails]);
 
   const trail = trails[selected] as MapTrail;
+  const drop = shownDrop(trail.type, trail.elevationGainM, trail.elevationLossM);
   return (
     <>
       <div
@@ -79,8 +82,8 @@ export default function ExploreMap({ trails }: { trails: MapTrail[] }) {
         <DifficultyPill difficulty={trail.difficulty} />
         <span className="swipe-title">{trail.name}</span>
         <span className="mini-stats">
-          {trail.distanceM !== null && <span>{formatKm(trail.distanceM)}</span>}
-          {trail.elevationGainM !== null && <span>{formatM(trail.elevationGainM)}</span>}
+          {trail.distanceM !== null && <span>{formatDistance(trail.distanceM)}</span>}
+          {drop !== null && <span>{formatDrop(drop)}</span>}
         </span>
       </a>
     </>
