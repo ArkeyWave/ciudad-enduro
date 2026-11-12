@@ -27,6 +27,8 @@ const envSchema = z
     GOOGLE_CLIENT_SECRET: required,
     OTP_HMAC_SECRET: secret,
     TURNSTILE_SECRET_KEY: required,
+    // Fills the elevations of a GPX that has none (plan §8 G5). Tests point it at a stub.
+    ELEVATION_API_URL: z.url().default('https://api.open-meteo.com/v1/elevation'),
     // An unset Docker build arg arrives as an empty string; treat it like a missing value.
     BUILD_SHA: z.preprocess((v) => (v === '' ? undefined : v), required.default('unknown')),
   })

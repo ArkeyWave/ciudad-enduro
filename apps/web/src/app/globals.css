@@ -92,6 +92,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
   width: 52px; height: 52px; border-radius: 18px; background: var(--lime); color: #0A0A0A;
   display: flex; align-items: center; justify-content: center; margin-top: -24px;
   box-shadow: 0 6px 20px rgba(204,255,0,0.45); transition: transform .12s;
+  border: 0; padding: 0; cursor: pointer;
 }
 .nav-fab:active { transform: scale(0.94); }
 .nav-explore { grid-area: 1 / 1; }
@@ -141,6 +142,8 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 }
 .toggle a[aria-current="page"] { background: var(--lime); color: #0A0A0A; }
 .toggle a:active { transform: scale(0.94); }
+.toggle.tabs { display: flex; margin-bottom: 16px; }
+.toggle.tabs a { flex: 1; width: auto; font-size: 14px; font-weight: 600; text-decoration: none; }
 
 /* ── Difficulty pill / chips ─────────────────────────────────── */
 .diff-pill {
@@ -156,6 +159,15 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 .inter .dot   { background: var(--diff-inter); }
 .dificil .dot { background: var(--diff-dificil); }
 .type-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+/* D3: 44 px high, not the prototype's 36 px */
+.chip {
+  min-height: 44px; padding: 0 14px; border-radius: 999px; flex-shrink: 0;
+  background: transparent; border: 1px solid var(--border); color: var(--text);
+  font-family: var(--font-body); font-size: 12px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  white-space: nowrap; transition: all .18s ease;
+}
+.chip:disabled { opacity: 0.5; cursor: default; }
 .status-chip {
   display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
@@ -260,6 +272,36 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
   color: var(--text); text-decoration: none; margin-top: 12px;
 }
 .mini-stats { display: flex; gap: 12px; font-size: 11px; color: var(--muted); font-weight: 500; }
+.tracer-map { height: 360px; }
+.tracer-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+
+/* ── Action sheet (the FAB "Registrar ruta", plan §8 G1) ─────── */
+.sheet-dialog {
+  margin: auto 0 0; width: 100%; max-width: 100%; padding: 0; border: 0;
+  background: transparent; color: var(--text);
+}
+.sheet-dialog::backdrop { background: rgba(0,0,0,0.6); backdrop-filter: blur(2px); }
+.sheet {
+  max-width: var(--col); margin: 0 auto; background: var(--bg-soft); border-radius: 26px 26px 0 0;
+  border-top: 1px solid var(--border); padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
+}
+.sheet h2 { font-size: 26px; margin: 0; letter-spacing: 0.4px; }
+.sheet .row-between { margin-bottom: 16px; }
+.opt {
+  display: flex; align-items: center; gap: 14px; padding: 16px; margin-bottom: 10px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px; cursor: pointer;
+  transition: border-color .15s, transform .12s; text-align: left; width: 100%; color: inherit;
+  font: inherit; text-decoration: none;
+}
+.opt:active { transform: scale(0.99); }
+.opt:hover { border-color: var(--border-hi); }
+.opt:disabled { opacity: 0.5; cursor: default; transform: none; }
+.opt .o-icon {
+  width: 46px; height: 46px; border-radius: 14px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--card-hi); color: var(--lime);
+}
+.opt .o-name { font-weight: 700; font-size: 15px; }
 
 /* ── Leaflet ─────────────────────────────────────────────────── */
 .leaflet-container { background: #0B0F0A; font: inherit; }

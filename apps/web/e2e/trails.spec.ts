@@ -20,6 +20,7 @@ const gpxVariant = (tag: string) => ({
 // Seeded with a start point only: no path, no profile.
 const NO_PATH = PUBLISHED[0] as (typeof PUBLISHED)[number];
 const NOT_FOUND = 'No encontramos esta página';
+const IMPORT = '/rutas/nueva?modo=gpx';
 
 const PROFILED_TRAIL = PUBLISHED[1] as (typeof PUBLISHED)[number];
 const meta = (page: Page) => page.getByTestId('trail-meta');
@@ -51,6 +52,9 @@ test('a trail with no path shows its start point, no line and no profile', async
   await expect(page.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(0);
   await expect(page.getByTestId('elevation-profile')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Perfil de elevación' })).toHaveCount(0);
+  // No profile, no elevation credit.
+  await expect(page.getByRole('link', { name: 'OpenStreetMap' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open-Meteo' })).toHaveCount(0);
 });
 
 test.describe('the detail at 390 px', () => {
@@ -65,6 +69,11 @@ test.describe('the detail at 390 px', () => {
     expect(box.y).toBeLessThan(header.y + header.height + 10);
     await expectTarget(page.getByRole('link', { name: 'Volver' }));
     for (const button of await page.locator('.leaflet-bar a').all()) await expectTarget(button);
+
+    // A trail with a profile credits Open-Meteo (CC BY 4.0) in the map attribution.
+    const attribution = page.getByTestId('trail-map').locator('.leaflet-control-attribution');
+    await expect(attribution).toContainText('Elevación: Open-Meteo (Copernicus GLO-90)');
+    await expect(attribution.getByRole('link', { name: 'Open-Meteo' })).toHaveAttribute('href', 'https://open-meteo.com/');
 
     const credit = page.getByRole('link', { name: 'OpenStreetMap' });
     await expect(credit).toBeVisible();
@@ -105,7 +114,7 @@ test.describe('admin and rider', () => {
   let riderEmail: string;
 
   async function riderUpload(name: string) {
-    await rider.goto('/rutas/nueva');
+    await rider.goto(IMPORT);
     await gpxInput(rider).setInputFiles(gpxVariant(name.replaceAll(' ', '-')));
     await rider.getByLabel('Nombre').fill(name);
     await rider.getByRole('button', { name: 'Subir ruta' }).click();
@@ -135,8 +144,11 @@ test.describe('admin and rider', () => {
   }) => {
     tiles.requests = 0;
     await admin.goto('/');
-    await admin.getByRole('link', { name: 'Registrar ruta' }).click();
+    await admin.getByRole('button', { name: 'Registrar ruta' }).click();
+    await admin.getByRole('dialog', { name: 'Registrar' }).getByRole('link', { name: 'Sendero' }).click();
     await expect(admin).toHaveURL(`${ORIGIN}/rutas/nueva`);
+    await admin.getByRole('navigation', { name: 'Modo' }).getByRole('link', { name: 'Importar GPX' }).click();
+    await expect(admin).toHaveURL(`${ORIGIN}${IMPORT}`);
     await gpxInput(admin).setInputFiles(GPX);
     await admin.getByLabel('Nombre').fill(UPLOADED.name);
     await admin.getByLabel('Ciudad').selectOption('Trujillo');
@@ -200,26 +212,27 @@ test.describe('admin and rider', () => {
   });
 
   test('the same GPX again shows the duplicate message with a link to the existing trail', async () => {
-    await admin.goto('/rutas/nueva');
+    await admin.goto(IMPORT);
     await gpxInput(admin).setInputFiles(GPX);
     await admin.getByLabel('Nombre').fill('Ruta E2E Duplicada');
     await admin.getByRole('button', { name: 'Subir ruta' }).click();
     const alert = admin.locator('main').getByRole('alert');
     await expect(alert).toContainText('Este GPX ya está subido.');
     await expect(alert.getByRole('link', { name: 'Ver la ruta' })).toHaveAttribute('href', `/rutas/${UPLOADED.slug}`);
-    await expect(admin).toHaveURL(`${ORIGIN}/rutas/nueva`);
+    await expect(admin).toHaveURL(`${ORIGIN}${IMPORT}`);
     expect((await axe(admin)).violations).toEqual([]);
   });
 
-  test('a rider opens /rutas/nueva from the FAB and sees no admin controls; anonymous gets 404', async ({ page }) => {
+  test('a rider opens /rutas/nueva from the FAB sheet and sees no admin controls; anonymous gets 404', async ({ page }) => {
     await rider.goto('/');
-    await rider.getByRole('link', { name: 'Registrar ruta' }).click();
+    await rider.getByRole('button', { name: 'Registrar ruta' }).click();
+    await rider.getByRole('dialog', { name: 'Registrar' }).getByRole('link', { name: 'Sendero' }).click();
     await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
-    await expect(rider.getByRole('heading', { level: 1, name: 'Importar GPX' })).toBeVisible();
+    await expect(rider.getByRole('heading', { level: 1, name: 'Marcar ruta' })).toBeVisible();
     expect((await rider.request.get('/rutas/nueva')).status()).toBe(200);
     expect((await page.goto('/rutas/nueva'))?.status()).toBe(404);
     await expect(page.getByRole('heading', { name: NOT_FOUND })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'Registrar ruta' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Registrar ruta' })).toHaveCount(0);
 
     await rider.goto(`/rutas/${NO_PATH.slug}`);
     await expect(rider.getByRole('heading', { level: 1, name: NO_PATH.name })).toBeVisible();
@@ -230,9 +243,9 @@ test.describe('admin and rider', () => {
   });
 
   test('the upload file input stays keyboard-focusable inside the dropzone', async () => {
-    await admin.goto('/rutas/nueva');
+    await admin.goto(IMPORT);
     await expect(admin.getByLabel('Archivo GPX')).toBeVisible();
-    await admin.getByRole('heading', { level: 1, name: 'Importar GPX' }).click();
+    await admin.getByRole('navigation', { name: 'Modo' }).getByRole('link', { name: 'Importar GPX' }).focus();
     await admin.keyboard.press('Tab');
     await expect(gpxInput(admin)).toBeFocused();
     await expectMinFontSize(admin);
@@ -246,7 +259,7 @@ test.describe('admin and rider', () => {
     expect((await page.request.get('/rutas/ruta-rider-e2e')).status()).toBe(404);
 
     const nav = rider.getByRole('navigation', { name: 'Principal' });
-    await expectTarget(nav.getByRole('link', { name: 'Registrar ruta' }));
+    await expectTarget(nav.getByRole('button', { name: 'Registrar ruta' }));
     for (const link of await nav.getByRole('link').all()) await expectTarget(link);
     await nav.getByRole('link', { name: 'Mis rutas' }).click();
     await expect(rider).toHaveURL(`${ORIGIN}/mis-rutas`);
@@ -262,7 +275,8 @@ test.describe('admin and rider', () => {
 
     await admin.goto('/');
     const adminNav = admin.getByRole('navigation', { name: 'Principal' });
-    await expect(adminNav.getByRole('link')).toHaveCount(4);
+    await expect(adminNav.getByRole('link')).toHaveCount(3);
+    await expect(adminNav.getByRole('button', { name: 'Registrar ruta' })).toHaveCount(1);
     for (const link of await adminNav.getByRole('link').all()) await expectTarget(link);
     await admin.setViewportSize({ width: 390, height: 844 });
     await adminNav.getByRole('link', { name: 'Explorar' }).focus();
@@ -293,12 +307,12 @@ test.describe('admin and rider', () => {
   });
 
   test('a rider who uploads a GPX that is already stored gets the duplicate message', async () => {
-    await rider.goto('/rutas/nueva');
+    await rider.goto(IMPORT);
     await gpxInput(rider).setInputFiles(GPX);
     await rider.getByLabel('Nombre').fill('Ruta Rider Duplicada');
     await rider.getByRole('button', { name: 'Subir ruta' }).click();
     await expect(rider.locator('main').getByRole('alert')).toContainText('Este GPX ya está subido.');
-    await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
+    await expect(rider).toHaveURL(`${ORIGIN}${IMPORT}`);
   });
 
   test('a 409 duplicate without a slug says "Esta ruta ya fue registrada." with no link', async () => {
@@ -324,7 +338,7 @@ test.describe('admin and rider', () => {
     }
     await riderUpload('Ruta Pendiente 4');
     await expect(rider.locator('main').getByRole('alert')).toHaveText('Tienes 3 rutas en revisión. Espera la aprobación.');
-    await expect(rider).toHaveURL(`${ORIGIN}/rutas/nueva`);
+    await expect(rider).toHaveURL(`${ORIGIN}${IMPORT}`);
   });
 
   test('the admin refuses a draft: the rider sees "No aprobada" on the detail and in Mis rutas', async () => {
@@ -348,7 +362,7 @@ test.describe('admin and rider', () => {
     await expect(rider.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(1);
     expect((await axe(rider)).violations).toEqual([]);
 
-    await admin.goto('/rutas/nueva');
+    await admin.goto(IMPORT);
     await expect(admin.getByRole('button', { name: 'Subir ruta' })).toBeVisible();
     expect((await axe(admin)).violations).toEqual([]);
 

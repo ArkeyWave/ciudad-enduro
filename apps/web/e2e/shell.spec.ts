@@ -19,7 +19,7 @@ test.describe('at 390 px', () => {
     await expect(explore(page)).toHaveAttribute('aria-current', 'page');
     for (const link of await nav(page).getByRole('link').all()) await expectTarget(link);
     // Anonymous: no upload entry, and no map item (the toggle is the way to the map).
-    await expect(page.getByRole('link', { name: 'Registrar ruta' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Registrar ruta' })).toHaveCount(0);
     await expect(nav(page).getByRole('link', { name: 'Mapa' })).toHaveCount(0);
 
     await page.goto('/mapa');

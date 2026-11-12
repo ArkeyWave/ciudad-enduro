@@ -10,11 +10,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { and, asc, count, desc, eq, or, sql } from 'drizzle-orm';
+import { ENV, type Env } from '../config/env.js';
 import { DB, type Database } from '../db/db.provider.js';
 import { trails, trailSources, user, type City, type Department, type TrailStatus } from '../db/schema/index.js';
+import type { LngLat } from '../db/types/geo.js';
 import type { CoordinatesDto, MyTrailDto, QueueTrailDto, TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
 import type { CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
-import { trackMetrics } from './gpx/metrics.js';
+import { fillElevations } from './gpx/fill-elevations.js';
+import { elevationMetrics, trackMetrics, type TrackMetrics } from './gpx/metrics.js';
 import { parseGpxIsolated } from './gpx/parse-gpx-isolated.js';
 import { GpxError } from './gpx/parse-gpx.js';
 
@@ -107,7 +110,10 @@ const pgCause = (error: unknown): PgCause | undefined => (error as { cause?: PgC
 export class TrailsService {
   private readonly logger = new Logger(TrailsService.name);
 
-  constructor(@Inject(DB) private readonly db: Database) {}
+  constructor(
+    @Inject(DB) private readonly db: Database,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   async listPublished(city?: City): Promise<TrailSummaryDto[]> {
     const rows = await this.db
@@ -169,11 +175,12 @@ export class TrailsService {
     const authorId = uploader.id;
     // A shortcut before the parse; the locked count in the transaction decides.
     if (!uploader.admin) await this.refuseTooManyPending(this.db, authorId);
-    const { track, metrics } = await parseAndMeasure(bytes);
+    const { track, metrics: parsed } = await parseAndMeasure(bytes);
     const base = slugify(input.name);
     if (!base) throw new BadRequestException(coded('SLUG_EMPTY'));
     const sha256 = createHash('sha256').update(bytes).digest('hex');
     await this.refuseKnownSource(sha256, uploader);
+    const metrics = track.elevations ? parsed : await this.withFilledElevations(track.points, parsed);
     const candidates = Array.from({ length: SLUG_TRIES + 1 }, (_, i) => (i === 0 ? base : `${base}-${i + 1}`))
       .filter((slug) => !RESERVED_SLUGS.has(slug))
       .slice(0, SLUG_TRIES);
@@ -224,6 +231,14 @@ export class TrailsService {
     // The same file may have been stored during the tries: report it, not the slugs.
     await this.refuseKnownSource(sha256, uploader);
     throw new ConflictException(coded('SLUG_TAKEN'));
+  }
+
+  /** The elevations of a GPX without them, from the elevation API (plan §8 G5); on failure, none. */
+  private async withFilledElevations(points: LngLat[], parsed: TrackMetrics): Promise<TrackMetrics> {
+    const filled = await fillElevations(points, this.env.ELEVATION_API_URL);
+    if ('elevations' in filled) return { ...parsed, ...elevationMetrics(filled.cum, filled.elevations) };
+    this.logger.warn(JSON.stringify({ event: 'elevation_fill_failed', reason: filled.reason }));
+    return parsed;
   }
 
   private async refuseTooManyPending(db: Pick<Database, 'select'>, authorId: string): Promise<void> {

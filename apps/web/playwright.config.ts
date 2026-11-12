@@ -37,6 +37,8 @@ export default defineConfig({
         OTP_HMAC_SECRET: 'test-otp-hmac-secret-0123456789abcdef',
         // e2e-main checks tokens against an in-process siteverify stub, never Cloudflare.
         TURNSTILE_SECRET_KEY: 'test-turnstile-secret-key',
+        // Never Open-Meteo: a closed port fails at once, so a traced route is stored without elevations.
+        ELEVATION_API_URL: 'http://127.0.0.1:9/v1/elevation',
       },
     },
     {

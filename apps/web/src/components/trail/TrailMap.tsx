@@ -5,7 +5,7 @@ import L from 'leaflet';
 import { useEffect, useRef } from 'react';
 import type { Coordinates } from 'api-client';
 import { MAP_HEIGHT } from './map-size';
-import { baseMap, LIME } from './tiles';
+import { baseMap, ELEVATION_CREDIT, LIME } from './tiles';
 
 export interface TrailMapProps {
   /** The map is built once per trail: a `router.refresh()` gives new prop arrays, not a new trail. */
@@ -14,17 +14,20 @@ export interface TrailMapProps {
   path: number[][] | null;
   start: Coordinates;
   end: Coordinates | null;
+  /** The trail shows an elevation profile: the map credits its source. */
+  profiled: boolean;
 }
 
 const point = (c: Coordinates): L.LatLngTuple => [c.lat, c.lng];
 const dot = (className: string) => ({ className, radius: 6, color: '#0A0A0A', weight: 2, fillColor: LIME, fillOpacity: 1 });
 
-export default function TrailMap({ slug, path, start, end }: TrailMapProps) {
+export default function TrailMap({ slug, path, start, end, profiled }: TrailMapProps) {
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!container.current) return;
     const map = baseMap(container.current);
+    if (profiled) map.attributionControl.addAttribution(ELEVATION_CREDIT);
     const line = path && path.length >= 2 ? path.map(([lng = 0, lat = 0]): L.LatLngTuple => [lat, lng]) : null;
     if (line) {
       const layer = L.polyline(line, { className: 'trail-path', color: LIME, weight: 4 }).addTo(map);

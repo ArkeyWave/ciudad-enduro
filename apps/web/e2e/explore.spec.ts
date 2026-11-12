@@ -103,7 +103,7 @@ test.describe('with no published trail', () => {
       for (const path of ['/', '/mapa']) {
         await anonymous.goto(path);
         await expect(anonymous.getByTestId('empty-trails')).toHaveText('Aún no hay senderos publicados.');
-        await expect(anonymous.getByRole('link', { name: 'Registrar ruta' })).toHaveCount(0);
+        await expect(anonymous.getByRole('button', { name: 'Registrar ruta' })).toHaveCount(0);
         await expect(anonymous.getByTestId('explore-map')).toHaveCount(0);
 
         await rider.goto(path);

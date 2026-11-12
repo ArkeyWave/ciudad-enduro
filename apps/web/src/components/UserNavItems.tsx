@@ -1,10 +1,11 @@
 import { isAdmin } from '../lib/roles';
 import { currentUser } from '../lib/session';
+import { FabSheet } from './FabSheet';
 import { Icon } from './Icon';
 import { NavLink } from './NavLink';
 
 /**
- * The nav items of a signed-in user, in visual order: "Mis rutas", the "Registrar ruta" FAB, and for an
+ * The nav items of a signed-in user, in visual order: "Mis rutas", the "Registrar ruta" FAB (its sheet), and for an
  * admin "Revisión".
  */
 export async function UserNavItems() {
@@ -16,9 +17,7 @@ export async function UserNavItems() {
         <Icon name="route" />
         <span>Mis rutas</span>
       </NavLink>
-      <NavLink href="/rutas/nueva" className="nav-fab" label="Registrar ruta">
-        <Icon name="plus" size={26} strokeWidth={2.5} />
-      </NavLink>
+      <FabSheet />
       {isAdmin(me) && (
         <NavLink href="/admin/rutas" className="nav-item nav-review">
           <Icon name="list" />
