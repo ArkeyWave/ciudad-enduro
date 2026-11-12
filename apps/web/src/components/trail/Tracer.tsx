@@ -34,13 +34,16 @@ export default function Tracer() {
   const centred = useRef(false);
   const [points, setPoints] = useState<Point[]>(stored);
   const [fix, setFix] = useState<Fix | null>(null);
+  // The clock of the age gate: ticks while there is a fix, so the button turns off when it goes stale.
+  const [now, setNow] = useState(() => Date.now());
   const [noLocation, setNoLocation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<TrailFailure | null>(null);
 
   useEffect(() => {
     if (!container.current) return;
-    const m = baseMap(container.current);
+    // No double-click zoom: a double tap is two points, never a zoom that moves the next tap.
+    const m = baseMap(container.current, { doubleClickZoom: false });
     map.current = m;
     route.current = L.layerGroup().addTo(m);
     here.current = L.layerGroup().addTo(m);
@@ -81,6 +84,21 @@ export default function Tracer() {
     }
   }, [fix]);
 
+  useEffect(() => {
+    if (!fix) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [fix]);
+
+  // A hidden page gets no position updates: its fix is stale on return.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') setFix(null);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   const locate = () => {
     if (fix) map.current?.setView(latLng(fix), FIX_ZOOM);
     if (watch.current !== null) return;
@@ -88,7 +106,10 @@ export default function Tracer() {
     setNoLocation(false);
     centred.current = false;
     watch.current = navigator.geolocation.watchPosition(
-      ({ coords }) => setFix({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy }),
+      ({ coords, timestamp }) => {
+        setNow(Date.now());
+        setFix({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy, at: timestamp });
+      },
       (error) => {
         // No fix to mark until the next one. Position unavailable or a timeout is transient: the
         // watch goes on. Only a denied permission ends it.
@@ -103,13 +124,13 @@ export default function Tracer() {
   };
 
   const mark = () => {
-    if (canMark(fix)) setPoints((current) => [...current, { lat: fix.lat, lng: fix.lng }]);
+    if (canMark(fix, Date.now())) setPoints((current) => [...current, { lat: fix.lat, lng: fix.lng }]);
   };
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    form.append('gpx', new Blob([toGpx(points, form.get('name') as string)], { type: 'application/gpx+xml' }), 'ruta.gpx');
+    form.append('gpx', new Blob([toGpx(points)], { type: 'application/gpx+xml' }), 'ruta.gpx');
     setBusy(true);
     setFailure(null);
     void uploadTrail(form).then((result) => {
@@ -131,7 +152,7 @@ export default function Tracer() {
           <Icon name="location" size={18} />
           Mi ubicación
         </button>
-        <button type="button" className="chip" onClick={mark} disabled={!canMark(fix)}>
+        <button type="button" className="chip" onClick={mark} disabled={!canMark(fix, now)}>
           <Icon name="plus" size={18} />
           {fix ? `Marcar punto (±${Math.round(fix.accuracy)} m)` : 'Marcar punto'}
         </button>
@@ -147,15 +168,14 @@ export default function Tracer() {
       <p className="muted" aria-live="polite" data-testid="trace-summary">
         {count} · {formatDistance(pathLengthM(points))}
       </p>
-      {points.length >= 2 && (
-        <form onSubmit={submit} className="form">
-          <TrailFields />
-          <button type="submit" disabled={busy} className="cta">
-            {busy ? 'Subiendo…' : 'Subir ruta'}
-          </button>
-          {failure && <TrailFailureAlert failure={failure} />}
-        </form>
-      )}
+      {/* Always mounted, so the typed fields survive an undo below 2 points. */}
+      <form onSubmit={submit} className="form">
+        <TrailFields />
+        <button type="submit" disabled={busy || points.length < 2} className="cta">
+          {busy ? 'Subiendo…' : 'Subir ruta'}
+        </button>
+        {failure && <TrailFailureAlert failure={failure} />}
+      </form>
     </>
   );
 }

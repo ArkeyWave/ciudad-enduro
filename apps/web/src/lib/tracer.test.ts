@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { canMark, MAX_ACCURACY_M, pathLengthM, readPoints, toGpx } from './tracer';
+import { canMark, MAX_ACCURACY_M, MAX_FIX_AGE_MS, pathLengthM, readPoints, toGpx } from './tracer';
 
 const A = { lat: -9.0745, lng: -78.5936 };
 const B = { lat: -9.0755, lng: -78.5926 };
 
 describe('toGpx', () => {
-  it('writes one GPX 1.1 track with lat and lon in that order and no <ele>', () => {
-    const gpx = toGpx([A, B], 'Bajada');
+  it('writes one GPX 1.1 track with lat and lon in that order, no <ele> and no name', () => {
+    const gpx = toGpx([A, B]);
     expect(gpx).toMatch(/^<\?xml version="1.0" encoding="UTF-8"\?>\n<gpx version="1.1" /);
     expect(gpx).toContain('xmlns="http://www.topografix.com/GPX/1/1"');
     expect(gpx.match(/<trkpt lat="([^"]+)" lon="([^"]+)"\/>/g)).toEqual([
@@ -16,31 +16,32 @@ describe('toGpx', () => {
     expect(gpx.match(/<trk>/g)).toHaveLength(1);
     expect(gpx.match(/<trkseg>/g)).toHaveLength(1);
     expect(gpx).not.toContain('<ele>');
-  });
-
-  it('escapes the name', () => {
-    const gpx = toGpx([A, B], `<Cerro> & "El" 'Alto'`);
-    expect(gpx).toContain('<name>&lt;Cerro&gt; &amp; &quot;El&quot; &apos;Alto&apos;</name>');
-    expect(gpx).not.toContain('<Cerro>');
+    expect(gpx).not.toContain('<name>');
   });
 
   it('refuses fewer than 2 points', () => {
-    expect(() => toGpx([A], 'x')).toThrow();
-    expect(() => toGpx([], 'x')).toThrow();
+    expect(() => toGpx([A])).toThrow();
+    expect(() => toGpx([])).toThrow();
   });
 });
 
-describe('canMark (the accuracy gate)', () => {
-  it('allows a fix of 30 m or better', () => {
+describe('canMark (the accuracy and age gate)', () => {
+  const NOW = 1_800_000_000_000;
+  const fix = (accuracy: number, ageMs = 0) => ({ ...A, accuracy, at: NOW - ageMs });
+
+  it('allows a fresh fix of 30 m or better, up to 10 s old', () => {
     expect(MAX_ACCURACY_M).toBe(30);
-    expect(canMark({ ...A, accuracy: 5 })).toBe(true);
-    expect(canMark({ ...A, accuracy: 30 })).toBe(true);
+    expect(MAX_FIX_AGE_MS).toBe(10_000);
+    expect(canMark(fix(5), NOW)).toBe(true);
+    expect(canMark(fix(30), NOW)).toBe(true);
+    expect(canMark(fix(8, 10_000), NOW)).toBe(true);
   });
 
-  it('refuses no fix, a fix worse than 30 m or a fix without a number', () => {
-    expect(canMark(null)).toBe(false);
-    expect(canMark({ ...A, accuracy: 30.5 })).toBe(false);
-    expect(canMark({ ...A, accuracy: Number.NaN })).toBe(false);
+  it('refuses no fix, a fix worse than 30 m, a fix without a number, or a fix 11 s old', () => {
+    expect(canMark(null, NOW)).toBe(false);
+    expect(canMark(fix(30.5), NOW)).toBe(false);
+    expect(canMark(fix(Number.NaN), NOW)).toBe(false);
+    expect(canMark(fix(8, 11_000), NOW)).toBe(false);
   });
 });
 

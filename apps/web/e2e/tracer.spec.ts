@@ -18,6 +18,13 @@ const tapMap = async (page: Page) => {
   const box = (await page.getByTestId('tracer-map').boundingBox())!;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 };
+const submitButton = (page: Page) => page.getByRole('button', { name: 'Subir ruta' });
+/** Emulates the page going to the background (Playwright cannot hide a page). */
+const setVisibility = (page: Page, state: 'hidden' | 'visible') =>
+  page.evaluate((value) => {
+    Object.defineProperty(document, 'visibilityState', { value, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, state);
 
 test.use({ viewport: { width: 390, height: 844 } });
 
@@ -59,6 +66,11 @@ test.describe('the FAB sheet and the tracer', () => {
     await fab.click();
     await sheet.getByRole('button', { name: 'Cerrar' }).click();
     await expect(sheet).toBeHidden();
+    // A tap on the backdrop, above the sheet, closes it.
+    await fab.click();
+    await expect(sheet).toBeVisible();
+    await rider.mouse.click(195, 40);
+    await expect(sheet).toBeHidden();
   });
 
   test('a denied location shows a message, and a tap on the map still marks a point', async () => {
@@ -69,9 +81,19 @@ test.describe('the FAB sheet and the tracer', () => {
     await rider.getByRole('button', { name: 'Mi ubicación' }).click();
     await expect(rider.locator('main').getByRole('alert')).toHaveText('Sin acceso a tu ubicación. Toca el mapa para marcar puntos.');
     await expect(markButton(rider)).toBeDisabled();
+    // The form is there from the start; its submit waits for 2 points, and an undo keeps the name.
+    await expect(submitButton(rider)).toBeDisabled();
     await tapMap(rider);
     await expect(tracePoints(rider)).toHaveCount(1);
     await expect(summary(rider)).toContainText('1 punto');
+    await rider.getByLabel('Nombre').fill('Nombre que queda');
+    await expect(submitButton(rider)).toBeDisabled();
+    await tapMap(rider);
+    await expect(tracePoints(rider)).toHaveCount(2);
+    await expect(submitButton(rider)).toBeEnabled();
+    await rider.getByRole('button', { name: 'Deshacer' }).click();
+    await expect(submitButton(rider)).toBeDisabled();
+    await expect(rider.getByLabel('Nombre')).toHaveValue('Nombre que queda');
     await rider.getByRole('button', { name: 'Deshacer' }).click();
     await expect(tracePoints(rider)).toHaveCount(0);
   });
@@ -94,6 +116,11 @@ test.describe('the FAB sheet and the tracer', () => {
     await context.setGeolocation({ ...FIRST, accuracy: 8 });
     await expect(markButton(rider)).toHaveText('Marcar punto (±8 m)');
     await markButton(rider).click();
+    // A page sent to the background drops its fix: no point from a stale position.
+    await setVisibility(rider, 'hidden');
+    await expect(markButton(rider)).toHaveText('Marcar punto');
+    await expect(markButton(rider)).toBeDisabled();
+    await setVisibility(rider, 'visible');
     await context.setGeolocation({ ...SECOND, accuracy: 12 });
     await expect(markButton(rider)).toHaveText('Marcar punto (±12 m)');
     await markButton(rider).click();
@@ -101,8 +128,21 @@ test.describe('the FAB sheet and the tracer', () => {
     await expect(rider.getByTestId('tracer-map').locator('path.trail-path')).toHaveCount(1);
     await expect(summary(rider)).toHaveText('2 puntos · 242 m');
 
-    await tapMap(rider);
-    await expect(tracePoints(rider)).toHaveCount(3);
+    // A double tap is exactly two points (2 + 2 = 4) and no zoom: the first point stays where it was.
+    const first = tracePoints(rider).first();
+    // The 13 → 17 zoom on the first fix may still run (Leaflet scales the layer): wait for the 12 px dot.
+    await expect.poll(async () => (await first.boundingBox())?.width).toBe(12);
+    const before = await first.boundingBox();
+    const box = (await rider.getByTestId('tracer-map').boundingBox())!;
+    await rider.mouse.dblclick(box.x + box.width * 0.25, box.y + box.height * 0.25);
+    await expect(tracePoints(rider)).toHaveCount(4);
+    // The real double click's `dblclick` lands on the dot its first click drew, which Leaflet does not
+    // zoom on; a `dblclick` on the bare map does zoom when doubleClickZoom is on. It must add no point.
+    await rider.getByTestId('tracer-map').dispatchEvent('dblclick', { clientX: box.x + 60, clientY: box.y + 60 });
+    await rider.waitForTimeout(500); // Leaflet's zoom animation is 250 ms
+    await expect(tracePoints(rider)).toHaveCount(4);
+    expect(await first.boundingBox()).toEqual(before);
+    await rider.getByRole('button', { name: 'Deshacer' }).click();
     await rider.getByRole('button', { name: 'Deshacer' }).click();
     await expect(tracePoints(rider)).toHaveCount(2);
 
@@ -119,6 +159,8 @@ test.describe('the FAB sheet and the tracer', () => {
     await expect(rider).toHaveURL(`${ORIGIN}/rutas/ruta-marcada-e2e`);
     await expect(rider.getByTestId('trail-meta').getByTestId('trail-status')).toHaveText('En revisión');
     await expect(rider.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(1);
+    // Stored without elevations here (the e2e elevation source is a closed port): no credit.
+    await expect(rider.getByRole('link', { name: 'Open-Meteo' })).toHaveCount(0);
 
     await rider.goto('/rutas/nueva');
     await expect(summary(rider)).toHaveText('0 puntos · 0 m');

@@ -52,6 +52,9 @@ test('a trail with no path shows its start point, no line and no profile', async
   await expect(page.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(0);
   await expect(page.getByTestId('elevation-profile')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Perfil de elevación' })).toHaveCount(0);
+  // No profile, no elevation credit.
+  await expect(page.getByRole('link', { name: 'OpenStreetMap' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open-Meteo' })).toHaveCount(0);
 });
 
 test.describe('the detail at 390 px', () => {
@@ -66,6 +69,11 @@ test.describe('the detail at 390 px', () => {
     expect(box.y).toBeLessThan(header.y + header.height + 10);
     await expectTarget(page.getByRole('link', { name: 'Volver' }));
     for (const button of await page.locator('.leaflet-bar a').all()) await expectTarget(button);
+
+    // A trail with a profile credits Open-Meteo (CC BY 4.0) in the map attribution.
+    const attribution = page.getByTestId('trail-map').locator('.leaflet-control-attribution');
+    await expect(attribution).toContainText('Elevación: Open-Meteo (Copernicus GLO-90)');
+    await expect(attribution.getByRole('link', { name: 'Open-Meteo' })).toHaveAttribute('href', 'https://open-meteo.com/');
 
     const credit = page.getByRole('link', { name: 'OpenStreetMap' });
     await expect(credit).toBeVisible();

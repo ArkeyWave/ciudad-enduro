@@ -27,7 +27,7 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
   return (
     <main className="page">
       <div className="detail-hero">
-        <TrailMapLoader slug={trail.slug} path={trail.path} start={trail.start} end={trail.end} />
+        <TrailMapLoader slug={trail.slug} path={trail.path} start={trail.start} end={trail.end} profiled={trail.elevationProfile !== null} />
         <a href="/" className="back" aria-label="Volver">
           <Icon name="chevL" size={20} />
         </a>
