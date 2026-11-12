@@ -200,3 +200,22 @@ Trazar en el mapa, Importar GPX, Registrar una Vista, `ui-redesign/app.js:1325-1
 | G4 | Submit: the client writes a GPX 1.1 (`<trkpt>` without `<ele>`) and posts it to the existing `POST /api/trails`. Same limits, throttle, duplicate check, 3-pending rule and owner approval; no new endpoint. |
 | G5 | API: when the parsed GPX has no usable elevations, the service densifies the line to ≤ 10 m (inside the point cap) and fills the elevations from the Open-Meteo elevation API (Copernicus GLO-90, 100 points per call, 5 s timeout). On failure the trail is stored without elevations (the stats hide), never refused. **Built in L2-A (deviation):** at most 2 000 samples per trail (20 calls), far below the point cap: above 20 km the spacing grows past 10 m (50 m at 100 km), still finer than the 90 m GLO-90 cells. The map of a trail with a profile credits "Elevación: Open-Meteo (Copernicus GLO-90)" (CC BY 4.0). `ELEVATION_API_URL` env with the public default; tests stub it. |
 | G6 | Not in this batch: continuous recording ("Grabar ruta", screen-on only on the web), photos and the "Vista" page (L2-B, needs R2 storage and owner decisions on moderation). |
+
+## 9. Layer 2-B: trail photos ("vistas") and 2-C: automatic review with the Claude API (owner answers 2026-11-12)
+
+Owner answers: (1) R2 keys come from the owner (`~/.secrets/ciudad-enduro-oss-r2.env`); (2) the Claude
+API reviews routes and photos and approves them; find other uses; (3) a photo attaches to the nearest
+trail, usually on the line or a few metres aside; (4) the project is open source, community-run,
+sponsored by VOPS and non-commercial, so the Open-Meteo free tier and the OSM tiles stay; a move to
+paid providers comes with monetisation.
+
+| # | Decision |
+|---|----------|
+| V1 | Storage: R2 bucket `ciudad-enduro-media` through the S3 API (`@aws-sdk/client-s3`). The browser never gets a write key: it uploads to the API (multipart, max 10 MB, JPEG/PNG/WebP/HEIC by magic bytes). The API re-encodes with `sharp` to WebP (max 1600 px) plus a 160 px thumbnail, which drops every EXIF field (GPS, device, owner) before storage. Public read through an R2 custom domain (`media.enduro.vops.pe`). |
+| V2 | Location: the phone's GPS position at upload (`getCurrentPosition`, accuracy ≤ 30 m, age ≤ 10 s, same gate as the tracer). EXIF GPS is read before the strip only as a fallback when the browser gives no position. |
+| V3 | Trail link: the nearest published trail within 50 m of the position (PostGIS `ST_DWithin` on geography, then `ST_LineLocatePoint` for the fraction along the line). None within 50 m → 422 `NO_TRAIL_NEARBY` "No hay un sendero a menos de 50 m." The fraction orders the timeline. |
+| V4 | Table `trail_photos`: id, trail_id, author_id, status (`draft` / `published` / `hidden`, same meaning as trails), position (geography point), line_fraction, object keys, width/height, created_at, review fields (V7). Limits: 10 uploads per 10 minutes per user (the existing throttle), 20 photos in review per user. |
+| V5 | UI: the FAB "Vista" option opens `/vistas/nueva` (camera input `capture="environment"`, position, preview, "Publicar vista"). Trail page: a horizontal timeline under the profile, one 56 px round thumbnail per published photo in line order, start and end dots; a tap opens the photo full-screen; the same photos as round markers on the map. The rider sees their own photo with "En revisión". |
+| V6 | Migration through drizzle; R2 credentials only as Coolify env (`R2_*`); CI and local use MinIO in the dev compose. |
+| V7 | Claude review (2-C): one call per new route or photo, `claude-opus-5-5`, effort `low`, structured output `{ decision: "approve" \| "reject" \| "unsure", reason }`. Input: for a photo the 1600 px WebP; for a route the name, description, city, type, difficulty, distance, gain/loss and a rendered map image of the line. User text goes in as data inside tags; the model's answer can only pick one of three values. `approve` → `published`; `reject` → `hidden` with the reason shown to the owner; `unsure`, an error, a refusal or a timeout → stays `draft` for the owner. The owner can override every decision in "Revisión", which lists the AI decision and reason. Spend limit set in the Anthropic Console. |
+| V8 | Later Claude uses (proposals, not in 2-B/2-C): alt text for each photo (accessibility); a suggested difficulty from the grade and the profile; trail condition notes from recent photos ("barro", "rama caída"); a spoken-style route summary for riders. |
