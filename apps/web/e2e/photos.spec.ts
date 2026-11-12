@@ -110,7 +110,7 @@ test.describe('vistas', () => {
     await admin.goto('/admin/rutas');
     const review = admin.getByTestId('photo-review');
     await expect(review).toHaveCount(1);
-    await expect(review.getByRole('link', { name: TRAIL.name })).toHaveAttribute('href', `/rutas/${TRAIL.slug}`);
+    await expect(review.getByRole('link', { name: TRAIL.name, exact: true })).toHaveAttribute('href', `/rutas/${TRAIL.slug}`);
     await expect(review).toContainText('rider-vista-');
     await expect(review.getByRole('img', { name: `Vista en ${TRAIL.name}` })).toBeVisible();
     for (const name of ['Publicar', 'Ocultar']) await expectTarget(review.getByRole('button', { name }));
