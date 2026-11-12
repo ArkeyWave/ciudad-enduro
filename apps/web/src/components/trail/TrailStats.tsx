@@ -1,6 +1,6 @@
 import type { Difficulty } from 'api-client';
 import { difficultyLabel } from '../../lib/labels';
-import { formatKm, formatM, slopePct } from '../../lib/profile';
+import { formatDistance, formatDrop, formatGrade, gradeDeg, shownDrop } from '../../lib/profile';
 
 /** A stat as in the prototype: the value in Bebas with a small unit, the label under it. */
 function Stat({ label, value }: { label: string; value: string }) {
@@ -16,14 +16,22 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Distancia, Desnivel, Pendiente; a missing value hides its stat. */
-export function TrailStats({ distanceM, gainM }: { distanceM: number | null; gainM: number | null | undefined }) {
-  const slope = slopePct(gainM, distanceM);
+type StatsProps = {
+  type: string;
+  distanceM: number | null;
+  gainM: number | null | undefined;
+  lossM: number | null | undefined;
+};
+
+/** Distancia, Desnivel, Pendiente (mean grade in degrees); a missing value hides its stat. */
+export function TrailStats({ type, distanceM, gainM, lossM }: StatsProps) {
+  const drop = shownDrop(type, gainM, lossM);
+  const grade = gradeDeg(drop, distanceM);
   return (
     <div className="stats">
-      {distanceM !== null && <Stat label="Distancia" value={formatKm(distanceM)} />}
-      {gainM != null && <Stat label="Desnivel" value={formatM(gainM)} />}
-      {slope !== null && <Stat label="Pendiente" value={`${slope} %`} />}
+      {distanceM !== null && <Stat label="Distancia" value={formatDistance(distanceM)} />}
+      {drop !== null && <Stat label="Desnivel" value={formatDrop(drop)} />}
+      {grade !== null && <Stat label="Pendiente" value={formatGrade(grade)} />}
     </div>
   );
 }

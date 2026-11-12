@@ -9,6 +9,14 @@
 - Tests: `lib/tracer.test.ts` (GPX writer: lat/lon order, escapes, ≥ 2 points; the accuracy gate both sides; the stored points). E2E `tracer.spec.ts`: the FAB sheet (both options, Vista disabled, 44 px, axe, Escape); a denied location (message, a map tap still marks); GPS points gated on the accuracy (±45 m disabled, ±8 m enabled), a tap, "Deshacer", a reload keeps the points, axe, submit → the trail page with "En revisión". The other specs follow the FAB button and `?modo=gpx`; `screens.spec.ts` adds the Marcar screen. Mutation proofs: `<` for `<=`, no accuracy check, limit 50, lat/lon swapped, no escaping, no 2-point check, no stored-points validation (unit); the button gated on any fix, no `sessionStorage` restore (e2e) each turn a test red.
 - Elevation fill (plan `docs/plans/2026-11-11-ui-redesign-layer-1.md` §8 G5): when a GPX has no usable elevations, the trails service (after the parse, not in the worker) samples the line every ≤ 10 m (`gpx/fill-elevations.ts`, at most 2 000 samples: above 20 km the spacing grows, still finer than the 90 m GLO-90 cells) and reads the elevations from the Open-Meteo elevation API, 100 points per call, the calls in parallel under one 5 s timeout. Gain, loss and profile come from the samples; the stored path stays the uploaded one. Any failure (network, status, timeout, an answer of the wrong length or out of range) stores the trail without elevations (log line `elevation_fill_failed`), never refuses it. New env `ELEVATION_API_URL` (default `https://api.open-meteo.com/v1/elevation`); the API tests and the web e2e point it at a closed local port, `test/trails-elevation.int.spec.ts` at a stub. Mutation proofs: no fill, a fill for a GPX with elevations, 30 m spacing, 200 points per call, no length check, a rethrow instead of null, no timeout each turn a test red.
 
+## [Unreleased] - Trail stats: metres, descent, degrees
+
+### Changed
+- Owner decision O4 (2026-11-12): a Descenso shows its loss as Desnivel ("−30 m"), every other type its gain; Pendiente is the mean grade in degrees, atan(|desnivel| / distancia), with one decimal ("2.4°"), not a percentage; a distance under 1 km is in metres ("715 m"). Cards, the map mini-card and the detail (`lib/profile.ts`: `formatDistance`, `shownDrop`, `gradeDeg`, `formatDrop`, `formatGrade`).
+
+### Removed
+- `formatKm` and `slopePct` (`lib/profile.ts`).
+
 ## [Unreleased] - UI redesign layer 1 (Night Rider)
 
 ### Added

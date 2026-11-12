@@ -11,13 +11,15 @@ async function TrailMapSection() {
   const trails = await listTrails();
   if (trails.length === 0) return <EmptyTrails />;
   // Only what the map shows reaches the browser: no profile.
-  const pins = trails.map(({ slug, name, difficulty, start, distanceM, elevationGainM }) => ({
+  const pins = trails.map(({ slug, name, difficulty, type, start, distanceM, elevationGainM, elevationLossM }) => ({
     slug,
     name,
     difficulty,
+    type,
     start,
     distanceM,
     elevationGainM,
+    elevationLossM,
   }));
   return (
     <>

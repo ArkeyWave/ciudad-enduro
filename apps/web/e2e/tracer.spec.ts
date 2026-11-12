@@ -99,7 +99,7 @@ test.describe('the FAB sheet and the tracer', () => {
     await markButton(rider).click();
     await expect(tracePoints(rider)).toHaveCount(2);
     await expect(rider.getByTestId('tracer-map').locator('path.trail-path')).toHaveCount(1);
-    await expect(summary(rider)).toHaveText('2 puntos · 0.2 km');
+    await expect(summary(rider)).toHaveText('2 puntos · 242 m');
 
     await tapMap(rider);
     await expect(tracePoints(rider)).toHaveCount(3);
@@ -109,7 +109,7 @@ test.describe('the FAB sheet and the tracer', () => {
     // The points survive a reload until the submit.
     await rider.reload();
     await expect(tracePoints(rider)).toHaveCount(2);
-    await expect(summary(rider)).toHaveText('2 puntos · 0.2 km');
+    await expect(summary(rider)).toHaveText('2 puntos · 242 m');
     for (const button of await rider.locator('.tracer-controls button').all()) await expectTarget(button);
     expect((await axe(rider)).violations).toEqual([]);
     await expectMinFontSize(rider);
@@ -121,6 +121,6 @@ test.describe('the FAB sheet and the tracer', () => {
     await expect(rider.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(1);
 
     await rider.goto('/rutas/nueva');
-    await expect(summary(rider)).toHaveText('0 puntos · 0 km');
+    await expect(summary(rider)).toHaveText('0 puntos · 0 m');
   });
 });

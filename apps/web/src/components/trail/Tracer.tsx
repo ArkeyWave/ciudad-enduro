@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
-import { formatKm } from '../../lib/profile';
+import { formatDistance } from '../../lib/profile';
 import { canMark, pathLengthM, readPoints, toGpx, type Fix, type Point } from '../../lib/tracer';
 import { uploadTrail, type TrailFailure } from '../../lib/trails-client';
 import { Icon } from '../Icon';
@@ -145,7 +145,7 @@ export default function Tracer() {
         </p>
       )}
       <p className="muted" aria-live="polite" data-testid="trace-summary">
-        {count} · {formatKm(pathLengthM(points))}
+        {count} · {formatDistance(pathLengthM(points))}
       </p>
       {points.length >= 2 && (
         <form onSubmit={submit} className="form">

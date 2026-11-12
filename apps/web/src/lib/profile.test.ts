@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { profilePolyline, sampleProfile, slopePct } from './profile';
+import { formatDistance, formatDrop, formatGrade, gradeDeg, profilePolyline, sampleProfile, shownDrop } from './profile';
 
 describe('profilePolyline', () => {
   it('scales distance to the width and elevation to the height, highest point at the top', () => {
@@ -44,18 +44,48 @@ describe('profilePolyline', () => {
   });
 });
 
-describe('slopePct', () => {
-  it('is the gain over the distance, rounded (prototype formula)', () => {
-    expect(slopePct(380, 4200)).toBe(9);
+describe('formatDistance', () => {
+  it('is in metres under 1 km and in kilometres from 1 km', () => {
+    expect(formatDistance(715.4)).toBe('715 m');
+    expect(formatDistance(999)).toBe('999 m');
+    expect(formatDistance(1000)).toBe('1 km');
+    expect(formatDistance(4200)).toBe('4.2 km');
   });
-  it('is 0 for a zero gain, not hidden', () => {
-    expect(slopePct(0, 4200)).toBe(0);
+});
+
+describe('shownDrop', () => {
+  it('is the loss, negative, for a Descenso', () => {
+    expect(shownDrop('descenso', 0, 30)).toBe(-30);
+  });
+  it('is the gain for every other type', () => {
+    expect(shownDrop('enduro', 380, 410)).toBe(380);
+  });
+  it('is null when the value it needs is missing', () => {
+    expect(shownDrop('descenso', 30, null)).toBeNull();
+    expect(shownDrop('enduro', undefined, 30)).toBeNull();
+  });
+});
+
+describe('gradeDeg', () => {
+  it('is atan(|drop| / distance) in degrees, for a climb and a descent', () => {
+    expect(gradeDeg(380, 4200)).toBeCloseTo(5.17, 2);
+    expect(gradeDeg(-30, 715)).toBeCloseTo(2.4, 2);
+  });
+  it('is 0 for a zero drop, not hidden', () => {
+    expect(gradeDeg(0, 4200)).toBe(0);
   });
   it('is null when a value is missing or the distance is 0', () => {
-    expect(slopePct(null, 4200)).toBeNull();
-    expect(slopePct(10, null)).toBeNull();
-    expect(slopePct(10, 0)).toBeNull();
-    expect(slopePct(undefined, 4200)).toBeNull();
+    expect(gradeDeg(null, 4200)).toBeNull();
+    expect(gradeDeg(10, null)).toBeNull();
+    expect(gradeDeg(10, 0)).toBeNull();
+  });
+});
+
+describe('formatDrop and formatGrade', () => {
+  it('writes a descent with a minus sign and the grade with one decimal', () => {
+    expect(formatDrop(-30)).toBe('−30 m');
+    expect(formatDrop(380)).toBe('380 m');
+    expect(formatGrade(5.17)).toBe('5.2°');
   });
 });
 

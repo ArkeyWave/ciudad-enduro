@@ -1,5 +1,5 @@
 import type { TrailDetail } from 'api-client';
-import { formatKm, formatM, profilePolyline } from '../../lib/profile';
+import { formatDistance, formatM, profilePolyline } from '../../lib/profile';
 
 const WIDTH = 600;
 const HEIGHT = 120;
@@ -11,7 +11,7 @@ type Props = Pick<TrailDetail, 'distanceM' | 'elevationGainM' | 'elevationLossM'
 /** The profile as an inline SVG; the numbers below it are the text version for screen readers. */
 export function ElevationProfile({ profile, distanceM, elevationGainM, elevationLossM, elevationMinM, elevationMaxM }: Props) {
   const facts: [string, string | null][] = [
-    ['Distancia', distanceM === null ? null : formatKm(distanceM)],
+    ['Distancia', distanceM === null ? null : formatDistance(distanceM)],
     ['Desnivel positivo', elevationGainM === null ? null : formatM(elevationGainM)],
     ['Desnivel negativo', elevationLossM === null ? null : formatM(elevationLossM)],
     ['Altura mínima', elevationMinM === null ? null : formatM(elevationMinM)],
