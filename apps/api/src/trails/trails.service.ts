@@ -236,8 +236,8 @@ export class TrailsService {
   /** The elevations of a GPX without them, from the elevation API (plan §8 G5); on failure, none. */
   private async withFilledElevations(points: LngLat[], parsed: TrackMetrics): Promise<TrackMetrics> {
     const filled = await fillElevations(points, this.env.ELEVATION_API_URL);
-    if (filled) return { ...parsed, ...elevationMetrics(filled.cum, filled.elevations) };
-    this.logger.warn(JSON.stringify({ event: 'elevation_fill_failed' }));
+    if ('elevations' in filled) return { ...parsed, ...elevationMetrics(filled.cum, filled.elevations) };
+    this.logger.warn(JSON.stringify({ event: 'elevation_fill_failed', reason: filled.reason }));
     return parsed;
   }
 

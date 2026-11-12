@@ -36,32 +36,35 @@ async function fetchBatch(url: string, points: LngLat[], signal: AbortSignal): P
   request.searchParams.set('latitude', points.map((p) => p.lat.toFixed(6)).join(','));
   request.searchParams.set('longitude', points.map((p) => p.lng.toFixed(6)).join(','));
   const response = await fetch(request, { signal });
-  if (!response.ok) throw new Error(`elevation API ${response.status}`);
+  if (!response.ok) throw new Error(`http_${response.status}`);
   const { elevation } = (await response.json()) as { elevation?: unknown };
   const valid =
     Array.isArray(elevation) &&
     elevation.length === points.length &&
     elevation.every((e) => typeof e === 'number' && Number.isFinite(e) && e >= ELE_MIN && e <= ELE_MAX);
-  if (!valid) throw new Error('elevation API answer refused');
+  if (!valid) throw new Error('bad_answer');
   return elevation as number[];
 }
 
 /**
- * Elevations from an Open-Meteo-compatible API for samples along the line, or null on any failure
- * (network, status, timeout, a bad answer): the caller then stores the trail without them.
+ * Elevations from an Open-Meteo-compatible API for samples along the line, or the reason of a failure
+ * (`http_<status>`, `bad_answer`, or the error name such as `TimeoutError`; never the URL): the caller
+ * then stores the trail without them.
  */
 export async function fillElevations(
   points: LngLat[],
   url: string,
   timeoutMs = ELEVATION_TIMEOUT_MS,
-): Promise<{ cum: number[]; elevations: number[] } | null> {
+): Promise<{ cum: number[]; elevations: number[] } | { reason: string }> {
   const { cum, points: samples } = samplesAlong(points);
   const signal = AbortSignal.timeout(timeoutMs);
   const batches = Array.from({ length: Math.ceil(samples.length / BATCH) }, (_, i) => samples.slice(i * BATCH, (i + 1) * BATCH));
   try {
     const elevations = (await Promise.all(batches.map((batch) => fetchBatch(url, batch, signal)))).flat();
     return { cum, elevations };
-  } catch {
-    return null;
+  } catch (error) {
+    // A plain Error carries one of our codes; any other error (fetch, abort, JSON) only its name.
+    const reason = error instanceof Error ? (error.constructor === Error ? error.message : error.name) : 'unknown';
+    return { reason };
   }
 }

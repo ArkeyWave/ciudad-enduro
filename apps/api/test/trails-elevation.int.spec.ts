@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { format } from 'node:util';
+import type { LoggerService } from '@nestjs/common';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { haversineM } from '../src/trails/gpx/metrics.js';
@@ -17,6 +19,10 @@ let server: Server;
 
 /** The stub's ground: 100 m at -8.11, rising 1 m per 0.0001° south. */
 const groundAt = (lat: number) => Math.round((100 + (-8.11 - lat) * 10_000) * 10) / 10;
+
+const lines: string[] = [];
+const push = (...args: unknown[]) => void lines.push(format(...args));
+const captureLogger: LoggerService = { log: push, error: push, warn: push, debug: push, verbose: push, fatal: push };
 
 let t: AuthTestApp;
 let client: pg.Client;
@@ -36,7 +42,7 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   process.env.ELEVATION_API_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/elevation`;
-  t = await createAuthTestApp();
+  t = await createAuthTestApp({ logger: captureLogger });
   client = await openTestClient();
   await truncateAuth(client);
   admin = await signInWithOtp(t, 'admin-ele@x.pe');
@@ -53,6 +59,7 @@ beforeEach(async () => {
   t.app.get(UploadAttempts).clear();
   stub.mode = 'ok';
   stub.calls = [];
+  lines.length = 0;
 });
 
 const START = { lat: -8.11, lng: -79.03 };
@@ -123,5 +130,10 @@ describe('elevation fill (plan §8 G5)', () => {
     expect(stub.calls.length).toBeGreaterThan(0);
     expect(trail).toMatchObject({ elevationGainM: null, elevationLossM: null, elevationProfile: null, elevationMinM: null });
     expect(trail.distanceM).toBeGreaterThan(1900);
+    const reason = { error: 'http_500', short: 'bad_answer', hang: 'TimeoutError' }[mode as 'error' | 'short' | 'hang'];
+    const failed = lines.filter((line) => line.includes('elevation_fill_failed'));
+    expect(failed).toHaveLength(1);
+    expect(failed[0]).toContain(JSON.stringify({ event: 'elevation_fill_failed', reason }));
+    expect(lines.join(' ')).not.toContain(process.env.ELEVATION_API_URL!);
   }, 15_000);
 });
