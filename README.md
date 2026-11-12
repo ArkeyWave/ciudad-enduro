@@ -27,7 +27,7 @@ Open-source platform to discover and share urban MTB / enduro trails in Peru (Ch
 ```bash
 pnpm install
 cp .env.example .env
-pnpm db:up        # PostGIS 17-3.5 on localhost:5434, database ciudad_enduro
+pnpm db:up        # PostGIS 17-3.5 on localhost:5434 (database ciudad_enduro) and the S3 mock on localhost:9090
 ```
 
 ### API (`apps/api`)
@@ -103,7 +103,7 @@ npx auth generate --config scripts/auth-cli.ts --output src/db/schema/auth.ts
 pnpm db:generate
 ```
 
-API tests need the dev database (`pnpm db:up`). The test setup creates and migrates
+API tests need the dev database and the S3 mock (`pnpm db:up`; the photo buckets exist at start). The test setup creates and migrates
 `ciudad_enduro_test_<TEST_DB_SUFFIX>` (default `main`) on `localhost` or `127.0.0.1` only. Use a
 different `TEST_DB_SUFFIX` per worktree.
 

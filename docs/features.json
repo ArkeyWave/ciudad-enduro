@@ -134,7 +134,10 @@
       "id": "media",
       "description": "Trail photos and GPX export",
       "passes": false,
-      "proof": [{ "type": "test", "ref": "issue #12 (not planned yet)" }]
+      "proof": [
+        { "type": "test", "ref": "photos (plan 2026-11-11-ui-redesign-layer-1 §9 V1-V6): apps/api/test/photos.int.spec.ts, apps/web/src/lib/photos-client.test.ts, apps/web/e2e/photos.spec.ts" },
+        { "type": "test", "ref": "pending: GPX export (issue #12), the photo check on staging with real R2 (both buckets)" }
+      ]
     },
     {
       "id": "ui-redesign-l1",

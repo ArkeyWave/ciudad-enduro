@@ -54,7 +54,7 @@ afterAll(async () => {
   await t.app.close();
 });
 beforeEach(async () => {
-  await client.query('TRUNCATE trails, trail_sources');
+  await client.query('TRUNCATE trails, trail_sources, trail_photos');
   t.app.get(UploadAttempts).clear();
 });
 

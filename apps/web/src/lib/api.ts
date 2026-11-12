@@ -78,3 +78,16 @@ export async function listQueue(cookie: string): Promise<QueueTrail[]> {
   if (!data) throw new Error(`GET /api/admin/trails failed with ${response.status}`);
   return data;
 }
+
+export type QueuePhoto = components['schemas']['QueuePhotoDto'];
+
+/** The photo moderation queue (admin): drafts, oldest first, with the trail and the author's e-mail. */
+export async function listPhotoQueue(cookie: string): Promise<QueuePhoto[]> {
+  const { data, response } = await apiClient().GET('/api/admin/photos', {
+    params: { query: { status: 'draft' } },
+    headers: { cookie },
+    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+  });
+  if (!data) throw new Error(`GET /api/admin/photos failed with ${response.status}`);
+  return data;
+}
