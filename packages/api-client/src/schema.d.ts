@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/api/admin/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["PhotosController_queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/trails": {
         parameters: {
             query?: never;
@@ -68,6 +84,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/photos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["PhotosController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/photos/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["PhotosController_update"];
+        trace?: never;
+    };
     "/api/trails": {
         parameters: {
             query?: never;
@@ -109,6 +157,16 @@ export interface components {
         CoordinatesDto: {
             lat: number;
             lng: number;
+        };
+        CreatePhotoBody: {
+            /** @description The phone position (accuracy ≤ 30 m, age ≤ 10 s); else the EXIF GPS */
+            lat?: string;
+            lng?: string;
+            /**
+             * Format: binary
+             * @description One JPEG, PNG or WebP, at most 10 MiB
+             */
+            photo: string;
         };
         CreateTrailBody: {
             city: components["schemas"]["City"];
@@ -153,6 +211,50 @@ export interface components {
             status: components["schemas"]["TrailStatus"];
             type: components["schemas"]["TrailType"];
         };
+        PhotoDto: {
+            /** @description Degrees from north (EXIF GPSImgDirection) */
+            heading: number | null;
+            height: number;
+            /** Format: uuid */
+            id: string;
+            /** @description 0 at the trail start, 1 at its end */
+            lineFraction: number;
+            position: components["schemas"]["CoordinatesDto"];
+            status: components["schemas"]["TrailStatus"];
+            /** Format: date-time */
+            takenAt: string | null;
+            /** @description WebP, 160 px square */
+            thumbUrl: string;
+            trailName: string;
+            trailSlug: string;
+            /** @description WebP, at most 1600 px */
+            url: string;
+            width: number;
+        };
+        QueuePhotoDto: {
+            /** @description Null when the author was deleted */
+            authorEmail: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** @description Degrees from north (EXIF GPSImgDirection) */
+            heading: number | null;
+            height: number;
+            /** Format: uuid */
+            id: string;
+            /** @description 0 at the trail start, 1 at its end */
+            lineFraction: number;
+            position: components["schemas"]["CoordinatesDto"];
+            status: components["schemas"]["TrailStatus"];
+            /** Format: date-time */
+            takenAt: string | null;
+            /** @description WebP, 160 px square */
+            thumbUrl: string;
+            trailName: string;
+            trailSlug: string;
+            /** @description WebP, at most 1600 px */
+            url: string;
+            width: number;
+        };
         QueueTrailDto: {
             /** @description Null when the author was deleted */
             authorEmail: string | null;
@@ -188,10 +290,30 @@ export interface components {
             name: string;
             /** @description [lng, lat] pairs, simplified for display */
             path: number[][] | null;
+            /** @description Line order; published ones, plus drafts and hidden ones for their author and admins */
+            photos: components["schemas"]["TrailPhotoDto"][];
             slug: string;
             start: components["schemas"]["CoordinatesDto"];
             status: components["schemas"]["TrailStatus"];
             type: components["schemas"]["TrailType"];
+        };
+        TrailPhotoDto: {
+            /** @description Degrees from north (EXIF GPSImgDirection) */
+            heading: number | null;
+            height: number;
+            /** Format: uuid */
+            id: string;
+            /** @description 0 at the trail start, 1 at its end */
+            lineFraction: number;
+            position: components["schemas"]["CoordinatesDto"];
+            status: components["schemas"]["TrailStatus"];
+            /** Format: date-time */
+            takenAt: string | null;
+            /** @description WebP, 160 px square */
+            thumbUrl: string;
+            /** @description WebP, at most 1600 px */
+            url: string;
+            width: number;
         };
         /** @enum {string} */
         TrailStatus: "draft" | "published" | "hidden";
@@ -212,6 +334,9 @@ export interface components {
         };
         /** @enum {string} */
         TrailType: "descenso" | "cross_country" | "urbano";
+        UpdatePhotoDto: {
+            status: components["schemas"]["TrailStatus"];
+        };
         UpdateTrailDto: {
             city?: components["schemas"]["City"];
             description?: string;
@@ -229,6 +354,41 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    PhotosController_queue: {
+        parameters: {
+            query: {
+                status: components["schemas"]["TrailStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueuePhotoDto"][];
+                };
+            };
+            /** @description No valid session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not an admin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     TrailListsController_queue: {
         parameters: {
             query: {
@@ -326,6 +486,136 @@ export interface operations {
             };
             /** @description No valid session */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PhotosController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["CreatePhotoBody"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoDto"];
+                };
+            };
+            /** @description NO_POSITION (no body position and no EXIF GPS), PHOTO_INVALID, or a validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description No valid session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Over 10 MiB, or PHOTO_TOO_LARGE: over 50 megapixels */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description PHOTO_TYPE: not a JPEG, PNG or WebP */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description NO_TRAIL_NEARBY: no published trail within 50 m */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description TOO_MANY_UPLOADS: a non-admin made 10 uploads (trails and photos) in 10 min; TOO_MANY_PENDING: 20 photos in review */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+            /** @description ENCODE_BUSY or STORAGE_UNAVAILABLE; try again */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
+        };
+    };
+    PhotosController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePhotoDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhotoDto"];
+                };
+            };
+            /** @description No valid session */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not an admin, or a foreign Origin */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No photo has this id */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

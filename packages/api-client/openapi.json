@@ -24,6 +24,26 @@
         ],
         "type": "object"
       },
+      "CreatePhotoBody": {
+        "properties": {
+          "lat": {
+            "description": "The phone position (accuracy ≤ 30 m, age ≤ 10 s); else the EXIF GPS",
+            "type": "string"
+          },
+          "lng": {
+            "type": "string"
+          },
+          "photo": {
+            "description": "One JPEG, PNG or WebP, at most 10 MiB",
+            "format": "binary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "photo"
+        ],
+        "type": "object"
+      },
       "CreateTrailBody": {
         "properties": {
           "city": {
@@ -216,6 +236,151 @@
         ],
         "type": "object"
       },
+      "PhotoDto": {
+        "properties": {
+          "heading": {
+            "description": "Degrees from north (EXIF GPSImgDirection)",
+            "nullable": true,
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lineFraction": {
+            "description": "0 at the trail start, 1 at its end",
+            "type": "number"
+          },
+          "position": {
+            "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailStatus"
+              }
+            ]
+          },
+          "takenAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "thumbUrl": {
+            "description": "WebP, 160 px square",
+            "type": "string"
+          },
+          "trailName": {
+            "type": "string"
+          },
+          "trailSlug": {
+            "type": "string"
+          },
+          "url": {
+            "description": "WebP, at most 1600 px",
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "lineFraction",
+          "position",
+          "heading",
+          "takenAt",
+          "url",
+          "thumbUrl",
+          "width",
+          "height",
+          "trailSlug",
+          "trailName"
+        ],
+        "type": "object"
+      },
+      "QueuePhotoDto": {
+        "properties": {
+          "authorEmail": {
+            "description": "Null when the author was deleted",
+            "nullable": true,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "heading": {
+            "description": "Degrees from north (EXIF GPSImgDirection)",
+            "nullable": true,
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lineFraction": {
+            "description": "0 at the trail start, 1 at its end",
+            "type": "number"
+          },
+          "position": {
+            "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailStatus"
+              }
+            ]
+          },
+          "takenAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "thumbUrl": {
+            "description": "WebP, 160 px square",
+            "type": "string"
+          },
+          "trailName": {
+            "type": "string"
+          },
+          "trailSlug": {
+            "type": "string"
+          },
+          "url": {
+            "description": "WebP, at most 1600 px",
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "lineFraction",
+          "position",
+          "heading",
+          "takenAt",
+          "url",
+          "thumbUrl",
+          "width",
+          "height",
+          "trailSlug",
+          "trailName",
+          "authorEmail",
+          "createdAt"
+        ],
+        "type": "object"
+      },
       "QueueTrailDto": {
         "properties": {
           "authorEmail": {
@@ -388,6 +553,13 @@
             "nullable": true,
             "type": "array"
           },
+          "photos": {
+            "description": "Line order; published ones, plus drafts and hidden ones for their author and admins",
+            "items": {
+              "$ref": "#/components/schemas/TrailPhotoDto"
+            },
+            "type": "array"
+          },
           "slug": {
             "type": "string"
           },
@@ -426,7 +598,67 @@
           "end",
           "path",
           "elevationMinM",
-          "elevationMaxM"
+          "elevationMaxM",
+          "photos"
+        ],
+        "type": "object"
+      },
+      "TrailPhotoDto": {
+        "properties": {
+          "heading": {
+            "description": "Degrees from north (EXIF GPSImgDirection)",
+            "nullable": true,
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lineFraction": {
+            "description": "0 at the trail start, 1 at its end",
+            "type": "number"
+          },
+          "position": {
+            "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailStatus"
+              }
+            ]
+          },
+          "takenAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "thumbUrl": {
+            "description": "WebP, 160 px square",
+            "type": "string"
+          },
+          "url": {
+            "description": "WebP, at most 1600 px",
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "lineFraction",
+          "position",
+          "heading",
+          "takenAt",
+          "url",
+          "thumbUrl",
+          "width",
+          "height"
         ],
         "type": "object"
       },
@@ -523,6 +755,21 @@
         ],
         "type": "string"
       },
+      "UpdatePhotoDto": {
+        "properties": {
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "UpdateTrailDto": {
         "properties": {
           "city": {
@@ -575,6 +822,45 @@
   },
   "openapi": "3.0.0",
   "paths": {
+    "/api/admin/photos": {
+      "get": {
+        "operationId": "PhotosController_queue",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TrailStatus"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/QueuePhotoDto"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "description": "No valid session"
+          },
+          "403": {
+            "description": "Not an admin"
+          }
+        },
+        "tags": [
+          "photos"
+        ]
+      }
+    },
     "/api/admin/trails": {
       "get": {
         "operationId": "TrailListsController_queue",
@@ -676,6 +962,149 @@
         },
         "tags": [
           "trails"
+        ]
+      }
+    },
+    "/api/photos": {
+      "post": {
+        "operationId": "PhotosController_create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePhotoBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "NO_POSITION (no body position and no EXIF GPS), PHOTO_INVALID, or a validation error"
+          },
+          "401": {
+            "description": "No valid session"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "Over 10 MiB, or PHOTO_TOO_LARGE: over 50 megapixels"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "PHOTO_TYPE: not a JPEG, PNG or WebP"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "NO_TRAIL_NEARBY: no published trail within 50 m"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "TOO_MANY_UPLOADS: a non-admin made 10 uploads (trails and photos) in 10 min; TOO_MANY_PENDING: 20 photos in review"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "ENCODE_BUSY or STORAGE_UNAVAILABLE; try again"
+          }
+        },
+        "tags": [
+          "photos"
+        ]
+      }
+    },
+    "/api/photos/{id}": {
+      "patch": {
+        "operationId": "PhotosController_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePhotoDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PhotoDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "401": {
+            "description": "No valid session"
+          },
+          "403": {
+            "description": "Not an admin, or a foreign Origin"
+          },
+          "404": {
+            "description": "No photo has this id"
+          }
+        },
+        "tags": [
+          "photos"
         ]
       }
     },

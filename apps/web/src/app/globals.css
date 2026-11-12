@@ -266,6 +266,8 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 /* Each map is its own stacking context, so Leaflet's panes (400–1000) stay inside it. */
 .map-box { position: relative; z-index: 0; }
 .map-box.rounded { border-radius: 18px; }
+/* The detail map and its skeleton share the height, so the page does not shift when Leaflet loads. */
+.detail-map { height: 300px; }
 .mini-card {
   background: var(--card); border-radius: 20px; border: 1px solid var(--border);
   padding: 14px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 -10px 30px rgba(0,0,0,0.4);
@@ -274,6 +276,35 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 .mini-stats { display: flex; gap: 12px; font-size: 11px; color: var(--muted); font-weight: 500; }
 .tracer-map { height: 360px; }
 .tracer-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+
+/* ── Vistas (trail photos, plan §9 V5) ───────────────────────── */
+.photo-preview { display: block; width: 100%; height: auto; border-radius: 16px; }
+/* The line runs through the centre of the 56 px thumbnails (4 px padding + 28 px). */
+.timeline {
+  list-style: none; margin: 0; padding: 4px 2px; display: flex; align-items: flex-start; gap: 10px; overflow-x: auto;
+  background: linear-gradient(var(--border-hi), var(--border-hi)) 0 31px / 100% 2px no-repeat;
+}
+.tl-end { flex-shrink: 0; width: 12px; height: 12px; margin-top: 26px; border-radius: 50%; background: var(--lime); }
+.tl-item { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.tl-photo {
+  width: 56px; height: 56px; padding: 0; border-radius: 50%; overflow: hidden; cursor: pointer;
+  border: 2px solid var(--lime); background: var(--card);
+}
+.tl-photo img, .photo-marker img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.photo-viewer {
+  width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0;
+  background: #000; color: var(--text);
+}
+.photo-viewer[open] { display: flex; align-items: center; justify-content: center; }
+.photo-viewer::backdrop { background: rgba(0,0,0,0.9); }
+.photo-viewer img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+.photo-viewer .back { position: absolute; top: 12px; right: 16px; }
+.photo-marker { width: 36px; height: 36px; border-radius: 50%; overflow: hidden; border: 2px solid var(--lime); background: var(--card); }
+.photo-review { display: flex; gap: 14px; align-items: flex-start; }
+.photo-review-thumb { flex-shrink: 0; }
+.photo-review-thumb img { display: block; border-radius: 12px; object-fit: cover; }
+.photo-review-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.photo-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ── Action sheet (the FAB "Registrar ruta", plan §8 G1) ─────── */
 .sheet-dialog {

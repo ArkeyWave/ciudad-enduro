@@ -4,7 +4,6 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useEffect, useRef } from 'react';
 import type { Coordinates } from 'api-client';
-import { MAP_HEIGHT } from './map-size';
 import { baseMap, ELEVATION_CREDIT, LIME } from './tiles';
 
 export interface TrailMapProps {
@@ -16,12 +15,24 @@ export interface TrailMapProps {
   end: Coordinates | null;
   /** The trail shows an elevation profile: the map credits its source. */
   profiled: boolean;
+  /** The photos the viewer sees, as round thumbnails (plan §9 V5). */
+  photos: { id: string; position: Coordinates; thumbUrl: string }[];
 }
 
 const point = (c: Coordinates): L.LatLngTuple => [c.lat, c.lng];
 const dot = (className: string) => ({ className, radius: 6, color: '#0A0A0A', weight: 2, fillColor: LIME, fillOpacity: 1 });
 
-export default function TrailMap({ slug, path, start, end, profiled }: TrailMapProps) {
+/** A round thumbnail marker. Built as a DOM node, so no URL is ever parsed as HTML. */
+function photoIcon(url: string): L.DivIcon {
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = '';
+  img.width = 32;
+  img.height = 32;
+  return L.divIcon({ className: 'photo-marker', html: img, iconSize: [36, 36] });
+}
+
+export default function TrailMap({ slug, path, start, end, profiled, photos }: TrailMapProps) {
   const container = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,6 +48,8 @@ export default function TrailMap({ slug, path, start, end, profiled }: TrailMapP
     }
     L.circleMarker(point(start), dot('trail-start')).addTo(map);
     if (line && end) L.circleMarker(point(end), dot('trail-end')).addTo(map);
+    // Not focusable and not clickable: the timeline under the profile is the accessible way to the photos.
+    for (const photo of photos) L.marker(point(photo.position), { icon: photoIcon(photo.thumbUrl), keyboard: false, interactive: false }).addTo(map);
     return () => {
       map.remove();
     };
@@ -48,8 +61,7 @@ export default function TrailMap({ slug, path, start, end, profiled }: TrailMapP
       role="region"
       aria-label="Mapa del sendero"
       data-testid="trail-map"
-      className="map-box"
-      style={{ height: MAP_HEIGHT }}
+      className="map-box detail-map"
     />
   );
 }

@@ -32,13 +32,13 @@ let sharedStub: Promise<TurnstileStub> | undefined;
  * captcha plugin verifies against a local siteverify stub (shared, or the given one), never Cloudflare.
  */
 export async function createAuthTestApp(
-  options: { transport?: MailTransport; logger?: LoggerService | false; turnstile?: TurnstileStub } = {},
+  options: { transport?: MailTransport; logger?: LoggerService | false; turnstile?: TurnstileStub; env?: Record<string, string> } = {},
 ): Promise<AuthTestApp> {
   const capture = captureTransport();
   const turnstile = options.turnstile ?? (await (sharedStub ??= startTurnstileStub()));
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(ENV)
-    .useValue(loadEnv({ ...process.env, DATABASE_URL: testDatabaseUrl() }))
+    .useValue(loadEnv({ ...process.env, DATABASE_URL: testDatabaseUrl(), ...options.env }))
     .overrideProvider(MAIL_TRANSPORT)
     .useValue(options.transport ?? capture.transport)
     .overrideProvider(TURNSTILE_SITEVERIFY_URL)

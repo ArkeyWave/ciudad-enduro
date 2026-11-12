@@ -10,6 +10,10 @@ import {
   type TrailStatus,
   type TrailType,
 } from '../../db/schema/index.js';
+import { TrailPhotoDto } from '../../photos/dto/photo.dto.js';
+import { CoordinatesDto } from './coordinates.dto.js';
+
+export { CoordinatesDto };
 
 const pairs = (description: string) =>
   ({
@@ -24,11 +28,6 @@ export class ErrorBodyDto {
   @ApiProperty({ required: false, example: 'TOO_MANY_PENDING' }) code?: string;
   @ApiProperty({ oneOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] }) message!: string | string[];
   @ApiProperty({ required: false, description: 'GPX_DUPLICATE only, when the uploader may see that trail' }) slug?: string;
-}
-
-export class CoordinatesDto {
-  @ApiProperty() lat!: number;
-  @ApiProperty() lng!: number;
 }
 
 export class TrailSummaryDto {
@@ -64,4 +63,6 @@ export class TrailDetailDto extends TrailSummaryDto {
   path!: [number, number][] | null;
   @ApiProperty({ type: Number, nullable: true }) elevationMinM!: number | null;
   @ApiProperty({ type: Number, nullable: true }) elevationMaxM!: number | null;
+  @ApiProperty({ type: () => TrailPhotoDto, isArray: true, description: 'Line order; published ones, plus drafts and hidden ones for their author and admins' })
+  photos!: TrailPhotoDto[];
 }

@@ -29,6 +29,12 @@ export default defineConfig({
       TURNSTILE_SECRET_KEY: 'test-turnstile-secret-key',
       // No test reaches Open-Meteo: a closed port fails at once (the trail is stored without elevations).
       ELEVATION_API_URL: 'http://127.0.0.1:9/v1/elevation',
+      // The S3 mock of docker-compose.dev.yml and the CI service (port 9090, bucket created at start).
+      S3_ENDPOINT: 'http://127.0.0.1:9090',
+      R2_ACCESS_KEY_ID: 'test-access-key-id',
+      R2_SECRET_ACCESS_KEY: 'test-secret-access-key',
+      R2_MEDIA_BUCKET: 'ciudad-enduro-media-test',
+      MEDIA_PUBLIC_BASE_URL: 'http://127.0.0.1:9090/ciudad-enduro-media-test',
     },
   },
 });

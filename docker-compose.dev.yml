@@ -19,5 +19,15 @@ services:
       timeout: 5s
       retries: 20
 
+  # S3 API stand-in for R2 (plan §9 V6): the official MinIO images are no longer published.
+  # No auth and path-style URLs; GET needs no signature, so the browser reads photos directly.
+  # The buckets exist at start; their files do not survive a restart of the container.
+  s3mock:
+    image: adobe/s3mock:5.2.3@sha256:ab01a6946750f451ca215a47e91030695b260e4003b8a5a6201d25029b8fca92
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ciudad-enduro-media,ciudad-enduro-media-test
+    ports:
+      - "9090:9090"
+
 volumes:
   pgdata:

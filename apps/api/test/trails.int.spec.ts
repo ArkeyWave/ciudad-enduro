@@ -24,7 +24,7 @@ afterAll(async () => {
 const base = { department: 'Ancash', difficulty: 'intermedio', type: 'descenso', description: 'Roca suelta' } as const;
 
 beforeEach(async () => {
-  await client.query('TRUNCATE trails, trail_sources');
+  await client.query('TRUNCATE trails, trail_sources, trail_photos');
   await db.insert(trails).values([
     {
       ...base,
