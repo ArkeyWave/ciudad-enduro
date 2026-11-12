@@ -34,6 +34,7 @@ const valid = {
   R2_ACCESS_KEY_ID: 'access-key-id',
   R2_SECRET_ACCESS_KEY: 'r2-real-secret',
   R2_MEDIA_BUCKET: 'ciudad-enduro-media',
+  R2_PRIVATE_BUCKET: 'ciudad-enduro-media-private',
   MEDIA_PUBLIC_BASE_URL: 'https://media.enduro.vops.pe',
 };
 
@@ -77,7 +78,7 @@ describe('photo storage (plan §9 V1, V6)', () => {
     expect(() => loadEnv({ ...valid, R2_ACCOUNT_ID: undefined, S3_ENDPOINT: 'http://127.0.0.1:9090' })).not.toThrow();
   });
 
-  it.each(['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_MEDIA_BUCKET', 'MEDIA_PUBLIC_BASE_URL'])('requires %s', (key) => {
+  it.each(['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_MEDIA_BUCKET', 'R2_PRIVATE_BUCKET', 'MEDIA_PUBLIC_BASE_URL'])('requires %s', (key) => {
     expect(() => loadEnv({ ...valid, [key]: undefined })).toThrow(new RegExp(key));
   });
 
@@ -143,6 +144,12 @@ describe('loadEnv in production', () => {
     expect(() => loadEnv({ ...prod, BETTER_AUTH_TRUSTED_ORIGINS: 'https://other.example' })).toThrow(
       /BETTER_AUTH_TRUSTED_ORIGINS: must not be set in production/,
     );
+  });
+
+  it('requires an https MEDIA_PUBLIC_BASE_URL and refuses S3_ENDPOINT in production, not outside it', () => {
+    expect(() => loadEnv({ ...prod, MEDIA_PUBLIC_BASE_URL: 'http://media.enduro.vops.pe' })).toThrow(/MEDIA_PUBLIC_BASE_URL: must be https in production/);
+    expect(() => loadEnv({ ...prod, S3_ENDPOINT: 'http://127.0.0.1:9090' })).toThrow(/S3_ENDPOINT: must not be set in production/);
+    expect(() => loadEnv({ ...valid, MEDIA_PUBLIC_BASE_URL: 'http://127.0.0.1:9090/b', S3_ENDPOINT: 'http://127.0.0.1:9090' })).not.toThrow();
   });
 
   it('accepts production without BETTER_AUTH_TRUSTED_ORIGINS', () => {

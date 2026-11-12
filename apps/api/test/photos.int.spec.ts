@@ -7,13 +7,16 @@ import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import exifr from 'exifr';
 import type pg from 'pg';
 import sharp from 'sharp';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trailPhotos, trails, type TrailStatus } from '../src/db/schema/index.js';
+import { MediaStorage } from '../src/photos/media-storage.js';
 import { UploadAttempts } from '../src/trails/upload-throttle.js';
 import { openTestClient } from './test-db.js';
 import { createAuthTestApp, signInWithOtp, truncateAuth, uniqueIp, WEB_ORIGIN, type AuthTestApp } from './support/test-app.js';
 
-const BUCKET = process.env.R2_MEDIA_BUCKET!;
+const PUBLIC = process.env.R2_MEDIA_BUCKET!;
+const PRIVATE = process.env.R2_PRIVATE_BUCKET!;
+const BASE = process.env.MEDIA_PUBLIC_BASE_URL!;
 const s3 = new S3Client({
   region: 'auto',
   endpoint: process.env.S3_ENDPOINT,
@@ -21,14 +24,19 @@ const s3 = new S3Client({
   credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
 });
 
-async function listKeys(): Promise<string[]> {
-  const { Contents = [] } = await s3.send(new ListObjectsV2Command({ Bucket: BUCKET }));
+/** The keys in a bucket; the private one by default (every upload lands there, V1c). */
+async function listKeys(bucket = PRIVATE): Promise<string[]> {
+  const { Contents = [] } = await s3.send(new ListObjectsV2Command({ Bucket: bucket }));
   return Contents.map((o) => o.Key!).sort();
 }
 async function emptyBucket() {
-  const keys = await listKeys();
-  if (keys.length) await s3.send(new DeleteObjectsCommand({ Bucket: BUCKET, Delete: { Objects: keys.map((Key) => ({ Key })) } }));
+  for (const bucket of [PUBLIC, PRIVATE]) {
+    const keys = await listKeys(bucket);
+    if (keys.length) await s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys.map((Key) => ({ Key })) } }));
+  }
 }
+/** The HTTP status of an anonymous GET, as a browser would make it. */
+const statusOf = async (url: string) => (await fetch(url)).status;
 
 let t: AuthTestApp;
 let client: pg.Client;
@@ -197,8 +205,11 @@ describe('POST /api/photos: the pipeline (V1, V1b)', () => {
     expect(row.altitude_m).toBeCloseTo(123.4, 3);
     expect(row.elat).toBeCloseTo(-9.0925, 6);
 
-    // Only the two re-encoded files: the original is never stored.
+    // Only the two re-encoded files, in the private bucket: the original is never stored, and a
+    // draft is never public (V1c).
     expect(await listKeys()).toEqual([`photos/${photo.id}-t.webp`, `photos/${photo.id}.webp`].sort());
+    expect(await listKeys(PUBLIC)).toEqual([]);
+    expect(await statusOf(`${BASE}/photos/${photo.id}.webp`)).toBe(404);
     for (const [url, side] of [
       [photo.url, 1600],
       [photo.thumbUrl, 160],
@@ -391,7 +402,7 @@ describe('POST /api/photos: storage cleanup', () => {
 
   it('writes no row when the upload fails (503 STORAGE_UNAVAILABLE), and keys go under MEDIA_KEY_PREFIX', async () => {
     await seedTrail();
-    const broken = await createAuthTestApp({ env: { R2_MEDIA_BUCKET: 'no-such-bucket' } });
+    const broken = await createAuthTestApp({ env: { R2_PRIVATE_BUCKET: 'no-such-bucket' } });
     const prefixed = await createAuthTestApp({ env: { MEDIA_KEY_PREFIX: 'staging/' } });
     try {
       const res = await upload(broken, as(rider), await plainJpeg(), near(0.1, 0));
@@ -401,11 +412,105 @@ describe('POST /api/photos: storage cleanup', () => {
 
       const ok = (await (await upload(prefixed, as(rider), await plainJpeg(), near(0.1, 0))).json()) as Photo;
       expect(await listKeys()).toEqual([`staging/photos/${ok.id}-t.webp`, `staging/photos/${ok.id}.webp`]);
-      expect(ok.url).toBe(`${process.env.MEDIA_PUBLIC_BASE_URL}/staging/photos/${ok.id}.webp`);
+      expect(ok.url.startsWith(`${process.env.S3_ENDPOINT}/${PRIVATE}/staging/photos/${ok.id}.webp?`)).toBe(true);
+      expect(await statusOf(ok.url)).toBe(200);
     } finally {
       await broken.app.close();
       await prefixed.app.close();
     }
+  });
+});
+
+describe('POST /api/photos: both uploads settle before the cleanup (B3)', () => {
+  it('leaves no file when one PUT fails fast and the other succeeds later', async () => {
+    await seedTrail();
+    const media = t.app.get(MediaStorage);
+    const real = media.putPrivate.bind(media);
+    const spy = vi.spyOn(media, 'putPrivate').mockImplementation(async (key, body) => {
+      if (key.endsWith('-t.webp')) throw new Error('put failed');
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return real(key, body);
+    });
+    try {
+      const res = await post(as(rider), await plainJpeg(), near(0.1, 0));
+      expect(res.status).toBe(503);
+      // Past the slow PUT: with Promise.all the cleanup ran before it, and its file would land now.
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      expect(await listKeys()).toEqual([]);
+      expect(await count()).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('publish, hide and delete move the files (V1c)', () => {
+  const urls = (id: string) => [`${BASE}/photos/${id}.webp`, `${BASE}/photos/${id}-t.webp`];
+  async function draft() {
+    await seedTrail();
+    return (await (await post(as(rider), await plainJpeg(), near(0.3, 0))).json()) as Photo;
+  }
+  const del = (id: string, headers: Headers) => fetch(`${t.url}/api/photos/${id}`, { method: 'DELETE', headers });
+
+  it('serves a draft only through its presigned URL; publish copies it to the public bucket with a 1 h cache', async () => {
+    const photo = await draft();
+    expect(await statusOf(photo.url)).toBe(200);
+    expect(await statusOf(photo.thumbUrl)).toBe(200);
+    for (const url of urls(photo.id)) expect(await statusOf(url)).toBe(404);
+
+    const res = await patch(photo.id, as(admin), { status: 'published' });
+    expect(res.status).toBe(200);
+    const published = (await res.json()) as Photo;
+    expect([published.url, published.thumbUrl]).toEqual(urls(photo.id));
+    for (const url of urls(photo.id)) {
+      const got = await fetch(url);
+      expect(got.status).toBe(200);
+      expect(got.headers.get('cache-control')).toBe('public, max-age=3600');
+    }
+  });
+
+  it('hide deletes the public copies and keeps the private ones; publishing again works', async () => {
+    const photo = await draft();
+    expect((await patch(photo.id, as(admin), { status: 'published' })).status).toBe(200);
+    const hidden = await patch(photo.id, as(admin), { status: 'hidden' });
+    expect(hidden.status).toBe(200);
+    expect(await listKeys(PUBLIC)).toEqual([]);
+    expect(await listKeys()).toHaveLength(2);
+    for (const url of urls(photo.id)) expect(await statusOf(url)).toBe(404);
+    expect(await statusOf(((await hidden.json()) as Photo).url)).toBe(200);
+    expect((await patch(photo.id, as(admin), { status: 'published' })).status).toBe(200);
+    for (const url of urls(photo.id)) expect(await statusOf(url)).toBe(200);
+  });
+
+  it('leaves the row unchanged with 503 STORAGE_UNAVAILABLE when the copy or the public delete fails', async () => {
+    const photo = await draft();
+    const broken = await createAuthTestApp({ env: { R2_MEDIA_BUCKET: 'no-such-bucket' } });
+    try {
+      const send = (status: string) =>
+        fetch(`${broken.url}/api/photos/${photo.id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', ...as(admin) }, body: JSON.stringify({ status }) });
+      const copy = await send('published');
+      expect(copy.status).toBe(503);
+      expect(await copy.json()).toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
+      expect((await client.query('select status from trail_photos')).rows).toEqual([{ status: 'draft' }]);
+      await client.query(`update trail_photos set status = 'published'`);
+      expect((await send('hidden')).status).toBe(503);
+      expect((await client.query('select status from trail_photos')).rows).toEqual([{ status: 'published' }]);
+    } finally {
+      await broken.app.close();
+    }
+  });
+
+  it('lets an admin delete a photo: both buckets empty, the row gone; 403 for a rider or a foreign Origin, 404 unknown', async () => {
+    const photo = await draft();
+    expect((await patch(photo.id, as(admin), { status: 'published' })).status).toBe(200);
+    expect((await del(photo.id, as(rider))).status).toBe(403);
+    expect((await del(photo.id, as(admin, 'https://other.vops.pe'))).status).toBe(403);
+    expect((await del(crypto.randomUUID(), as(admin))).status).toBe(404);
+    expect(await count()).toBe(1);
+    expect((await del(photo.id, as(admin))).status).toBe(204);
+    expect(await listKeys(PUBLIC)).toEqual([]);
+    expect(await listKeys()).toEqual([]);
+    expect(await count()).toBe(0);
   });
 });
 
@@ -440,7 +545,7 @@ describe('who sees a photo, and the admin queue (V5, plan §6)', () => {
     const res = await get('/admin/photos?status=draft', as(admin, null));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([
-      expect.objectContaining({ id: photo.id, trailSlug: trail.slug, trailName: `Sendero ${trail.slug}`, authorEmail: 'rider@x.pe', thumbUrl: photo.thumbUrl }),
+      expect.objectContaining({ id: photo.id, trailSlug: trail.slug, trailName: `Sendero ${trail.slug}`, authorEmail: 'rider@x.pe', thumbUrl: expect.stringContaining(`/${PRIVATE}/photos/${photo.id}-t.webp?`) as string }),
     ]);
     expect((await get('/admin/photos?status=draft', as(rider, null))).status).toBe(403);
     expect((await get('/admin/photos?status=draft')).status).toBe(401);

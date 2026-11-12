@@ -304,6 +304,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 .photo-review-thumb { flex-shrink: 0; }
 .photo-review-thumb img { display: block; border-radius: 12px; object-fit: cover; }
 .photo-review-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.photo-review-trail { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; align-self: flex-start; }
 .photo-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ── Action sheet (the FAB "Registrar ruta", plan §8 G1) ─────── */

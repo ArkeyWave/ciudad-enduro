@@ -13,15 +13,17 @@ const where = (photo: TrailPhoto, index: number, distanceM: number | null) =>
 /**
  * The photos of a trail in line order (plan §9 V5): start and end dots, one 56 px round thumbnail
  * per photo; a tap opens the photo full-screen in a modal `<dialog>` (Escape and "Cerrar" close it).
- * A photo the viewer sees before it is published (their own, or any for an admin) has a chip.
+ * Focus goes back to the thumbnail that opened it. A photo the viewer sees before it is published (their own, or any for an admin) has a chip.
  */
 export function PhotoTimeline({ photos, distanceM }: { photos: TrailPhoto[]; distanceM: number | null }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState<number | null>(null);
   if (photos.length === 0) return null;
   const shown = open === null ? null : photos[open];
 
-  const show = (index: number) => {
+  const show = (index: number, button: HTMLButtonElement) => {
+    opener.current = button;
     setOpen(index);
     dialog.current?.showModal();
   };
@@ -36,7 +38,7 @@ export function PhotoTimeline({ photos, distanceM }: { photos: TrailPhoto[]; dis
         <li className="tl-end" aria-hidden="true" />
         {photos.map((photo, index) => (
           <li key={photo.id} className="tl-item">
-            <button type="button" className="tl-photo" aria-label={where(photo, index, distanceM)} onClick={() => show(index)}>
+            <button type="button" className="tl-photo" aria-label={where(photo, index, distanceM)} onClick={(event) => show(index, event.currentTarget)}>
               <img src={photo.thumbUrl} width={56} height={56} alt="" loading="lazy" />
             </button>
             {photo.status !== 'published' && (
@@ -53,7 +55,10 @@ export function PhotoTimeline({ photos, distanceM }: { photos: TrailPhoto[]; dis
         ref={dialog}
         className="photo-viewer"
         aria-label={shown ? where(shown, open!, distanceM) : 'Vista'}
-        onClose={() => setOpen(null)}
+        onClose={() => {
+          setOpen(null);
+          opener.current?.focus();
+        }}
         onClick={(event) => {
           if (event.target === event.currentTarget) close();
         }}

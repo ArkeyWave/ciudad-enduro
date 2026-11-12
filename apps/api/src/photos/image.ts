@@ -38,6 +38,24 @@ const PICK = [
 // trail is in Peru. A per-trail zone when the app leaves Peru.
 const PERU_OFFSET = '-05:00';
 
+// Only the TIFF blocks that hold the picked fields (IFD0, EXIF, GPS: on by default). Every other
+// segment parser is off: exifr
+// 7.1.3's PNG parser inflates iCCP on its own (a 1 KB file grows to MBs), and readExif runs on
+// JPEG input only (V1b).
+const EXIF_OPTIONS = {
+  pick: PICK,
+  reviveValues: false,
+  ifd1: false,
+  interop: false,
+  makerNote: false,
+  userComment: false,
+  icc: false,
+  xmp: false,
+  iptc: false,
+  jfif: false,
+  ihdr: false,
+};
+
 type RawExif = {
   DateTimeOriginal?: unknown;
   OffsetTimeOriginal?: unknown;
@@ -63,7 +81,7 @@ function takenAt(raw: unknown, offset: unknown): Date | null {
 export async function readExif(bytes: Uint8Array): Promise<PhotoExif> {
   let raw: RawExif | undefined;
   try {
-    raw = (await exifr.parse(Buffer.from(bytes), { pick: PICK, reviveValues: false })) as RawExif | undefined;
+    raw = (await exifr.parse(Buffer.from(bytes), EXIF_OPTIONS)) as RawExif | undefined;
   } catch {
     return NO_EXIF;
   }
@@ -93,28 +111,32 @@ export const MAX_ENCODES = 2;
 let encoding = 0;
 export const encodesRunning = () => encoding;
 
-export type Encoded = { image: Buffer; thumb: Buffer; width: number; height: number };
+export type Encoded = { exif: PhotoExif; image: Buffer; thumb: Buffer; width: number; height: number };
+/** sharp gives up on a pipeline after this long (a hostile file must not hold a slot). */
+export const ENCODE_TIMEOUT_S = 15;
 
 const coded = (code: string, status: HttpStatus) => new HttpException({ code, message: code }, status);
 
 /**
- * A WebP of at most MAX_SIDE_PX and a THUMB_PX square thumbnail. `.rotate()` applies the EXIF
- * orientation first; sharp writes no metadata unless `withMetadata`/`keepMetadata` is called, and
- * neither is (V1, V1b). More than MAX_ENCODES at a time → 503 ENCODE_BUSY; an image above
- * MAX_INPUT_PIXELS → 413 PHOTO_TOO_LARGE; bytes sharp cannot decode → 400 PHOTO_INVALID.
+ * The EXIF fields (JPEG only, V1b), a WebP of at most MAX_SIDE_PX and a THUMB_PX square thumbnail,
+ * all inside one of MAX_ENCODES slots. `.rotate()` applies the EXIF orientation first; sharp
+ * writes no metadata unless `withMetadata`/`keepMetadata` is called, and neither is (V1, V1b).
+ * No free slot → 503 ENCODE_BUSY; an image above MAX_INPUT_PIXELS → 413 PHOTO_TOO_LARGE; bytes
+ * sharp cannot decode, or a pipeline over ENCODE_TIMEOUT_S → 400 PHOTO_INVALID.
  */
-export async function encodePhoto(bytes: Uint8Array): Promise<Encoded> {
+export async function encodePhoto(bytes: Uint8Array, type: PhotoType): Promise<Encoded> {
   if (encoding >= MAX_ENCODES) throw new ServiceUnavailableException({ code: 'ENCODE_BUSY', message: 'ENCODE_BUSY' });
   encoding++;
   try {
-    const source = sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS }).rotate();
+    const exif = type === 'jpeg' ? await readExif(bytes) : NO_EXIF;
+    const source = sharp(bytes, { limitInputPixels: MAX_INPUT_PIXELS }).rotate().timeout({ seconds: ENCODE_TIMEOUT_S });
     const full = await source
       .clone()
       .resize({ width: MAX_SIDE_PX, height: MAX_SIDE_PX, fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 80 })
       .toBuffer({ resolveWithObject: true });
     const thumb = await source.clone().resize(THUMB_PX, THUMB_PX, { fit: 'cover' }).webp({ quality: 70 }).toBuffer();
-    return { image: full.data, thumb, width: full.info.width, height: full.info.height };
+    return { exif, image: full.data, thumb, width: full.info.width, height: full.info.height };
   } catch (error) {
     if (error instanceof Error && /pixel limit/i.test(error.message)) throw coded('PHOTO_TOO_LARGE', HttpStatus.PAYLOAD_TOO_LARGE);
     throw coded('PHOTO_INVALID', HttpStatus.BAD_REQUEST);

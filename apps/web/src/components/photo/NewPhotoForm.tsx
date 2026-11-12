@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type ChangeEvent, type SubmitEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type SubmitEvent } from 'react';
 import { photoErrorMessage, positionFields, uploadPhoto, type PhotoFailure } from '../../lib/photos-client';
 import { canMark, type Fix } from '../../lib/tracer';
 
@@ -18,6 +18,8 @@ export function NewPhotoForm() {
   const [noLocation, setNoLocation] = useState(false);
   const [preview, setPreview] = useState<{ url: string; width: number; height: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  // The file chosen last: a slower load of an earlier choice must not replace its preview.
+  const chosen = useRef<string | null>(null);
   const [failure, setFailure] = useState<PhotoFailure | null>(null);
 
   useEffect(() => {
@@ -49,14 +51,21 @@ export function NewPhotoForm() {
   const choose = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     setFailure(null);
-    if (!file) return setPreview(null);
+    if (!file) {
+      chosen.current = null;
+      return setPreview(null);
+    }
     const url = URL.createObjectURL(file);
+    chosen.current = url;
     // The preview keeps the photo's own ratio; a file the browser cannot show has no preview.
     const image = new Image();
-    image.onload = () => setPreview({ url, width: image.naturalWidth, height: image.naturalHeight });
+    image.onload = () => {
+      if (chosen.current === url) setPreview({ url, width: image.naturalWidth, height: image.naturalHeight });
+      else URL.revokeObjectURL(url);
+    };
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      setPreview(null);
+      if (chosen.current === url) setPreview(null);
     };
     image.src = url;
   };

@@ -40,7 +40,7 @@ jobs:
       s3mock:
         image: adobe/s3mock:5.2.3@sha256:ab01a6946750f451ca215a47e91030695b260e4003b8a5a6201d25029b8fca92
         env:
-          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ciudad-enduro-media,ciudad-enduro-media-test
+          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ciudad-enduro-media,ciudad-enduro-media-private,ciudad-enduro-media-test,ciudad-enduro-media-private-test
         ports:
           - 9090:9090
 
@@ -117,7 +117,7 @@ jobs:
       s3mock:
         image: adobe/s3mock:5.2.3@sha256:ab01a6946750f451ca215a47e91030695b260e4003b8a5a6201d25029b8fca92
         env:
-          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ciudad-enduro-media,ciudad-enduro-media-test
+          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ciudad-enduro-media,ciudad-enduro-media-private,ciudad-enduro-media-test,ciudad-enduro-media-private-test
         ports:
           - 9090:9090
 
@@ -229,7 +229,7 @@ jobs:
             -e EMAIL_FROM=ci@example.com -e GOOGLE_CLIENT_ID=ci \
             -e TURNSTILE_SECRET_KEY="$(secret)" \
             -e R2_ACCOUNT_ID=ci -e R2_ACCESS_KEY_ID=ci -e R2_SECRET_ACCESS_KEY="$(secret)" \
-            -e R2_MEDIA_BUCKET=ci -e MEDIA_PUBLIC_BASE_URL=https://media.smoke.invalid \
+            -e R2_MEDIA_BUCKET=ci -e R2_PRIVATE_BUCKET=ci-private -e MEDIA_PUBLIC_BASE_URL=https://media.smoke.invalid \
             "$API_IMAGE"
           docker run -d --name web --network host -e API_INTERNAL_URL=http://127.0.0.1:3001 \
             -e TURNSTILE_SITE_KEY=ci-site-key "$WEB_IMAGE"
@@ -261,7 +261,7 @@ jobs:
             const { default: sharp } = await import('sharp');
             const { encodePhoto } = await import('/app/dist/photos/image.js');
             const jpeg = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: '#557733' } }).jpeg().toBuffer();
-            const out = await encodePhoto(jpeg);
+            const out = await encodePhoto(jpeg, 'jpeg');
             if (out.width !== 1600 || out.height !== 800) throw new Error('encode: ' + out.width + 'x' + out.height);
             console.log('ok photo encode in the image');"
 

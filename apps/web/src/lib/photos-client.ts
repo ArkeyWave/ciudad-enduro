@@ -32,6 +32,19 @@ export const updatePhoto = (id: string, status: PhotoStatus) =>
     PATCH_TIMEOUT_MS,
   );
 
+/** Deletes a photo and its files (admin, plan §9 V1c): ok on 204. */
+export async function deletePhoto(id: string): Promise<{ ok: true } | ({ ok: false } & PhotoFailure)> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/photos/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin', signal: AbortSignal.timeout(PATCH_TIMEOUT_MS) });
+  } catch {
+    return { ok: false, status: 0 };
+  }
+  if (response.ok) return { ok: true };
+  const json = (await response.json().catch(() => null)) as { code?: string } | null;
+  return { ok: false, status: response.status, code: json?.code };
+}
+
 /**
  * The phone position sent with a photo: only a fix that passes the tracer gate (≤ 30 m, ≤ 10 s, V2).
  * Otherwise none, and the API falls back to the photo's EXIF GPS.

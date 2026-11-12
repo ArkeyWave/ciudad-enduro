@@ -1060,6 +1060,46 @@
       }
     },
     "/api/photos/{id}": {
+      "delete": {
+        "operationId": "PhotosController_remove",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": "No valid session"
+          },
+          "403": {
+            "description": "Not an admin, or a foreign Origin"
+          },
+          "404": {
+            "description": "No photo has this id"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "STORAGE_UNAVAILABLE: a file could not be deleted; the photo stays"
+          }
+        },
+        "tags": [
+          "photos"
+        ]
+      },
       "patch": {
         "operationId": "PhotosController_update",
         "parameters": [
@@ -1101,6 +1141,16 @@
           },
           "404": {
             "description": "No photo has this id"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "STORAGE_UNAVAILABLE: the copy to (or the delete from) the public bucket failed; nothing changed"
           }
         },
         "tags": [

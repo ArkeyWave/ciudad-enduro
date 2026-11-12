@@ -2,7 +2,10 @@ import { Roles, Session, type UserSession } from '@thallesp/nestjs-better-auth';
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   ParseFilePipe,
@@ -20,6 +23,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -93,10 +97,24 @@ export class PhotosController {
   @ApiOkResponse({ type: PhotoDto })
   @ApiForbiddenResponse({ description: 'Not an admin, or a foreign Origin' })
   @ApiNotFoundResponse({ description: 'No photo has this id' })
+  @ApiServiceUnavailableResponse({ type: ErrorBodyDto, description: 'STORAGE_UNAVAILABLE: the copy to (or the delete from) the public bucket failed; nothing changed' })
   async update(@Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 404 })) id: string, @Body() body: UpdatePhotoDto): Promise<PhotoDto> {
     const photo = await this.photos.setStatus(id, body.status);
     if (!photo) throw new NotFoundException();
     return photo;
+  }
+
+  /** Deletes the files in both buckets, then the row (plan §9 V1c). */
+  @Delete('photos/:id')
+  @Roles(['admin'])
+  @UseGuards(OriginGuard)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiNoContentResponse()
+  @ApiForbiddenResponse({ description: 'Not an admin, or a foreign Origin' })
+  @ApiNotFoundResponse({ description: 'No photo has this id' })
+  @ApiServiceUnavailableResponse({ type: ErrorBodyDto, description: 'STORAGE_UNAVAILABLE: a file could not be deleted; the photo stays' })
+  async remove(@Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 404 })) id: string): Promise<void> {
+    if (!(await this.photos.remove(id))) throw new NotFoundException();
   }
 
   @Get('admin/photos')

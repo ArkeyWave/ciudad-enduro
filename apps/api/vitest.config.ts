@@ -34,6 +34,7 @@ export default defineConfig({
       R2_ACCESS_KEY_ID: 'test-access-key-id',
       R2_SECRET_ACCESS_KEY: 'test-secret-access-key',
       R2_MEDIA_BUCKET: 'ciudad-enduro-media-test',
+      R2_PRIVATE_BUCKET: 'ciudad-enduro-media-private-test',
       MEDIA_PUBLIC_BASE_URL: 'http://127.0.0.1:9090/ciudad-enduro-media-test',
     },
   },

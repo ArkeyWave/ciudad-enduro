@@ -42,10 +42,13 @@ const envSchema = z
     S3_ENDPOINT: z.url().optional(),
     R2_ACCESS_KEY_ID: required,
     R2_SECRET_ACCESS_KEY: required,
+    // Published photos only, read through the public domain (plan §9 V1c).
     R2_MEDIA_BUCKET: required,
+    // Every uploaded photo; no public access. Drafts are read through presigned URLs (V1c).
+    R2_PRIVATE_BUCKET: required,
     // The public read origin of the bucket (prod https://media.enduro.vops.pe), no trailing slash.
     MEDIA_PUBLIC_BASE_URL: z.url().refine((url) => !url.endsWith('/'), 'must not end with a slash'),
-    // Staging shares the bucket under "staging/". Empty or path segments that each end with "/".
+    // Staging shares the buckets under "staging/". Empty or path segments that each end with "/".
     MEDIA_KEY_PREFIX: z
       .string()
       .regex(/^(?:[a-z0-9-]+\/)*$/, 'must be empty or like "staging/"')
@@ -77,6 +80,13 @@ const envSchema = z
       if (!env[key].startsWith('https://')) {
         ctx.addIssue({ code: 'custom', path: [key], message: 'must be https in production' });
       }
+    }
+    if (!env.MEDIA_PUBLIC_BASE_URL.startsWith('https://')) {
+      ctx.addIssue({ code: 'custom', path: ['MEDIA_PUBLIC_BASE_URL'], message: 'must be https in production' });
+    }
+    // The S3 stand-in is for dev and CI; production talks to R2 only.
+    if (env.S3_ENDPOINT !== undefined) {
+      ctx.addIssue({ code: 'custom', path: ['S3_ENDPOINT'], message: 'must not be set in production' });
     }
     if (env.BETTER_AUTH_TRUSTED_ORIGINS !== undefined) {
       ctx.addIssue({ code: 'custom', path: ['BETTER_AUTH_TRUSTED_ORIGINS'], message: 'must not be set in production' });

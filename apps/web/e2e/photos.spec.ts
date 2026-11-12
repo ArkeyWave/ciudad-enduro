@@ -39,6 +39,8 @@ test.describe('vistas', () => {
 
   let riderContext: BrowserContext;
   let rider: Page;
+  let adminContext: BrowserContext | undefined;
+  let admin: Page;
 
   test.beforeAll(async ({ browser }) => {
     await seedLineTrail(TRAIL.slug, TRAIL.name, LINE);
@@ -52,6 +54,7 @@ test.describe('vistas', () => {
 
   test.afterAll(async () => {
     await riderContext?.close();
+    await adminContext?.close();
     await deleteTrail(TRAIL.slug);
   });
 
@@ -102,22 +105,23 @@ test.describe('vistas', () => {
   test('the admin publishes it in "Revisión"; the trail shows one thumbnail and one marker; a tap opens it full-screen', async ({ browser }) => {
     const adminEmail = `admin-vista-${Date.now()}@example.com`;
     await insertAdmin(adminEmail);
-    const context = await browser.newContext({ baseURL: ORIGIN, viewport: { width: 390, height: 844 } });
-    await stubTurnstile(context);
-    await stubTiles(context);
-    const admin = await context.newPage();
+    adminContext = await browser.newContext({ baseURL: ORIGIN, viewport: { width: 390, height: 844 } });
+    await stubTurnstile(adminContext);
+    await stubTiles(adminContext);
+    admin = await adminContext.newPage();
     await signIn(admin, adminEmail);
     await admin.goto('/admin/rutas');
     const review = admin.getByTestId('photo-review');
     await expect(review).toHaveCount(1);
-    await expect(review.getByRole('link', { name: TRAIL.name, exact: true })).toHaveAttribute('href', `/rutas/${TRAIL.slug}`);
+    const trailLink = review.getByRole('link', { name: TRAIL.name, exact: true });
+    await expect(trailLink).toHaveAttribute('href', `/rutas/${TRAIL.slug}`);
+    await expectTarget(trailLink);
     await expect(review).toContainText('rider-vista-');
     await expect(review.getByRole('img', { name: `Vista en ${TRAIL.name}` })).toBeVisible();
-    for (const name of ['Publicar', 'Ocultar']) await expectTarget(review.getByRole('button', { name }));
+    for (const name of ['Publicar', 'Ocultar', 'Eliminar']) await expectTarget(review.getByRole('button', { name }));
     expect((await axe(admin)).violations).toEqual([]);
     await review.getByRole('button', { name: 'Publicar' }).click();
     await expect(admin.getByText('No hay vistas en revisión.')).toBeVisible();
-    await context.close();
 
     const visitor = await browser.newContext({ baseURL: ORIGIN, viewport: { width: 390, height: 844 } });
     await stubTiles(visitor);
@@ -140,10 +144,37 @@ test.describe('vistas', () => {
     expect((await axe(page)).violations).toEqual([]);
     await page.keyboard.press('Escape');
     await expect(viewer).toBeHidden();
+    await expect(thumb).toBeFocused();
     await thumb.click();
     await expectTarget(viewer.getByRole('button', { name: 'Cerrar' }));
     await viewer.getByRole('button', { name: 'Cerrar' }).click();
     await expect(viewer).toBeHidden();
+    await expect(thumb).toBeFocused();
     await visitor.close();
+  });
+
+  test('the admin deletes a vista in "Revisión" after a confirm step', async () => {
+    await riderContext.setGeolocation(ON_LINE);
+    await rider.goto('/vistas/nueva');
+    await expect(rider.getByTestId('photo-position')).toHaveText('Ubicación lista (±8 m)');
+    await rider.locator('input[name="photo"]').setInputFiles(JPEG);
+    await rider.getByRole('button', { name: 'Publicar vista' }).click();
+    await expect(rider).toHaveURL(`${ORIGIN}/rutas/${TRAIL.slug}`);
+
+    await admin.goto('/admin/rutas');
+    const review = admin.getByTestId('photo-review');
+    await expect(review).toHaveCount(1);
+    // A dismissed confirm keeps the photo; an accepted one deletes it.
+    admin.once('dialog', (dialog) => void dialog.dismiss());
+    await review.getByRole('button', { name: 'Eliminar' }).click();
+    await expect(review).toHaveCount(1);
+    admin.once('dialog', (dialog) => {
+      expect(dialog.message()).toBe('¿Eliminar esta vista? No se puede deshacer.');
+      void dialog.accept();
+    });
+    await review.getByRole('button', { name: 'Eliminar' }).click();
+    await expect(admin.getByText('No hay vistas en revisión.')).toBeVisible();
+    await rider.reload();
+    await expect(timeline(rider).getByTestId('photo-status')).toHaveCount(0);
   });
 });
