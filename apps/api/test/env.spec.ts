@@ -82,6 +82,11 @@ describe('photo storage (plan §9 V1, V6)', () => {
     expect(() => loadEnv({ ...valid, [key]: undefined })).toThrow(new RegExp(key));
   });
 
+  it('refuses a private bucket that is the public one, and accepts two buckets', () => {
+    expect(() => loadEnv({ ...valid, R2_PRIVATE_BUCKET: 'ciudad-enduro-media' })).toThrow(/R2_PRIVATE_BUCKET: must differ from R2_MEDIA_BUCKET/);
+    expect(() => loadEnv(valid)).not.toThrow();
+  });
+
   it('refuses a public base URL with a trailing slash', () => {
     expect(() => loadEnv({ ...valid, MEDIA_PUBLIC_BASE_URL: 'https://media.enduro.vops.pe/' })).toThrow(/MEDIA_PUBLIC_BASE_URL/);
   });

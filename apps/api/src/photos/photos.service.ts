@@ -106,32 +106,41 @@ export class PhotosService {
    * Publish or hide (admin, V1c). Publishing copies both files to the public bucket; any other
    * status deletes the public copies (the private files stay, so a later publish works). The row
    * changes only after the storage step succeeded: else 503 STORAGE_UNAVAILABLE and nothing changed.
-   * Undefined when no photo has the id.
+   * The row is locked (`for update`) for the whole step, so two admin actions on one photo run
+   * one after the other and the files always match the status; the S3 client's timeouts bound the
+   * lock. Same status → no storage step and no write. Undefined when no photo has the id.
    */
   async setStatus(id: string, status: TrailStatus): Promise<PhotoDto | undefined> {
-    const keys = await this.keysOf(id);
-    if (!keys) return undefined;
-    await this.storage('photo_status_failed', () => (status === 'published' ? this.media.publish(keys) : this.media.unpublish(keys)));
-    const updated = await this.db
-      .update(trailPhotos)
-      .set({ status, updatedAt: new Date() })
+    const found = await this.db.transaction(async (tx) => {
+      const row = await this.lockRow(tx, id);
+      if (!row) return false;
+      if (row.status === status) return true;
+      const keys = [row.imageKey, row.thumbKey];
+      await this.storage('photo_status_failed', () => (status === 'published' ? this.media.publish(keys) : this.media.unpublish(keys)));
+      await tx.update(trailPhotos).set({ status, updatedAt: new Date() }).where(eq(trailPhotos.id, id));
+      return true;
+    });
+    return found ? this.findOne(id) : undefined;
+  }
+
+  /** Deletes the files in both buckets, then the row (admin), under the row lock. False when no photo has the id. */
+  remove(id: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const row = await this.lockRow(tx, id);
+      if (!row) return false;
+      await this.storage('photo_delete_failed', () => this.media.destroy([row.imageKey, row.thumbKey]));
+      await tx.delete(trailPhotos).where(eq(trailPhotos.id, id));
+      return true;
+    });
+  }
+
+  private async lockRow(tx: Pick<Database, 'select'>, id: string) {
+    const [row] = await tx
+      .select({ status: trailPhotos.status, imageKey: trailPhotos.imageKey, thumbKey: trailPhotos.thumbKey })
+      .from(trailPhotos)
       .where(eq(trailPhotos.id, id))
-      .returning({ id: trailPhotos.id });
-    return updated.length ? this.findOne(id) : undefined;
-  }
-
-  /** Deletes the files in both buckets, then the row (admin). False when no photo has the id. */
-  async remove(id: string): Promise<boolean> {
-    const keys = await this.keysOf(id);
-    if (!keys) return false;
-    await this.storage('photo_delete_failed', () => this.media.destroy(keys));
-    await this.db.delete(trailPhotos).where(eq(trailPhotos.id, id));
-    return true;
-  }
-
-  private async keysOf(id: string): Promise<string[] | undefined> {
-    const [row] = await this.db.select({ imageKey: trailPhotos.imageKey, thumbKey: trailPhotos.thumbKey }).from(trailPhotos).where(eq(trailPhotos.id, id));
-    return row && [row.imageKey, row.thumbKey];
+      .for('update');
+    return row;
   }
 
   /** A storage step; its failure is a 503 STORAGE_UNAVAILABLE (logged by name, never the keys' content). */
@@ -161,6 +170,8 @@ export class PhotosService {
     if (!uploader.admin) await this.refuseTooManyPending(this.db, uploader.id);
     const type = photoType(bytes);
     if (!type) throw new UnsupportedMediaTypeException(coded('PHOTO_TYPE'));
+    // Only a JPEG can carry the EXIF position (V1b): any other file without one stops here.
+    if (!bodyPosition && type !== 'jpeg') throw new BadRequestException(coded('NO_POSITION'));
     let trail = bodyPosition ? await this.requireTrail(bodyPosition) : undefined;
     const encoded = await encodePhoto(bytes, type);
     const { exif } = encoded;

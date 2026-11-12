@@ -57,6 +57,10 @@ const envSchema = z
     BUILD_SHA: z.preprocess((v) => (v === '' ? undefined : v), required.default('unknown')),
   })
   .superRefine((env, ctx) => {
+    // A private bucket that is also the public one would publish every draft (plan §9 V1c).
+    if (env.R2_PRIVATE_BUCKET === env.R2_MEDIA_BUCKET) {
+      ctx.addIssue({ code: 'custom', path: ['R2_PRIVATE_BUCKET'], message: 'must differ from R2_MEDIA_BUCKET' });
+    }
     if (!env.R2_ACCOUNT_ID && !env.S3_ENDPOINT) {
       ctx.addIssue({ code: 'custom', path: ['R2_ACCOUNT_ID'], message: 'R2_ACCOUNT_ID or S3_ENDPOINT is required' });
     }

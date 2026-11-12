@@ -2,7 +2,7 @@
 // link within 50 m, the limits, the storage cleanup, the visibility and the admin queue. Runs
 // against the S3 mock (docker-compose.dev.yml locally, a CI service).
 import { crc32 } from 'node:zlib';
-import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
+import { CopyObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import exifr from 'exifr';
 import type pg from 'pg';
@@ -293,6 +293,14 @@ describe('POST /api/photos: the position and the trail link (V2, V3)', () => {
     expect(await res.json()).toMatchObject({ code: 'NO_POSITION' });
   });
 
+  it('answers 400 NO_POSITION to a PNG without a body position before decoding it', async () => {
+    await seedTrail();
+    // A bomb would be 413 once decoded: the 400 proves the check runs first.
+    const res = await post(as(rider), bombPng());
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'NO_POSITION' });
+  });
+
   it('answers 400 to a lone coordinate or an out-of-range one', async () => {
     await seedTrail();
     expect((await post(as(rider), await plainJpeg(), { lat: '-9.09' })).status).toBe(400);
@@ -495,6 +503,93 @@ describe('publish, hide and delete move the files (V1c)', () => {
       await client.query(`update trail_photos set status = 'published'`);
       expect((await send('hidden')).status).toBe(503);
       expect((await client.query('select status from trail_photos')).rows).toEqual([{ status: 'published' }]);
+    } finally {
+      await broken.app.close();
+    }
+  });
+
+  it('does not touch storage when the status does not change', async () => {
+    const photo = await draft();
+    const publish = vi.spyOn(t.app.get(MediaStorage), 'publish');
+    try {
+      expect((await patch(photo.id, as(admin), { status: 'published' })).status).toBe(200);
+      expect((await patch(photo.id, as(admin), { status: 'published' })).status).toBe(200);
+      expect(publish).toHaveBeenCalledTimes(1);
+    } finally {
+      publish.mockRestore();
+    }
+  });
+
+  it('rolls back a half-made publish: the thumbnail copy fails, no public file remains, the row stays a draft', async () => {
+    const photo = await draft();
+    const media: unknown = t.app.get(MediaStorage);
+    const s3client = (media as { client: { send: (command: unknown) => Promise<unknown> } }).client;
+    const real = s3client.send.bind(s3client);
+    const send = vi.spyOn(s3client, 'send').mockImplementation(async (command) => {
+      if (command instanceof CopyObjectCommand && command.input.Key?.endsWith('-t.webp')) throw new Error('copy failed');
+      return real(command);
+    });
+    try {
+      expect((await patch(photo.id, as(admin), { status: 'published' })).status).toBe(503);
+    } finally {
+      send.mockRestore();
+    }
+    expect(await listKeys(PUBLIC)).toEqual([]);
+    expect((await client.query('select status from trail_photos')).rows).toEqual([{ status: 'draft' }]);
+  });
+
+  it('serializes a publish and a hide on one photo: the files match the final status', async () => {
+    const photo = await draft();
+    const media = t.app.get(MediaStorage);
+    const real = media.publish.bind(media);
+    // The copies land, then the publish waits: without the row lock the hide runs in that gap.
+    const publish = vi.spyOn(media, 'publish').mockImplementation(async (keys) => {
+      await real(keys);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    try {
+      const published = patch(photo.id, as(admin), { status: 'published' });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const hidden = patch(photo.id, as(admin), { status: 'hidden' });
+      expect([(await published).status, (await hidden).status]).toEqual([200, 200]);
+    } finally {
+      publish.mockRestore();
+    }
+    const [{ status }] = (await client.query<{ status: string }>('select status from trail_photos')).rows as [{ status: string }];
+    expect(status).toBe('hidden');
+    expect(await listKeys(PUBLIC)).toEqual([]);
+  });
+
+  it('serializes a delete and a publish: no public file is left without its row', async () => {
+    const photo = await draft();
+    const media = t.app.get(MediaStorage);
+    const real = media.publish.bind(media);
+    const publish = vi.spyOn(media, 'publish').mockImplementation(async (keys) => {
+      await real(keys);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    try {
+      const published = patch(photo.id, as(admin), { status: 'published' });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const deleted = del(photo.id, as(admin));
+      expect([(await published).status, (await deleted).status]).toEqual([200, 204]);
+    } finally {
+      publish.mockRestore();
+    }
+    expect(await count()).toBe(0);
+    expect(await listKeys(PUBLIC)).toEqual([]);
+    expect(await listKeys()).toEqual([]);
+  });
+
+  it('keeps the row and the private files when the delete fails (503 STORAGE_UNAVAILABLE)', async () => {
+    const photo = await draft();
+    const broken = await createAuthTestApp({ env: { R2_MEDIA_BUCKET: 'no-such-bucket' } });
+    try {
+      const res = await fetch(`${broken.url}/api/photos/${photo.id}`, { method: 'DELETE', headers: as(admin) });
+      expect(res.status).toBe(503);
+      expect(await res.json()).toMatchObject({ code: 'STORAGE_UNAVAILABLE' });
+      expect(await count()).toBe(1);
+      expect(await listKeys()).toHaveLength(2);
     } finally {
       await broken.app.close();
     }

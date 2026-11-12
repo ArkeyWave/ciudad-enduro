@@ -29,6 +29,8 @@ export class MediaStorage implements OnApplicationShutdown {
       endpoint: env.S3_ENDPOINT ?? `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       forcePathStyle: env.S3_ENDPOINT !== undefined,
       credentials: { accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY },
+      // Bounded calls: a status change holds the photo's row lock during its storage step.
+      requestHandler: { connectionTimeout: 5_000, requestTimeout: 15_000, throwOnRequestTimeout: true },
     });
   }
 
@@ -73,16 +75,23 @@ export class MediaStorage implements OnApplicationShutdown {
     throw failed.reason;
   }
 
-  /** Removes the public copies; throws when a key could not be deleted. */
+  /**
+   * Removes the public copies; throws when a key could not be deleted. Then the row keeps its
+   * status (published), and the other file may already be gone: a retry of "Ocultar" finishes it.
+   */
   async unpublish(keys: string[]): Promise<void> {
     const left = await this.delete(this.public, keys);
     if (left.length) throw new Error('media_delete_failed');
   }
 
-  /** Removes the files from both buckets; throws when a key could not be deleted. */
+  /**
+   * Removes the files from the public bucket, then from the private one; throws at the first key
+   * that could not be deleted, so a failure never leaves a row without its private files.
+   */
   async destroy(keys: string[]): Promise<void> {
-    const left = [...(await this.delete(this.public, keys)), ...(await this.delete(this.private, keys))];
-    if (left.length) throw new Error('media_delete_failed');
+    for (const bucket of [this.public, this.private]) {
+      if ((await this.delete(bucket, keys)).length) throw new Error('media_delete_failed');
+    }
   }
 
   /** Best effort, for the cleanup of a failed upload: what is left is logged, never thrown. */
