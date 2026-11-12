@@ -78,12 +78,23 @@ export type TrackMetrics = {
   elevationProfile: ProfilePoint[] | null;
 };
 
-export function trackMetrics(points: LngLat[], elevations: number[] | null): TrackMetrics {
+/** The distance of each point from the start along the line. */
+export function cumulativeM(points: LngLat[]): number[] {
   const cum = [0];
   for (let i = 1; i < points.length; i += 1) cum.push(cum[i - 1]! + haversineM(points[i - 1]!, points[i]!));
+  return cum;
+}
+
+/** Gain, loss and profile of elevations measured at the distances `cum`. */
+export function elevationMetrics(cum: number[], eles: number[]): Omit<TrackMetrics, 'distanceM'> {
+  const { gainM, lossM } = elevationChange(eles);
+  return { elevationGainM: int4(gainM), elevationLossM: int4(lossM), elevationProfile: elevationProfile(cum, eles) };
+}
+
+export function trackMetrics(points: LngLat[], elevations: number[] | null): TrackMetrics {
+  const cum = cumulativeM(points);
   const distanceM = int4(cum.at(-1)!);
   if (distanceM === 0) throw new GpxError('GPX_EMPTY');
   if (!elevations) return { distanceM, elevationGainM: null, elevationLossM: null, elevationProfile: null };
-  const { gainM, lossM } = elevationChange(elevations);
-  return { distanceM, elevationGainM: int4(gainM), elevationLossM: int4(lossM), elevationProfile: elevationProfile(cum, elevations) };
+  return { distanceM, ...elevationMetrics(cum, elevations) };
 }

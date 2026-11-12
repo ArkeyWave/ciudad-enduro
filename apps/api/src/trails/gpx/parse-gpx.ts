@@ -25,8 +25,8 @@ export const MAX_POINTS = 100_000;
 const MAX_DEPTH = 100;
 // The trails_*_in_peru check constraints (drizzle/0001_trail_constraints.sql).
 const PERU = { minLng: -81.4, maxLng: -68.6, minLat: -18.4, maxLat: 0 };
-const ELE_MIN = -500;
-const ELE_MAX = 7000;
+export const ELE_MIN = -500;
+export const ELE_MAX = 7000;
 // Names an object-building parser would treat as prototype keys; refused, as before the stream.
 const RESERVED = new Set(['constructor', '__proto__', 'prototype']);
 

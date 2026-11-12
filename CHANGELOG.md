@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased] - Layer 2-A: GPS tracer and FAB sheet
+
+### Added
+- Elevation fill (plan `docs/plans/2026-11-11-ui-redesign-layer-1.md` §8 G5): when a GPX has no usable elevations, the trails service (after the parse, not in the worker) samples the line every ≤ 10 m (`gpx/fill-elevations.ts`, at most 2 000 samples: above 20 km the spacing grows, still finer than the 90 m GLO-90 cells) and reads the elevations from the Open-Meteo elevation API, 100 points per call, the calls in parallel under one 5 s timeout. Gain, loss and profile come from the samples; the stored path stays the uploaded one. Any failure (network, status, timeout, an answer of the wrong length or out of range) stores the trail without elevations (log line `elevation_fill_failed`), never refuses it. New env `ELEVATION_API_URL` (default `https://api.open-meteo.com/v1/elevation`); the API tests and the web e2e point it at a closed local port, `test/trails-elevation.int.spec.ts` at a stub. Mutation proofs: no fill, a fill for a GPX with elevations, 30 m spacing, 200 points per call, no length check, a rethrow instead of null, no timeout each turn a test red.
+
 ## [Unreleased] - UI redesign layer 1 (Night Rider)
 
 ### Added
