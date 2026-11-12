@@ -38,7 +38,12 @@ export function TrailCard({ trail, chip, note }: { trail: TrailSummary; chip?: s
           />
         </svg>
       )}
-      <TrailStats distanceM={trail.distanceM} gainM={trail.elevationGainM} />
+      <TrailStats
+        type={trail.type}
+        distanceM={trail.distanceM}
+        gainM={trail.elevationGainM}
+        lossM={trail.elevationLossM}
+      />
       {note && <span className="muted">{note}</span>}
     </a>
   );

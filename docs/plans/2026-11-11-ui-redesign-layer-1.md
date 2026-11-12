@@ -141,7 +141,7 @@ layer, so its byte budgets include the fonts. Bebas one weight, Inter four, Lati
 | O1 | Explorar: list of cards, or the prototype's swipe deck (Guardar/Pasar needs saved trails, a later layer) | List (D6) |
 | O2 | Tiles: dark-filtered OSM, Esri with an ArcGIS key ("Powered by Esri"), or CARTO dark (account terms) | Dark-filtered OSM (D11) |
 | O3 | Duración on cards: omit, or estimate from distance and gain (a stated speed model) | Omit |
-| O4 | Pendiente for a Descenso trail: gain / distance (prototype), or loss / distance | Prototype formula; the loss stays in the payload, so a change is web-only |
+| O4 | Pendiente for a Descenso trail: gain / distance (prototype), or loss / distance | **Decided 2026-11-12 (owner):** a Descenso shows −loss; Pendiente = mean grade in degrees; under 1 km in metres |
 | O5 | Bottom nav for a signed-in non-admin rider is only Explorar · Mapa: show it, or hide it until a third entry exists | Show it |
 | O6 | Desktop: a centred 720 px column, or the prototype's phone frame | Column (D4) |
 

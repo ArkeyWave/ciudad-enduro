@@ -43,7 +43,7 @@ test('the profiled card shows Distancia, Desnivel (the gain), Pendiente and one 
   const profiled = card(page, PROFILED_TRAIL.name);
   await expect(stat(profiled, 'Distancia')).toHaveText('4.2 km');
   await expect(stat(profiled, 'Desnivel')).toHaveText(`${PROFILED.gainM} m`);
-  await expect(stat(profiled, 'Pendiente')).toHaveText('9 %');
+  await expect(stat(profiled, 'Pendiente')).toHaveText('5.2°');
   await expect(profiled.locator('svg.elev')).toHaveCount(1);
 });
 

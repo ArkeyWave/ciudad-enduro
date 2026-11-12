@@ -51,7 +51,12 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
             {trail.city}
           </p>
         </header>
-        <TrailStats distanceM={trail.distanceM} gainM={trail.elevationGainM} />
+        <TrailStats
+        type={trail.type}
+        distanceM={trail.distanceM}
+        gainM={trail.elevationGainM}
+        lossM={trail.elevationLossM}
+      />
         {trail.elevationProfile && (
           <ElevationProfile
             profile={trail.elevationProfile}

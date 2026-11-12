@@ -78,7 +78,7 @@ test.describe('the detail at 390 px', () => {
     // The gain, not the loss: 380 / 4200 = 9 %, 410 / 4200 would be 10 %.
     await expect(stat(page, 'Distancia')).toHaveText('4.2 km');
     await expect(stat(page, 'Desnivel')).toHaveText('380 m');
-    await expect(stat(page, 'Pendiente')).toHaveText('9 %');
+    await expect(stat(page, 'Pendiente')).toHaveText('5.2°');
     await expect(meta(page).getByTestId('trail-status')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Cómo llegar al inicio' })).toHaveAttribute(
       'href',
@@ -158,7 +158,7 @@ test.describe('admin and rider', () => {
     );
     await expect.poll(() => tiles.requests).toBeGreaterThan(0);
     await expect(admin.getByTestId('elevation-profile')).toBeVisible();
-    await expect(fact(admin, 'Distancia')).toHaveText('0.6 km'); // 556 m
+    await expect(fact(admin, 'Distancia')).toHaveText('556 m');
     await expect(fact(admin, 'Desnivel positivo')).toHaveText('12 m');
     await expect(fact(admin, 'Desnivel negativo')).toHaveText('12 m');
     await expect(fact(admin, 'Altura mínima')).toHaveText('100 m');

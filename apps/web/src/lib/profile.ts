@@ -18,8 +18,10 @@ export function profilePolyline(profile: number[][], width: number, height: numb
 
 const number = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 1 });
 
-export const formatKm = (meters: number) => `${number.format(meters / 1000)} km`;
 export const formatM = (meters: number) => `${number.format(meters)} m`;
+/** Under 1 km in metres ("715 m"), from 1 km in kilometres ("4.2 km"). */
+export const formatDistance = (meters: number) =>
+  meters < 1000 ? `${Math.round(meters)} m` : `${number.format(meters / 1000)} km`;
 
 /**
  * `count` points of the profile, evenly spaced by index, first and last kept; a shorter profile as is.
@@ -30,8 +32,17 @@ export function sampleProfile(profile: number[][], count: number): number[][] {
   return Array.from({ length: count }, (_, i) => profile[Math.round((i * (profile.length - 1)) / (count - 1))] as number[]);
 }
 
-/** Pendiente in % (prototype formula: gain / distance), or null when it cannot be computed. */
-export function slopePct(gainM: number | null | undefined, distanceM: number | null | undefined): number | null {
-  if (gainM == null || distanceM == null || distanceM === 0) return null;
-  return Math.round((gainM / distanceM) * 100);
+/** The Desnivel a trail shows: a Descenso shows its loss as a negative number, every other type its gain. */
+export function shownDrop(type: string, gainM: number | null | undefined, lossM: number | null | undefined): number | null {
+  if (type === 'descenso') return lossM == null ? null : -lossM;
+  return gainM ?? null;
 }
+
+/** Mean grade in degrees, atan(|drop| / distance), or null when it cannot be computed. */
+export function gradeDeg(dropM: number | null, distanceM: number | null | undefined): number | null {
+  if (dropM == null || distanceM == null || distanceM === 0) return null;
+  return (Math.atan(Math.abs(dropM) / distanceM) * 180) / Math.PI;
+}
+
+export const formatDrop = (meters: number) => (meters < 0 ? `−${formatM(-meters)}` : formatM(meters));
+export const formatGrade = (deg: number) => `${number.format(deg)}°`;
