@@ -2,7 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type SubmitEvent } from 'react';
-import { trailErrorMessage, uploadTrail, type TrailFailure } from '../../lib/trails-client';
+import { uploadTrail, type TrailFailure } from '../../lib/trails-client';
+import { TrailFailureAlert } from './TrailFailureAlert';
 import { TrailFields } from './TrailFields';
 
 export function NewTrailForm() {
@@ -32,16 +33,7 @@ export function NewTrailForm() {
       <button type="submit" disabled={busy} className="cta">
         {busy ? 'Subiendo…' : 'Subir ruta'}
       </button>
-      {failure && (
-        <p role="alert" className="alert">
-          {trailErrorMessage(failure)}{' '}
-          {failure.slug && (
-            <a href={`/rutas/${encodeURIComponent(failure.slug)}`}>
-              Ver la ruta
-            </a>
-          )}
-        </p>
-      )}
+      {failure && <TrailFailureAlert failure={failure} />}
     </form>
   );
 }

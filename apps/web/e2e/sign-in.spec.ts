@@ -48,14 +48,14 @@ test('signs in with an email code, shows the email, and signs out with fetch', a
 
   await expect(page).toHaveURL(`http://127.0.0.1:${ORIGIN_PORT}/`);
   await expect(page.getByTestId('session-email')).toHaveText(email);
-  await expect(page.getByRole('link', { name: 'Registrar ruta' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Registrar ruta' })).toBeVisible();
   expect((await page.request.get('/api/me')).status()).toBe(200);
 
   await freshIp(page);
   await page.getByRole('button', { name: 'Salir' }).click();
   await expect(page.getByRole('link', { name: 'Ingresar' })).toBeVisible();
   await expect(page.getByTestId('session-email')).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Registrar ruta' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Registrar ruta' })).toHaveCount(0);
   expect((await page.request.get('/api/me')).status()).toBe(401);
 });
 

@@ -15,4 +15,5 @@ export function baseMap(container: HTMLElement): L.Map {
 
 // Leaflet SVG paths take colours as attributes, where var() does not resolve.
 export const LIME = '#CCFF00';
+export const CYAN = '#00D4FF';
 export const DIFFICULTY_COLOURS = { facil: '#00E676', intermedio: '#FFB020', dificil: '#FF5555' } as const;

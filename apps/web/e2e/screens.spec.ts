@@ -37,8 +37,11 @@ test('screens at 390 and 1280 px', async ({ page, context }, testInfo) => {
   await signIn(page, `rider-screens-${Date.now()}@example.com`);
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize(viewport);
-    await page.goto('/rutas/nueva');
+    await page.goto('/rutas/nueva?modo=gpx');
     await expect(page.getByLabel('Archivo GPX')).toBeVisible();
     await shoot('importar-gpx', viewport.width);
+    await page.goto('/rutas/nueva');
+    await expect(page.getByTestId('tracer-map')).toBeVisible();
+    await shoot('marcar', viewport.width);
   }
 });
