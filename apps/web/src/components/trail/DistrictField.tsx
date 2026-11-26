@@ -43,7 +43,7 @@ export function DistrictField({ saved, suggestion }: { saved?: District; suggest
   const valid = choice.value !== null && text === districtLabel(choice.value);
 
   useEffect(() => {
-    input.current?.setCustomValidity(valid || text === '' ? '' : 'Elige un distrito de la lista.');
+    input.current?.setCustomValidity(valid || text !== null ? '' : 'Elige un distrito de la lista.');
   }, [valid, text]);
 
   const pick = (district: District) => {
