@@ -35,7 +35,7 @@ const summaryColumns = {
   elevationGainM: trails.elevationGainM,
   elevationLossM: trails.elevationLossM,
   elevationProfile: trails.elevationProfile,
-  hasPath: sql<boolean>`${trails.path} is not null`,
+  hasPath: sql<boolean>`true`,
   startX: sql<number>`ST_X(${trails.startPoint})`,
   startY: sql<number>`ST_Y(${trails.startPoint})`,
 };

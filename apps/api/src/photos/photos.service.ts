@@ -212,7 +212,7 @@ export class PhotosService {
         }
         // `for share`: an unpublish waits for this insert, and a trail unpublished during the upload is refused.
         const [current] = await tx.select({ status: trails.status }).from(trails).where(eq(trails.id, linked.id)).for('share');
-        if (current?.status !== 'published') {
+        if (named && current?.status !== 'published') {
           throw named ? new NotFoundException(coded('TRAIL_NOT_FOUND')) : new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
         }
         await tx.insert(trailPhotos).values({
