@@ -101,7 +101,7 @@ export function DistrictField({ saved, suggestion }: { saved?: District; suggest
           setActive(0);
         }}
         onKeyDown={onKeyDown}
-        onBlur={() => setOpen(false)}
+        onBlur={revert}
       />
       <input type="hidden" name="ubigeo" value={valid ? (choice.value?.ubigeo ?? '') : ''} />
       <ul id={listId} role="listbox" aria-label="Distritos" className="combobox-list" hidden={options.length === 0}>
