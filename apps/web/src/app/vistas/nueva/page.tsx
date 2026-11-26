@@ -9,7 +9,7 @@ export default async function NewPhotoPage({ searchParams }: { searchParams: Pro
   if (!(await currentUser())) notFound();
   const { ruta } = await searchParams;
   // Any `ruta` names a trail; only one non-empty slug can be available (a repeated one is an array).
-  const asked = ruta !== undefined;
+  const asked = typeof ruta === 'string';
   const slug = typeof ruta === 'string' && ruta !== '' ? ruta : null;
   // No cookie: the anonymous view has published trails only.
   const trail = slug === null ? null : await getTrail(slug, '');

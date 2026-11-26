@@ -179,7 +179,6 @@ export class PhotosService {
     if (!bodyPosition && type !== 'jpeg') throw new BadRequestException(coded('NO_POSITION'));
     let position = bodyPosition;
     let trail = position ? await this.trailNear(position, named) : undefined;
-    if (position && !trail && type !== 'jpeg') throw new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
     const encoded = await encodePhoto(bytes, type);
     const { exif } = encoded;
     if (!trail && exif.position) {
