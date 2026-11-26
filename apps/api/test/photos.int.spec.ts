@@ -660,3 +660,58 @@ describe('who sees a photo, and the admin queue (V5, plan §6)', () => {
     expect(await photosOf(trail.slug, rider)).toEqual([expect.objectContaining({ status: 'hidden' })]);
   });
 });
+
+describe('GET /api/trails: the card photos (plan §10.1 A12)', () => {
+  /** One photo of `trailId` at `fraction`; its keys name the fraction, so the URLs show the order. */
+  async function photoAt(trailId: string, status: TrailStatus, fraction: number) {
+    const key = `photos/f${fraction}`;
+    await db.insert(trailPhotos).values({
+      id: crypto.randomUUID(),
+      trailId,
+      authorId: riderId,
+      status,
+      position: { lng: -78.52, lat: -9.09 },
+      lineFraction: fraction,
+      imageKey: `${key}.webp`,
+      thumbKey: `${key}-t.webp`,
+      width: 1,
+      height: 1,
+    });
+  }
+  const preview = (fraction: number) => ({ url: `${BASE}/photos/f${fraction}.webp`, thumbUrl: `${BASE}/photos/f${fraction}-t.webp` });
+  const listAs = async (cookie: string) => {
+    const res = await get('/trails', as(cookie, null));
+    expect(res.status).toBe(200);
+    return new Map(((await res.json()) as { slug: string; previewPhotos: unknown }[]).map((trail) => [trail.slug, trail.previewPhotos]));
+  };
+
+  it('lists at most 5 published photos per trail in line order; a draft or hidden photo never shows, even to its author', async () => {
+    const trail = await seedTrail();
+    const small = await seedTrail();
+    const bare = await seedTrail();
+    for (const fraction of [0.9, 0.1, 0.5, 0.3, 0.7, 0.8]) await photoAt(trail.id, 'published', fraction);
+    // Earlier on the line than every published photo: they would come first.
+    await photoAt(trail.id, 'draft', 0.01);
+    await photoAt(trail.id, 'hidden', 0.02);
+    await photoAt(small.id, 'published', 0.4);
+    await photoAt(small.id, 'draft', 0.2);
+
+    for (const cookie of [rider, admin]) {
+      const bySlug = await listAs(cookie);
+      expect(bySlug.get(trail.slug)).toEqual([0.1, 0.3, 0.5, 0.7, 0.8].map(preview));
+      expect(bySlug.get(small.slug)).toEqual([preview(0.4)]);
+      expect(bySlug.get(bare.slug)).toEqual([]);
+    }
+  });
+
+  it('keeps the drafts and hidden photos of the viewer in the detail', async () => {
+    const trail = await seedTrail();
+    await photoAt(trail.id, 'published', 0.5);
+    await photoAt(trail.id, 'draft', 0.1);
+    await photoAt(trail.id, 'hidden', 0.2);
+    const statuses = async (cookie: string | null) =>
+      ((await (await get(`/trails/${trail.slug}`, as(cookie, null))).json()) as { photos: { status: string }[] }).photos.map((p) => p.status);
+    expect(await statuses(rider)).toEqual(['draft', 'hidden', 'published']);
+    expect(await statuses(null)).toEqual(['published']);
+  });
+});
