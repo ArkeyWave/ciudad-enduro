@@ -184,7 +184,7 @@ export class PhotosService {
     const { exif } = encoded;
     if (!trail && exif.position) {
       position = exif.position;
-      trail = await this.trailNear(position, named);
+      trail = await this.trailNear(position);
     }
     if (!position) throw new BadRequestException(coded('NO_POSITION'));
     if (!trail) throw new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
