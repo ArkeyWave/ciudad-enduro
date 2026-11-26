@@ -405,6 +405,103 @@ describe('POST /api/photos: a named trail and the EXIF fallback (plan §10 L3-7,
     }
   });
 
+  it('checks the named trail before NO_POSITION: a PNG without a position gets 404 for an unavailable slug, 400 for a published one', async () => {
+    await seedTrail('published', LINE, 'nombrado');
+    await seedTrail('draft', LINE, 'borrador');
+    for (const slug of ['borrador', 'no-existe']) {
+      const res = await post(as(rider), bombPng(), { trail: slug });
+      expect(res.status, slug).toBe(404);
+      expect(await res.json()).toMatchObject({ code: 'TRAIL_NOT_FOUND' });
+    }
+    const res = await post(as(rider), bombPng(), { trail: 'nombrado' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'NO_POSITION' });
+  });
+
+  it('keeps the named trail in the EXIF fallback: linked to it, not to the trail under the EXIF position', async () => {
+    const named = await seedTrail('published', shifted(40), 'nombrado');
+    await seedTrail('published', LINE, 'cerca');
+    const res = await post(as(rider), await cameraJpeg(), { ...near(0.5, 500), trail: 'nombrado' });
+    expect(res.status).toBe(201);
+    const photo = (await res.json()) as Photo;
+    expect(photo.trailSlug).toBe('nombrado');
+    const row = await rowOf(photo.id);
+    expect(row?.trail_id).toBe(named.id);
+    expect(row?.line_fraction).toBeCloseTo(0.25, 2);
+  });
+
+  it('answers 422 when both the body and the EXIF position are far from the named trail, even with the EXIF on another trail', async () => {
+    await seedTrail('published', shifted(300), 'nombrado');
+    await seedTrail('published', LINE, 'cerca');
+    const res = await post(as(rider), await cameraJpeg(), { ...near(0.5, 500), trail: 'nombrado' });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
+    expect(await count()).toBe(0);
+  });
+
+  it('refuses a far PNG with 422 before decoding it', async () => {
+    await seedTrail();
+    // A bomb would be 413 once decoded: the 422 proves the refusal comes first.
+    const res = await post(as(rider), bombPng(), near(0.5, 500));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
+  });
+
+  it('re-checks the publication of the nearest trail too: unpublished during the upload gets 422, no row, no file', async () => {
+    const trail = await seedTrail();
+    const media = t.app.get(MediaStorage);
+    const real = media.putPrivate.bind(media);
+    const put = vi.spyOn(media, 'putPrivate').mockImplementation(async (key, body) => {
+      await db.update(trails).set({ status: 'draft' }).where(eq(trails.id, trail.id));
+      return real(key, body);
+    });
+    try {
+      const res = await post(as(rider), await plainJpeg(), near(0.5, 0));
+      expect(res.status).toBe(422);
+      expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
+      expect(await count()).toBe(0);
+      expect(await listKeys()).toEqual([]);
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it('holds a share lock on the trail until the insert commits: a concurrent unpublish waits', async () => {
+    const trail = await seedTrail();
+    // `blocker` stops the upload at its insert (SHARE conflicts with the insert's ROW EXCLUSIVE),
+    // after the trail read; `other` then tries to unpublish the trail from a third connection.
+    const blocker = await openTestClient();
+    const other = await openTestClient();
+    try {
+      await blocker.query('begin');
+      await blocker.query('lock table trail_photos in share mode');
+      const upload = post(as(rider), await plainJpeg(), near(0.5, 0));
+      await expect
+        .poll(
+          async () =>
+            Number(
+              (
+                await client.query<{ n: string }>(
+                  `select count(*) as n from pg_stat_activity where wait_event_type = 'Lock' and query ilike 'insert into "trail_photos"%'`,
+                )
+              ).rows[0]!.n,
+            ),
+          { timeout: 10_000 },
+        )
+        .toBe(1);
+      await other.query(`set lock_timeout = '300ms'`);
+      // With the share lock, the update cannot take the row while the upload's transaction is open.
+      await expect(other.query(`update trails set status = 'draft' where id = $1`, [trail.id])).rejects.toMatchObject({ code: '55P03' });
+      await blocker.query('commit');
+      expect((await upload).status).toBe(201);
+      expect(await count()).toBe(1);
+    } finally {
+      await blocker.query('rollback').catch(() => undefined);
+      await blocker.end();
+      await other.end();
+    }
+  });
+
   it('falls back to the EXIF position when the body position has no trail within 50 m', async () => {
     await seedTrail();
     const res = await post(as(rider), await cameraJpeg(), near(0.5, 500));

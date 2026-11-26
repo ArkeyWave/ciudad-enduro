@@ -213,6 +213,10 @@
             "nullable": true,
             "type": "array"
           },
+          "hasPath": {
+            "description": "The trail has a line: a vista can attach to it (plan §10.1 A9)",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -253,6 +257,7 @@
           "elevationGainM",
           "elevationLossM",
           "elevationProfile",
+          "hasPath",
           "status"
         ],
         "type": "object"
@@ -444,6 +449,10 @@
             "nullable": true,
             "type": "array"
           },
+          "hasPath": {
+            "description": "The trail has a line: a vista can attach to it (plan §10.1 A9)",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -484,6 +493,7 @@
           "elevationGainM",
           "elevationLossM",
           "elevationProfile",
+          "hasPath",
           "status",
           "authorEmail"
         ],
@@ -546,6 +556,10 @@
             "nullable": true,
             "type": "object"
           },
+          "hasPath": {
+            "description": "The trail has a line: a vista can attach to it (plan §10.1 A9)",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -606,6 +620,7 @@
           "elevationGainM",
           "elevationLossM",
           "elevationProfile",
+          "hasPath",
           "status",
           "description",
           "end",
@@ -720,6 +735,10 @@
             "nullable": true,
             "type": "array"
           },
+          "hasPath": {
+            "description": "The trail has a line: a vista can attach to it (plan §10.1 A9)",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -752,7 +771,8 @@
           "distanceM",
           "elevationGainM",
           "elevationLossM",
-          "elevationProfile"
+          "elevationProfile",
+          "hasPath"
         ],
         "type": "object"
       },

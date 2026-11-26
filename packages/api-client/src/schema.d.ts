@@ -217,6 +217,8 @@ export interface components {
             elevationLossM: number | null;
             /** @description [distance_m, ele_m] pairs, at most 300 */
             elevationProfile: number[][] | null;
+            /** @description The trail has a line: a vista can attach to it (plan §10.1 A9) */
+            hasPath: boolean;
             /** Format: uuid */
             id: string;
             name: string;
@@ -279,6 +281,8 @@ export interface components {
             elevationLossM: number | null;
             /** @description [distance_m, ele_m] pairs, at most 300 */
             elevationProfile: number[][] | null;
+            /** @description The trail has a line: a vista can attach to it (plan §10.1 A9) */
+            hasPath: boolean;
             /** Format: uuid */
             id: string;
             name: string;
@@ -299,6 +303,8 @@ export interface components {
             /** @description [distance_m, ele_m] pairs, at most 300 */
             elevationProfile: number[][] | null;
             end: components["schemas"]["CoordinatesDto"] | null;
+            /** @description The trail has a line: a vista can attach to it (plan §10.1 A9) */
+            hasPath: boolean;
             /** Format: uuid */
             id: string;
             name: string;
@@ -339,6 +345,8 @@ export interface components {
             elevationLossM: number | null;
             /** @description [distance_m, ele_m] pairs, at most 300 */
             elevationProfile: number[][] | null;
+            /** @description The trail has a line: a vista can attach to it (plan §10.1 A9) */
+            hasPath: boolean;
             /** Format: uuid */
             id: string;
             name: string;

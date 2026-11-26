@@ -3,7 +3,7 @@
 // "Agregar vista" button. One context has a real denied permission; the other a mocked geolocation
 // whose fixes and errors the tests send.
 import { expect, type BrowserContext, type Page, type Request } from '@playwright/test';
-import { deleteTrail, makeDraftOf, seedLineTrail } from './db.ts';
+import { deleteTrail, makeDraftOf, seedLineTrail, seedPointTrail } from './db.ts';
 import { ORIGIN_PORT } from './ports.ts';
 import { signIn } from './session.ts';
 import { stubTurnstile, test } from './turnstile.ts';
@@ -12,6 +12,7 @@ import { axe, expectTarget, stubTiles } from './ui.ts';
 const ORIGIN = `http://127.0.0.1:${ORIGIN_PORT}`;
 const TRAIL = { slug: 'e2e-ubicacion', name: 'Sendero de la Ubicación' };
 const DRAFT = { slug: 'e2e-ubicacion-borrador', name: 'Borrador de la Ubicación' };
+const POINT = { slug: 'e2e-ubicacion-punto', name: 'Punto de la Ubicación' };
 // Due south, about 1.1 km, away from the other seeded trails.
 const LINE: [number, number][] = [
   [-78.61, -9.02],
@@ -71,6 +72,7 @@ test.describe('location on the maps', () => {
   test.beforeAll(async ({ browser }) => {
     await seedLineTrail(TRAIL.slug, TRAIL.name, LINE);
     await seedLineTrail(DRAFT.slug, DRAFT.name, LINE.map(([lng, lat]) => [lng + 0.01, lat]));
+    await seedPointTrail(POINT.slug, POINT.name, [-78.63, -9.02]);
     // No permission granted: Chromium denies the position.
     denied = await browser.newContext({ baseURL: ORIGIN, viewport: { width: 390, height: 844 } });
     await stubTurnstile(denied);
@@ -102,6 +104,7 @@ test.describe('location on the maps', () => {
     await mocked?.close();
     await deleteTrail(TRAIL.slug);
     await deleteTrail(DRAFT.slug);
+    await deleteTrail(POINT.slug);
   });
 
   test('the tracer chip: "Buscando…", then "±N m" with a dot that follows each fix, then the denied alert; never aria-pressed', async () => {
@@ -143,6 +146,8 @@ test.describe('location on the maps', () => {
     await expect(photoMap(page)).toHaveCount(0);
     const pick = page.getByRole('link', { name: TRAIL.name, exact: true });
     await expectTarget(pick);
+    // A published trail without a line cannot take a vista: not in the list.
+    await expect(page.getByRole('link', { name: POINT.name, exact: true })).toHaveCount(0);
     await pick.click();
     await expect(page).toHaveURL(`${ORIGIN}/vistas/nueva?ruta=${TRAIL.slug}`);
     await expect(photoMap(page).locator('path.trail-path')).toHaveCount(1);
@@ -239,6 +244,11 @@ test.describe('location on the maps', () => {
     await expect(photoMap(page).locator('path.trail-path')).toHaveCount(1);
 
     // The rider sees the own draft (its chip), without the button.
+    // A published trail without a line has no button.
+    await page.goto(`/rutas/${POINT.slug}`);
+    await expect(page.getByRole('heading', { level: 1, name: POINT.name })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Agregar vista' })).toHaveCount(0);
+
     await page.goto(`/rutas/${DRAFT.slug}`);
     await expect(page.getByTestId('trail-status')).toHaveText('En revisión');
     await expect(page.getByRole('link', { name: 'Agregar vista' })).toHaveCount(0);
@@ -252,10 +262,10 @@ test.describe('location on the maps', () => {
     await anonymous.close();
   });
 
-  test('an unavailable ?ruta= (a draft, an unknown slug) shows "Este sendero no está disponible." and no map', async () => {
+  test('an unavailable ?ruta= (a draft, an unknown slug, no line, empty, repeated) shows "Este sendero no está disponible." and no map', async () => {
     const page = deniedPage;
-    for (const slug of [DRAFT.slug, 'no-existe']) {
-      await page.goto(`/vistas/nueva?ruta=${slug}`);
+    for (const query of [`ruta=${DRAFT.slug}`, 'ruta=no-existe', `ruta=${POINT.slug}`, 'ruta=', `ruta=${TRAIL.slug}&ruta=${TRAIL.slug}`]) {
+      await page.goto(`/vistas/nueva?${query}`);
       await expect(page.locator('main').getByRole('alert')).toHaveText('Este sendero no está disponible.');
       await expect(photoMap(page)).toHaveCount(0);
       await expect(page.locator('input[name="photo"]')).toHaveCount(0);

@@ -32,6 +32,14 @@ export const seedLineTrail = (slug: string, name: string, line: [number, number]
     [slug, name, line[0]![0], line[0]![1], JSON.stringify({ type: 'LineString', coordinates: line })],
   );
 
+/** A published trail with a start point and no line: no vista can attach to it. */
+export const seedPointTrail = (slug: string, name: string, [lng, lat]: [number, number]) =>
+  query(
+    `INSERT INTO trails (slug, name, ubigeo, difficulty, type, status, start_point)
+     VALUES ($1, $2, '021801', 'facil', 'urbano', 'published', ST_SetSRID(ST_MakePoint($3, $4), 4326))`,
+    [slug, name, lng, lat],
+  );
+
 /** Makes a trail a draft of the user with this e-mail, so that user sees it (and nobody else). */
 export const makeDraftOf = (slug: string, email: string) =>
   query(`UPDATE trails SET status = 'draft', author_id = (SELECT id FROM "user" WHERE email = $2) WHERE slug = $1`, [slug, email]);
