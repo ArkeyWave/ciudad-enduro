@@ -47,6 +47,11 @@ const tapCentre = async (page: Page, testId: string) => {
   const box = (await page.getByTestId(testId).boundingBox())!;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 };
+/** The pin's place inside the map, whatever the page scroll. */
+const pinOnMap = async (page: Page) => {
+  const [p, m] = [(await pin(page).boundingBox())!, (await photoMap(page).boundingBox())!];
+  return { x: p.x - m.x, y: p.y - m.y };
+};
 /** One text field of a multipart body. */
 const field = (body: string, name: string) => new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`).exec(body)?.[1];
 const bodyOf = (request: Request) => request.postDataBuffer()!.toString('latin1');
@@ -197,13 +202,15 @@ test.describe('location on the maps', () => {
       const tapped = await submit();
       expect(tapped.trail).toBe(TRAIL.slug);
 
+      // The submit scrolled the page: bring the map back before the pointer drag.
+      await photoMap(page).scrollIntoViewIfNeeded();
       const start = (await pin(page).boundingBox())!;
       await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
       await page.mouse.down();
       await page.mouse.move(start.x + start.width / 2 + 40, start.y + start.height / 2 + 30, { steps: 8 });
       await page.mouse.up();
-      const dragged = (await pin(page).boundingBox())!;
-      expect(Math.abs(dragged.x - start.x - 40)).toBeLessThan(3);
+      expect(Math.abs((await pin(page).boundingBox())!.x - start.x - 40)).toBeLessThan(3);
+      const dragged = await pinOnMap(page);
       const afterDrag = await submit();
       expect(afterDrag.lat).not.toBe(tapped.lat);
       expect(afterDrag.lng).not.toBe(tapped.lng);
@@ -213,7 +220,7 @@ test.describe('location on the maps', () => {
       await sendFix(page, -9.021, -78.6095, 8);
       await expect(state(page)).toHaveText('±8 m');
       await expect(photoMap(page).locator('path.fix-dot')).toHaveCount(1);
-      expect(await pin(page).boundingBox()).toEqual(dragged);
+      expect(await pinOnMap(page)).toEqual(dragged);
       await expect(page.getByTestId('photo-position')).toHaveText('Punto marcado en el mapa');
       const afterFix = await submit();
       expect(afterFix).toEqual(afterDrag);
