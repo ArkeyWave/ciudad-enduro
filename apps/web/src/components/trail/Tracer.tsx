@@ -144,7 +144,7 @@ export default function Tracer() {
       </p>
       {/* Always mounted, so the typed fields survive an undo below 2 points. */}
       <form onSubmit={submit} className="form">
-        <TrailFields suggestion={suggestionPoint(points[0] ?? null, fix)} />
+        <TrailFields suggestion={suggestionPoint(fix, points[0] ?? null)} />
         <button type="submit" disabled={busy || points.length < 2} className="cta">
           {busy ? 'Subiendo…' : 'Subir ruta'}
         </button>
