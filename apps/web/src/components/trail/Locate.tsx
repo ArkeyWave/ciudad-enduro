@@ -56,7 +56,7 @@ export function LocateChip({ geo, onClick }: { geo: Geo; onClick: () => void }) 
         Mi ubicación
       </button>
       <span aria-live="polite" className="chip-state" data-testid="locate-state">
-        {geo.status === 'searching' ? 'Buscando…' : geo.fix ? `±${Math.round(geo.fix.accuracy)} m` : ''}
+        {geo.status === 'idle' ? 'Buscando…' : geo.fix ? `±${Math.round(geo.fix.accuracy)} m` : ''}
       </span>
     </>
   );

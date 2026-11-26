@@ -181,7 +181,7 @@ export class PhotosService {
     if (position && !trail && type !== 'jpeg') throw new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
     const encoded = await encodePhoto(bytes, type);
     const { exif } = encoded;
-    if (!trail && exif.position) {
+    if (!trail && exif.position && bodyPosition === null) {
       position = exif.position;
       trail = await this.trailNear(position, named);
     }
