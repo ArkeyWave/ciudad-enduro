@@ -82,6 +82,27 @@ test.describe('the district suggestion', () => {
     await expect(rider).toHaveURL(`${ORIGIN}${IMPORT}`);
   });
 
+  test('a district typed over the suggestion and left with Tab blocks the submit: no POST', async () => {
+    await context.clearPermissions();
+    await rider.goto(IMPORT);
+    let posts = 0;
+    rider.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith('/api/trails')) posts += 1;
+    });
+    await rider.locator('input[name="gpx"]').setInputFiles(GPX);
+    await expect(district(rider)).toHaveValue('Nuevo Chimbote, Santa, Ancash');
+    await district(rider).fill('Coishco');
+    await district(rider).press('Tab');
+    // The blur keeps the typed text: the old value must not go to the API under it.
+    await expect(district(rider)).toHaveValue('Coishco');
+    await rider.getByLabel('Nombre').fill('Ruta en otro distrito');
+    await rider.getByRole('button', { name: 'Subir ruta' }).click();
+    expect(await district(rider).evaluate((input: HTMLInputElement) => input.validationMessage)).toBe('Elige un distrito de la lista.');
+    await rider.waitForTimeout(500);
+    expect(posts).toBe(0);
+    await expect(rider).toHaveURL(`${ORIGIN}${IMPORT}`);
+  });
+
   test('with the permission granted, "Importar GPX" suggests the district of the fix', async () => {
     await context.grantPermissions(['geolocation'], { origin: ORIGIN });
     await context.setGeolocation(TRUJILLO_FIX);

@@ -65,7 +65,9 @@ const [inei, reniec, district, province, department, lat, lng] = ['inei', 'renie
 
 // Fixes against the INEI 2025 district layer (UNDP-hosted Distritos_INEI_2025_IDE_2024).
 const INEI_OF_RENIEC = { 170107: '180107' }; // San Antonio (Mariscal Nieto, Moquegua): the source has NA as its INEI code.
-const OBSOLETE = new Set(['160109', '160114']); // Putumayo and Teniente Manuel Clavero moved to province Putumayo (160801, 160803).
+// Putumayo and Teniente Manuel Clavero moved to province Putumayo (160801, 160803). No trail stored them.
+// A code that a trail can store needs a data migration of those trails before it leaves this list.
+const OBSOLETE = new Set(['160109', '160114']);
 const EXTRA = [
   // Alto Trujillo (2023, not in the source). No INEI capital point found: the centroid of its polygon in the INEI 2025 layer.
   ['130112', 'Alto Trujillo', 'Trujillo', 'La Libertad', -8.0476, -79.0056],

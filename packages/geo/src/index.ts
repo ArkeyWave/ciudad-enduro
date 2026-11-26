@@ -2,7 +2,8 @@ import rows from './districts.json' with { type: 'json' };
 
 /**
  * A district of Peru. `ubigeo` is the INEI code; `lat`/`lng` is the district capital point (not a
- * centroid), null when the source has none.
+ * centroid), null when the source has none. One exception: `130112` Alto Trujillo has the centroid
+ * of its INEI 2025 polygon (no INEI capital point found; scripts/build-districts.mjs).
  */
 export type District = { ubigeo: string; name: string; province: string; department: string; lat: number | null; lng: number | null };
 export type Point = { lat: number; lng: number };

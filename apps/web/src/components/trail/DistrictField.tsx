@@ -52,8 +52,9 @@ export function DistrictField({ saved, suggestion }: { saved?: District; suggest
     setOpen(false);
   };
 
-  // Leaving without a pick puts the value back, with the lock it had before the typing (lib/districts.ts).
-  const close = () => {
+  // Escape puts the value back, with the lock it had before the typing (lib/districts.ts). A blur
+  // keeps the typed text, so the custom validity refuses a form whose text is not the value.
+  const revert = () => {
     setOpen(false);
     if (!choice.value) return;
     setText(districtLabel(choice.value));
@@ -75,7 +76,7 @@ export function DistrictField({ saved, suggestion }: { saved?: District; suggest
       pick(options[active]);
     } else if (event.key === 'Escape' && open) {
       event.preventDefault();
-      close();
+      revert();
     }
   };
 
@@ -100,7 +101,7 @@ export function DistrictField({ saved, suggestion }: { saved?: District; suggest
           setActive(0);
         }}
         onKeyDown={onKeyDown}
-        onBlur={close}
+        onBlur={() => setOpen(false)}
       />
       <input type="hidden" name="ubigeo" value={valid ? (choice.value?.ubigeo ?? '') : ''} />
       <ul id={listId} role="listbox" aria-label="Distritos" className="combobox-list" hidden={options.length === 0}>

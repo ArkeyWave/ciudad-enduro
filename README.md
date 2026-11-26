@@ -143,6 +143,9 @@ jmcastagnetto/ubigeo-peru-aumentado (MIT, `src/districts.LICENSE`); to rebuild i
 pnpm --filter @ciudad-enduro/geo districts <path to ubigeo_distrito.csv>   # write src/districts.json
 ```
 
+A code that a trail can store needs a data migration of those trails before it leaves the list:
+the API refuses to answer a trail whose code it does not know.
+
 ### Web (`apps/web`)
 
 ```bash

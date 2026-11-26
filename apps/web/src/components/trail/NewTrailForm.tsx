@@ -9,6 +9,9 @@ import { uploadTrail, type TrailFailure } from '../../lib/trails-client';
 import { TrailFailureAlert } from './TrailFailureAlert';
 import { TrailFields } from './TrailFields';
 
+/** The API's GPX limit (GPX_UPLOAD_LIMITS.fileSize). */
+const GPX_MAX_BYTES = 10 * 1024 * 1024;
+
 export function NewTrailForm() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -27,7 +30,9 @@ export function NewTrailForm() {
     const file = event.currentTarget.files?.[0] ?? null;
     lastFile.current = file;
     setStart(null);
-    void file?.text().then((text) => {
+    // Above the API limit the upload is refused anyway: do not read the file for a suggestion.
+    if (!file || file.size > GPX_MAX_BYTES) return;
+    void file.text().then((text) => {
       if (lastFile.current === file) setStart(gpxStart(text));
     });
   };

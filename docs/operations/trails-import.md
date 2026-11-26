@@ -52,7 +52,7 @@ The change applies to the next request; the owner does not sign in again. To tak
 ## 3. Upload, check, publish
 
 1. On the web, open "Nueva ruta" (`/rutas/nueva`, any signed-in user), choose the file and fill in name,
-   city, difficulty, type and description. The trail is stored as a **draft**: only an admin and its
+   district, difficulty, type and description. The trail is stored as a **draft**: only an admin and its
    author see it. A non-admin with 3 drafts gets 429 `TOO_MANY_PENDING`. The moderation queue is
    `GET /api/admin/trails?status=draft` (admin).
 2. Check the draft page: the map, the distance, the gain and loss, the profile.
