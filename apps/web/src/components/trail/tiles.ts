@@ -1,9 +1,8 @@
 import L from 'leaflet';
+import { OSM_COPYRIGHT_URL, OSM_TILES } from '../../lib/osm';
 
-// The OSM tile policy: this exact URL and a visible, linked attribution. The dark look is a CSS
-// filter on the tile pane (globals.css, plan D11).
-const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+// The dark look is a CSS filter on the tile pane (globals.css, plan D11).
+const ATTRIBUTION = `© <a href="${OSM_COPYRIGHT_URL}">OpenStreetMap</a>`;
 
 /** Open-Meteo elevation data is CC BY 4.0: credited on a map whose trail shows a profile (plan §8 G5). */
 export const ELEVATION_CREDIT = 'Elevación: <a href="https://open-meteo.com/">Open-Meteo</a> (Copernicus GLO-90)';
@@ -12,7 +11,7 @@ export const ELEVATION_CREDIT = 'Elevación: <a href="https://open-meteo.com/">O
 export function baseMap(container: HTMLElement, options: L.MapOptions = {}): L.Map {
   const map = L.map(container, { scrollWheelZoom: false, zoomControl: false, ...options });
   L.control.zoom({ position: 'topright', zoomInTitle: 'Acercar', zoomOutTitle: 'Alejar' }).addTo(map);
-  L.tileLayer(TILES, { maxZoom: 19, attribution: ATTRIBUTION }).addTo(map);
+  L.tileLayer(OSM_TILES, { maxZoom: 19, attribution: ATTRIBUTION }).addTo(map);
   return map;
 }
 

@@ -32,6 +32,26 @@ export const seedLineTrail = (slug: string, name: string, line: [number, number]
     [slug, name, line[0]![0], line[0]![1], JSON.stringify({ type: 'LineString', coordinates: line })],
   );
 
+/**
+ * A published trail listed after every other one (created in 2000), with `photos` published
+ * photos on its line, for the card slider spec. The image files do not exist: the spec stubs them.
+ */
+export async function seedSliderTrail(slug: string, name: string, photos: number) {
+  const [trail] = await query<{ id: string }>(
+    `INSERT INTO trails (slug, name, ubigeo, difficulty, type, status, start_point, created_at)
+     VALUES ($1, $2, '021801', 'facil', 'urbano', 'published', ST_SetSRID(ST_MakePoint(-78.52, -9.09), 4326), '2000-01-01')
+     RETURNING id`,
+    [slug, name],
+  );
+  for (let i = 1; i <= photos; i++) {
+    await query(
+      `INSERT INTO trail_photos (id, trail_id, status, position, line_fraction, image_key, thumb_key, width, height)
+       VALUES (gen_random_uuid(), $1, 'published', ST_SetSRID(ST_MakePoint(-78.52, -9.09), 4326)::geography, $2, $3, $4, 1, 1)`,
+      [trail!.id, i / 10, `photos/${slug}-${i}.webp`, `photos/${slug}-${i}-t.webp`],
+    );
+  }
+}
+
 /** A published trail with a start point and no line: no vista can attach to it. */
 export const seedPointTrail = (slug: string, name: string, [lng, lat]: [number, number]) =>
   query(

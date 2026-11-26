@@ -53,6 +53,18 @@ export class TrailSummaryDto {
   @ApiProperty({ description: 'The trail has a line: a vista can attach to it (plan §10.1 A9)' }) hasPath!: boolean;
 }
 
+/** A photo on an Explorar card (plan §10.1 A12): published only. */
+export class PreviewPhotoDto {
+  @ApiProperty({ description: 'WebP, at most 1600 px' }) url!: string;
+  @ApiProperty({ description: 'WebP, 160 px square' }) thumbUrl!: string;
+}
+
+/** A trail in the public list, `GET /api/trails`: the summary and the photos of its card slider. */
+export class TrailListItemDto extends TrailSummaryDto {
+  @ApiProperty({ type: () => PreviewPhotoDto, isArray: true, description: 'At most 5 published photos, line order' })
+  previewPhotos!: PreviewPhotoDto[];
+}
+
 /** A trail in the author's own list (every status). */
 export class MyTrailDto extends TrailSummaryDto {
   @ApiProperty({ enum: TRAIL_STATUSES, enumName: 'TrailStatus' }) status!: TrailStatus;

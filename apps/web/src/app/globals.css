@@ -31,7 +31,9 @@
   --font-body: var(--font-inter), system-ui, -apple-system, sans-serif;
 
   --nav-h: 80px;
-  --card-h: 212px;
+  /* An Explorar card: the slider on top of the 212 px body (plan §10.1 A13). */
+  --slide-h: 176px;
+  --card-h: calc(212px + var(--slide-h));
   --col: 720px;
 }
 
@@ -194,15 +196,55 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
   overflow: hidden;
 }
 .card-pad { padding: 16px; }
-.trail-card { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px 18px; color: var(--text); text-decoration: none; }
+.trail-card { position: relative; display: flex; flex-direction: column; color: var(--text); }
+.trail-card-body { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 16px 20px 18px; }
 .trail-card:active { transform: scale(0.99); }
+/* The title link covers the whole card; the slider sits above it (z-index), so a slide tap stays. */
+.card-link { color: inherit; text-decoration: none; }
+.card-link::after { content: ''; position: absolute; inset: 0; border-radius: 18px; }
+.card-link:focus-visible { outline: none; }
+.card-link:focus-visible::after { outline: 2px solid var(--lime); outline-offset: -2px; }
 .swipe-title { font-family: var(--font-display); font-size: 30px; line-height: 0.95; letter-spacing: 0.5px; margin: 0; text-transform: uppercase; }
 .trail-card .stats { padding-top: 10px; border-top: 1px solid var(--border); }
 .elev { width: 100%; height: 34px; display: block; }
 .elev polyline { stroke: var(--lime); }
 .skeleton { background: var(--card); border: 1px solid var(--border); border-radius: 18px; }
-/* The card skeleton and every card share one height, so the list does not move when it streams in. */
-.trail-card, .card-skeleton { min-height: var(--card-h); }
+/* The card skeleton and every Explorar card share one height, so the list does not move when it streams in. */
+.trail-card { min-height: calc(var(--card-h) - var(--slide-h)); }
+.trail-card.with-slides, .card-skeleton { min-height: var(--card-h); }
+
+/* ── Card slider (plan §10 L3-8) ─────────────────────────────── */
+.slider { position: relative; z-index: 1; flex: none; height: var(--slide-h); }
+.slides {
+  display: flex; height: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth;
+  overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.slides::-webkit-scrollbar { display: none; }
+.slides:focus-visible { outline-offset: -2px; border-radius: 0; }
+.slide { position: relative; flex: 0 0 100%; overflow: hidden; scroll-snap-align: start; background: var(--bg-soft); }
+.slide > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* The 2×2 tile mosaic spans the slide width; the start row is centred, clamped to the mosaic. */
+.map-slide { container-type: inline-size; }
+.tile-mosaic {
+  position: absolute; left: 0; width: 100%; aspect-ratio: 1; display: grid; grid-template-columns: 1fr 1fr;
+  top: clamp(calc(100% - 100cqw), calc(50% - var(--y) * 100cqw), 0px);
+}
+.tile-mosaic img { display: block; width: 100%; height: 100%; }
+.start-dot {
+  position: absolute; left: calc(var(--x) * 100%); top: calc(var(--y) * 100%);
+  width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--lime); border: 3px solid #0A0A0A;
+}
+.slide-credit {
+  position: absolute; top: 0; right: 0; padding: 2px 6px; border-bottom-left-radius: 6px;
+  background: #0A0A0A; color: var(--muted); font-size: 11px;
+}
+.slide-credit a { color: var(--text); }
+.dots { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; }
+.dot { width: 44px; height: 44px; padding: 0; border: none; background: none; cursor: pointer; display: grid; place-items: center; }
+.dot::before { content: ''; width: 8px; height: 8px; border-radius: 4px; background: rgba(245,245,245,0.6); box-shadow: 0 0 0 1px rgba(10,10,10,0.6); }
+.dot[aria-current="true"]::before { width: 18px; background: var(--lime); }
+/* The point the auto-advance observes: the card's vertical centre (A14). */
+.card-centre { position: absolute; top: 50%; left: 0; width: 1px; height: 2px; margin-top: -1px; pointer-events: none; }
 .skeleton-line { height: 1.2em; width: 7em; background: var(--card); border-radius: 6px; }
 
 /* ── Forms / CTA ─────────────────────────────────────────────── */
@@ -350,7 +392,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 /* ── Leaflet ─────────────────────────────────────────────────── */
 .leaflet-container { background: #0B0F0A; font: inherit; }
 /* D11: the dark look on the OSM tiles only, so the path, pins and attribution keep their colours. */
-.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) grayscale(.4); }
+.leaflet-tile-pane, .tile-mosaic img { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) grayscale(.4); }
 .leaflet-control-attribution {
   background: #0A0A0A !important; color: var(--muted) !important; font-size: 11px !important;
 }
@@ -361,6 +403,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 /* ── Reduced motion ──────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  .slides { scroll-behavior: auto; }
 }
 
 /* ── District combobox (plan §10 L3-3) ───────────────────────── */

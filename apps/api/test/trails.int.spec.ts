@@ -92,6 +92,7 @@ describe('GET /api/trails', () => {
         elevationGainM: 80,
         elevationLossM: null,
         elevationProfile: null,
+        previewPhotos: [],
         hasPath: true,
       },
     ]);

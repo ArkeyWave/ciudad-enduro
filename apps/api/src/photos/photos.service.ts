@@ -12,10 +12,11 @@ import {
   UnprocessableEntityException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
-import { and, asc, count, eq, isNotNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DB, type Database } from '../db/db.provider.js';
 import { trailPhotos, trails, user, type TrailStatus } from '../db/schema/index.js';
 import type { LngLat } from '../db/types/geo.js';
+import type { PreviewPhotoDto } from '../trails/dto/trail.dto.js';
 import type { Viewer } from '../trails/trails.service.js';
 import type { PhotoDto, QueuePhotoDto, TrailPhotoDto } from './dto/photo.dto.js';
 import { encodePhoto, photoType } from './image.js';
@@ -25,6 +26,8 @@ import { MediaStorage } from './media-storage.js';
 export const PHOTO_PENDING_LIMIT = 20;
 /** A photo attaches to the nearest published trail within this distance (plan §9 V3). */
 export const NEARBY_M = 50;
+/** Photos on an Explorar card (plan §10.1 A12). */
+export const PREVIEW_LIMIT = 5;
 /** First key of the two-key advisory lock on photo uploads (trails use 7301). */
 const PHOTO_LOCK = sql.raw('7302');
 
@@ -89,6 +92,29 @@ export class PhotosService {
       .where(and(eq(trailPhotos.trailId, trailId), visibleTo(viewer)))
       .orderBy(asc(trailPhotos.lineFraction), asc(trailPhotos.createdAt));
     return Promise.all(rows.map((row) => this.view(row)));
+  }
+
+  /** The first PREVIEW_LIMIT published photos of each trail, in line order: one query for the whole list. */
+  async previewsFor(trailIds: string[]): Promise<Map<string, PreviewPhotoDto[]>> {
+    const previews = new Map<string, PreviewPhotoDto[]>();
+    if (trailIds.length === 0) return previews;
+    const ranked = this.db
+      .select({
+        trailId: trailPhotos.trailId,
+        imageKey: trailPhotos.imageKey,
+        thumbKey: trailPhotos.thumbKey,
+        rank: sql<number>`row_number() over (partition by ${trailPhotos.trailId} order by ${trailPhotos.lineFraction}, ${trailPhotos.createdAt})`.as('rank'),
+      })
+      .from(trailPhotos)
+      .where(and(eq(trailPhotos.status, 'published'), inArray(trailPhotos.trailId, trailIds)))
+      .as('ranked');
+    const rows = await this.db.select().from(ranked).where(lte(ranked.rank, PREVIEW_LIMIT)).orderBy(asc(ranked.trailId), asc(ranked.rank));
+    for (const { trailId, imageKey, thumbKey } of rows) {
+      const list = previews.get(trailId) ?? [];
+      list.push({ url: this.media.publicUrl(imageKey), thumbUrl: this.media.publicUrl(thumbKey) });
+      previews.set(trailId, list);
+    }
+    return previews;
   }
 
   /** The moderation queue: photos with one status, oldest first. */

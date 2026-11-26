@@ -15,7 +15,7 @@ import { DB, type Database } from '../db/db.provider.js';
 import { districtByUbigeo } from '@ciudad-enduro/geo';
 import { trails, trailSources, user, type TrailStatus } from '../db/schema/index.js';
 import type { LngLat } from '../db/types/geo.js';
-import type { CoordinatesDto, DistrictDto, MyTrailDto, QueueTrailDto, TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
+import type { CoordinatesDto, DistrictDto, MyTrailDto, QueueTrailDto, TrailDetailDto, TrailListItemDto, TrailSummaryDto } from './dto/trail.dto.js';
 import type { CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
 import { fillElevations } from './gpx/fill-elevations.js';
 import { elevationMetrics, trackMetrics, type TrackMetrics } from './gpx/metrics.js';
@@ -128,13 +128,14 @@ export class TrailsService {
     private readonly photos: PhotosService,
   ) {}
 
-  async listPublished(ubigeo?: string): Promise<TrailSummaryDto[]> {
+  async listPublished(ubigeo?: string): Promise<TrailListItemDto[]> {
     const rows = await this.db
       .select(summaryColumns)
       .from(trails)
       .where(and(eq(trails.status, 'published'), ubigeo ? eq(trails.ubigeo, ubigeo) : undefined))
       .orderBy(desc(trails.createdAt));
-    return rows.map(toSummary);
+    const previews = await this.photos.previewsFor(rows.map((row) => row.id));
+    return rows.map((row) => ({ ...toSummary(row), previewPhotos: previews.get(row.id) ?? [] }));
   }
 
   /** The user's own trails, every status, newest first (plan R-D4). */

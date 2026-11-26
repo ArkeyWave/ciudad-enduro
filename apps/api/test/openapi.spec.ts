@@ -30,7 +30,7 @@ describe('OpenAPI document', () => {
   it('references the DTOs in the 200 responses', () => {
     expect(okSchema('/api/trails')?.content['application/json']?.schema).toEqual({
       type: 'array',
-      items: { $ref: '#/components/schemas/TrailSummaryDto' },
+      items: { $ref: '#/components/schemas/TrailListItemDto' },
     });
     expect(okSchema('/api/trails/{slug}')?.content['application/json']?.schema).toEqual({
       $ref: '#/components/schemas/TrailDetailDto',
@@ -55,7 +55,7 @@ describe('OpenAPI document', () => {
     expect(schemas.CreateTrailBody?.properties.ubigeo).toMatchObject(ubigeo);
     expect(schemas.CreateTrailBody?.required).toContain('ubigeo');
     expect(schemas.UpdateTrailDto?.properties.ubigeo).toMatchObject(ubigeo);
-    expect(schemas.TrailSummaryDto?.properties.district).toEqual({ $ref: '#/components/schemas/DistrictDto' });
+    expect(schemas.TrailListItemDto?.properties.district).toEqual({ $ref: '#/components/schemas/DistrictDto' });
     expect(schemas.DistrictDto?.required).toEqual(['ubigeo', 'name', 'province', 'department']);
     expect(JSON.stringify(document)).not.toMatch(/"City"|"enum":\["0\d{5}"/);
   });

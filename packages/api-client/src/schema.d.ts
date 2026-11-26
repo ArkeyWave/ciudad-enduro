@@ -247,6 +247,12 @@ export interface components {
             url: string;
             width: number;
         };
+        PreviewPhotoDto: {
+            /** @description WebP, 160 px square */
+            thumbUrl: string;
+            /** @description WebP, at most 1600 px */
+            url: string;
+        };
         QueuePhotoDto: {
             /** @description Null when the author was deleted */
             authorEmail: string | null;
@@ -317,6 +323,25 @@ export interface components {
             status: components["schemas"]["TrailStatus"];
             type: components["schemas"]["TrailType"];
         };
+        TrailListItemDto: {
+            difficulty: components["schemas"]["Difficulty"];
+            distanceM: number | null;
+            district: components["schemas"]["DistrictDto"];
+            elevationGainM: number | null;
+            elevationLossM: number | null;
+            /** @description [distance_m, ele_m] pairs, at most 300 */
+            elevationProfile: number[][] | null;
+            /** @description The trail has a line: a vista can attach to it (plan §10.1 A9) */
+            hasPath: boolean;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description At most 5 published photos, line order */
+            previewPhotos: components["schemas"]["PreviewPhotoDto"][];
+            slug: string;
+            start: components["schemas"]["CoordinatesDto"];
+            type: components["schemas"]["TrailType"];
+        };
         TrailPhotoDto: {
             /** @description Degrees from north (EXIF GPSImgDirection) */
             heading: number | null;
@@ -337,23 +362,6 @@ export interface components {
         };
         /** @enum {string} */
         TrailStatus: "draft" | "published" | "hidden";
-        TrailSummaryDto: {
-            difficulty: components["schemas"]["Difficulty"];
-            distanceM: number | null;
-            district: components["schemas"]["DistrictDto"];
-            elevationGainM: number | null;
-            elevationLossM: number | null;
-            /** @description [distance_m, ele_m] pairs, at most 300 */
-            elevationProfile: number[][] | null;
-            /** @description The trail has a line: a vista can attach to it (plan §10.1 A9) */
-            hasPath: boolean;
-            /** Format: uuid */
-            id: string;
-            name: string;
-            slug: string;
-            start: components["schemas"]["CoordinatesDto"];
-            type: components["schemas"]["TrailType"];
-        };
         /** @enum {string} */
         TrailType: "descenso" | "cross_country" | "urbano";
         UpdatePhotoDto: {
@@ -733,7 +741,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TrailSummaryDto"][];
+                    "application/json": components["schemas"]["TrailListItemDto"][];
                 };
             };
         };

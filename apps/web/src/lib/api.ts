@@ -1,5 +1,5 @@
 import { cache } from 'react';
-import { createApiClient, type components, type TrailDetail, type TrailSummary } from 'api-client';
+import { createApiClient, type components, type TrailDetail, type TrailListItem } from 'api-client';
 
 export type MyTrail = components['schemas']['MyTrailDto'];
 export type QueueTrail = components['schemas']['QueueTrailDto'];
@@ -16,7 +16,7 @@ function apiClient() {
 }
 
 /** Published trails, newest first, unfiltered. Cached per request: the Explorar head and the list share one call. */
-export const listTrails = cache(async (): Promise<TrailSummary[]> => {
+export const listTrails = cache(async (): Promise<TrailListItem[]> => {
   const { data, response } = await apiClient().GET('/api/trails', { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
   if (!data) throw new Error(`GET /api/trails failed with ${response.status}`);
   return data;

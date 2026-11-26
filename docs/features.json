@@ -146,7 +146,8 @@
       "passes": false,
       "proof": [
         { "type": "test", "ref": "apps/web/e2e/shell.spec.ts, apps/web/e2e/explore.spec.ts, apps/web/e2e/trails.spec.ts (detail at 390 px), apps/web/src/lib/profile.test.ts" },
-        { "type": "test", "ref": "apps/web/e2e/screens.spec.ts (CI artifact e2e-test-results); owner sign-off and the staging phone check pending" }
+        { "type": "test", "ref": "apps/web/e2e/screens.spec.ts (CI artifact e2e-test-results); owner sign-off and the staging phone check pending" },
+        { "type": "test", "ref": "Explorar card slider (plan 2026-11-11-ui-redesign-layer-1 §10 L3-8, A12-A14): apps/web/e2e/card-slider.spec.ts, apps/web/src/lib/auto-advance.test.ts, apps/web/src/lib/osm.test.ts, apps/api/test/photos.int.spec.ts (GET /api/trails: the card photos)" }
       ]
     }
   ]
