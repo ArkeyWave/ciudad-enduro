@@ -225,3 +225,54 @@ paid providers comes with monetisation.
 | V10 | Later Claude uses (not planned): alt text for each photo; a suggested difficulty. |
 
 Known, not built (review of PR #56): **N5** no trail delete exists yet; when one is added it must delete the photo files of the trail too (the rows cascade). `trail_photos` has no CHECK constraints, same as `trails`. **N7** staging shares the media buckets under `staging/` with the same R2 key as production (accepted: staging and production run on one box and one Coolify, so a separate staging key adds little isolation).
+
+## 10. Layer 3: districts, card slider, location UX, vistas from the trail (owner feedback 2026-11-25)
+
+Owner feedback on staging `10ce0f3` (PR #56 live there, production still `5a770c1`):
+
+1. The Explorar card is a static block. It must be a **slider**: slide 1 = the trail location on a map; a few
+   seconds after the card reaches the centre of the screen it moves by itself to the first photo of the trail.
+2. `/vistas/nueva` has **no manual location**: without a GPS fix (desktop, denied permission) and without EXIF
+   GPS the upload is refused with `NO_POSITION` and the rider cannot go on.
+3. The public trail page has **no "add a photo to this trail"** action; only the global FAB "Vista".
+4. The **city** field is a `<select>` of three cities. It must be a searchable input over **all districts of
+   Peru**, with the district nearest to the user suggested first (Chimbote for the owner).
+5. **"Mi ubicación"** gives no feedback: no searching state, no position on the map, no active state.
+
+Verified facts (main `10ce0f3`):
+- `city` is a pg enum (`Chimbote`, `Nuevo Chimbote`, `Trujillo`) with a derived `department` enum (`Ancash`,
+  `La Libertad`), `apps/api/src/db/schema/trails.ts:5-31`; `departmentOf()` in `trails.service.ts:76`; the
+  OpenAPI enum `City` reaches `packages/api-client` and `apps/web/src/lib/labels.ts:5` (`CITIES`, test
+  `labels.test.ts:32` pins it to the contract). `GET /api/trails?city=` filters on it.
+- `POST /api/photos` takes optional flat `lat`/`lng` (`photos.controller.ts:90`) and links the photo to the
+  nearest published trail within 50 m (V3). The web sends a position only when the fix passes the tracer gate
+  (`positionFields`, ≤ 30 m, ≤ 10 s).
+- `TrailCard` is one `<a>` around the whole card (`TrailCard.tsx:15`); a control inside it would be an
+  interactive element inside a link.
+- `Tracer.locate()` (`Tracer.tsx:102`) starts a `watchPosition` and centres on the first fix, but draws no
+  position marker and the button has no state. `NewPhotoForm` has its own `watchPosition` (`NewPhotoForm.tsx:26`).
+- Maps: Leaflet + OSM tiles (`tiles.ts`), dark look by CSS filter. The photo timeline orders by `line_fraction`.
+
+| # | Decision |
+|---|----------|
+| L3-1 | **Districts replace cities.** Trails store `ubigeo char(6)` (INEI district code, NOT NULL), validated against a bundled list of every district of Peru (code, district, province, department, centroid lat/lng). The `city` and `department` enums and `departmentOf` are removed (no compatibility path). Migration maps `Chimbote` → `021801`, `Nuevo Chimbote` → `021809`, `Trujillo` → `130101`, then drops both enums. The list lives in one JSON file in `packages/api-client` (or a new tiny `packages/geo`), read by the API (validation, names in responses) and the web (search, suggestion). Source: the INEI ubigeo list with district centroids from an open dataset; the implementer records the source URL, the licence and the row count (expected ≈ 1,890) in the CHANGELOG and stops to ask if no open licence is found. |
+| L3-2 | **API shape.** Trail DTOs replace `city` with `district: { ubigeo, name, province, department }`. Writes take `ubigeo` (`@IsIn` the list). `GET /api/trails?ubigeo=` replaces `?city=`. The Explorar head line lists the distinct district names of the published trails (was the fixed `CHIMBOTE · TRUJILLO`). |
+| L3-3 | **District input.** One accessible combobox (ARIA 1.2 combobox + listbox pattern, keyboard: arrows, Enter, Escape; 44 px options), no new dependency. Search is accent- and case-insensitive over "district, province, department", max 8 results. Suggestion: the district whose centroid is nearest to the trail start (when the form has a path) or to the device position; shown first as the default value, the rider can change it. Shortcut accepted: nearest centroid, not point-in-polygon (a border trail can get the neighbour district; the rider corrects it). |
+| L3-4 | **Shared location hook.** `useGeolocation()` in `apps/web/src/lib/` owns one `watchPosition` (start on demand, stop on unmount, denied → `denied` state). States: `idle` / `searching` / `active(fix)` / `denied` / `unavailable`. Both the tracer and `/vistas/nueva` use it (removes the two copies). |
+| L3-5 | **"Mi ubicación" dynamic.** The chip shows the state: `searching` → spinner icon and "Buscando…", `active` → filled lime chip with `aria-pressed="true"` and "±N m"; denied → the existing alert. The map draws the position as a cyan dot with an accuracy circle that moves with each fix; a tap on the chip re-centres. Same chip and dot on the `/vistas/nueva` map. |
+| L3-6 | **Manual location for a vista.** `/vistas/nueva` shows a map. With a good fix the marker sits on the fix; without one the rider taps the map to place the marker (draggable). The form sends the marker position as `lat`/`lng` (the gate of V2 applies only to an automatic fix). With no fix, no tap and no EXIF GPS the submit button stays enabled and the API answers `NO_POSITION` as today, with the message "Toca el mapa donde tomaste la foto." |
+| L3-7 | **Vista from the trail page.** The trail page gets a "Agregar vista" button (signed-in users; anonymous users get the sign-in link) to `/vistas/nueva?ruta=<slug>`. There the map shows that trail's line and starts on it. The form sends `trail=<slug>`; the API then links the photo to **that** published trail if the position is within 50 m of it (else 422 `NO_TRAIL_NEARBY` as today), instead of the nearest trail. Unknown or unpublished slug → 404. |
+| L3-8 | **Card slider.** The card becomes an `<article>` with the title as the link (stretched over the card with CSS) and the slider outside the link. Slides: (1) a static map: a 2×2 mosaic of OSM tiles around the trail start at zoom 14 with the start dot (plain `<img>` tiles + CSS, no Leaflet instance per card), (2…) the published photos of the trail in line order (max 5, thumbnails, `loading="lazy"`). Auto-advance: an `IntersectionObserver` with a centre band (`rootMargin: -40% 0px -40% 0px`) starts a 3 s timer when the card enters the band; leaving the band cancels it; it moves once from the map to the first photo, never loops. `prefers-reduced-motion` → no animation (the slide still changes). Manual: swipe (CSS scroll-snap) and dots (buttons, `aria-label="Foto N de M"`). A trail with no photos shows the map only, no dots. `TrailSummaryDto` gains `photos: { thumbUrl, url }[]` (published only, max 5, line order). The OSM attribution shows on the map slide. |
+| L3-9 | Out of scope: point-in-polygon districts, a geocoding service, a map slide with the full line (needs the path in the summary), snapping the vista marker to the line. |
+
+Batches (Standard rung unless noted; one implementer + review loop each):
+
+| Batch | Scope | Rung |
+|---|---|---|
+| L3-A | L3-1, L3-2, L3-3: data file, migration, API DTOs/filters, api-client regen, combobox in `TrailFields`, Explorar head. Tests: migration maps the three cities and drops the enums; write with an unknown ubigeo → 400; filter by ubigeo; search folds accents ("ancash" finds "Áncash"); nearest-centroid suggestion (Chimbote coordinates → `021801`); combobox keyboard e2e. | **Full** (schema + contract) |
+| L3-B | L3-4 … L3-7: hook, tracer chip and dot, `/vistas/nueva` map with manual marker, `?ruta=`, API `trail` field, "Agregar vista" button. Tests: `trail` given + position 40 m from it but 10 m from another trail → linked to the given one; `trail` given + 60 m → 422; unpublished slug → 404; manual marker sends lat/lng without a GPS fix (e2e with geolocation denied); chip states with a mocked geolocation. | Standard |
+| L3-C | L3-8: summary photos, card markup, slider, auto-advance. Tests: summary lists only published photos, max 5, line order; card with no photos has no dots; auto-advance after 3 s in the centre band and not when the card leaves before 3 s (fake timers + mocked observer); the title link is the only link and the dots are buttons outside it (a11y check). | Standard |
+
+Order: L3-A first (it changes the summary DTO and the openapi file); L3-B and L3-C after it, in parallel worktrees
+(L3-C regenerates the api-client after rebasing on L3-B or the other way). Production: `10ce0f3` can go to
+production before this layer; nothing in it is broken, only incomplete.
