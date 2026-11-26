@@ -102,7 +102,7 @@ export class PhotosService {
         trailId: trailPhotos.trailId,
         imageKey: trailPhotos.imageKey,
         thumbKey: trailPhotos.thumbKey,
-        rank: sql<number>`row_number() over (partition by ${trailPhotos.trailId} order by ${trailPhotos.lineFraction}, ${trailPhotos.createdAt})`.as('rank'),
+        rank: sql<number>`row_number() over (partition by ${trailPhotos.trailId} order by ${trailPhotos.lineFraction} desc, ${trailPhotos.createdAt})`.as('rank'),
       })
       .from(trailPhotos)
       .where(and(eq(trailPhotos.status, 'published'), inArray(trailPhotos.trailId, trailIds)))

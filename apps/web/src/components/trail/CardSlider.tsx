@@ -32,7 +32,6 @@ export function CardSlider({ name, start, photos }: { name: string; start: Coord
     observer.observe(sentinel.current);
     // A tap does not focus the slider on every browser, so pointerdown is listened to as well.
     const inputs = ['pointerdown', 'scroll', 'focusin'] as const;
-    for (const type of inputs) el.addEventListener(type, cancel, { passive: true });
     return () => {
       observer.disconnect();
       for (const type of inputs) el.removeEventListener(type, cancel);
