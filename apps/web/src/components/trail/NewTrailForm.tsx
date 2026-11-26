@@ -21,7 +21,7 @@ export function NewTrailForm() {
 
   // The district suggestion may use the device only when the permission is already granted: this
   // page shows no prompt (plan §10.1 A7).
-  useEffect(startIfGranted, [startIfGranted]);
+  useEffect(geo.start, [geo.start]);
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0] ?? null;
