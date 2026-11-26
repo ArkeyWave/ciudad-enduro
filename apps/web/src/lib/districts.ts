@@ -4,14 +4,20 @@ import type { Point } from './tracer';
 
 export const districtLabel = (d: Pick<District, 'name' | 'province' | 'department'>) => `${d.name}, ${d.province}, ${d.department}`;
 
-/** The value of the field; `locked` once it is saved or the rider chose or typed: no suggestion replaces it. */
-export type Choice = { value: District | null; locked: boolean };
+/**
+ * The value of the field; `locked` once it is saved or the rider chose or typed: no suggestion
+ * replaces it. `lockedBefore` is the lock before the rider started to type, for `cancel`.
+ */
+export type Choice = { value: District | null; locked: boolean; lockedBefore: boolean | null };
 
-export const initialChoice = (saved?: District): Choice => ({ value: saved ?? null, locked: saved !== undefined });
+export const initialChoice = (saved?: District): Choice => ({ value: saved ?? null, locked: saved !== undefined, lockedBefore: null });
 export const suggest = (choice: Choice, district: District | undefined): Choice =>
-  choice.locked || !district ? choice : { value: district, locked: false };
-export const choose = (_: Choice, district: District): Choice => ({ value: district, locked: true });
-export const edit = (choice: Choice): Choice => ({ ...choice, locked: true });
+  choice.locked || !district ? choice : { value: district, locked: false, lockedBefore: null };
+export const choose = (_: Choice, district: District): Choice => ({ value: district, locked: true, lockedBefore: null });
+export const edit = (choice: Choice): Choice => ({ ...choice, locked: true, lockedBefore: choice.lockedBefore ?? choice.locked });
+/** The rider left the field without a pick: the value comes back with the lock it had. A typed text with no value stays locked. */
+export const cancel = (choice: Choice): Choice =>
+  choice.value === null || choice.lockedBefore === null ? choice : { ...choice, locked: choice.lockedBefore, lockedBefore: null };
 
 /** Where the suggestion comes from: the trail start first, else the device fix. */
 export const suggestionPoint = (start: Point | null, fix: Point | null): Point | null => start ?? fix;
@@ -26,7 +32,8 @@ export function districtLine(trails: { district: Pick<District, 'name'> }[]): st
 }
 
 const attr = (tag: string, name: string) => {
-  const value = new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`).exec(tag)?.[1]?.trim();
+  // After a space, so `data-lat` is not `lat`.
+  const value = new RegExp(`(?:^|\\s)${name}\\s*=\\s*["']([^"']*)["']`).exec(tag)?.[1]?.trim();
   return value ? Number(value) : NaN;
 };
 

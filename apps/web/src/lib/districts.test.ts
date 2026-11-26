@@ -1,6 +1,6 @@
 import type { District } from 'api-client';
 import { describe, expect, it } from 'vitest';
-import { choose, districtLabel, districtLine, edit, gpxStart, initialChoice, suggest, suggestionPoint } from './districts';
+import { cancel, choose, districtLabel, districtLine, edit, gpxStart, initialChoice, suggest, suggestionPoint } from './districts';
 
 const chimbote: District = { ubigeo: '021801', name: 'Chimbote', province: 'Santa', department: 'Ancash' };
 const nuevo: District = { ubigeo: '021809', name: 'Nuevo Chimbote', province: 'Santa', department: 'Ancash' };
@@ -24,6 +24,21 @@ describe('the district choice (plan §10.1 A7)', () => {
 
   it('stops suggesting once the rider types', () => {
     expect(suggest(edit(initialChoice()), chimbote).value).toBeNull();
+  });
+
+  it('takes suggestions again when the rider types and leaves without a pick', () => {
+    const left = cancel(edit(edit(suggest(initialChoice(), chimbote))));
+    expect(left.value).toEqual(chimbote);
+    expect(suggest(left, trujillo).value).toEqual(trujillo);
+  });
+
+  it('keeps a saved or picked value locked when the rider types and leaves', () => {
+    expect(suggest(cancel(edit(initialChoice(nuevo))), chimbote).value).toEqual(nuevo);
+    expect(suggest(cancel(edit(choose(initialChoice(), trujillo))), chimbote).value).toEqual(trujillo);
+  });
+
+  it('keeps a typed text without a value locked', () => {
+    expect(suggest(cancel(edit(initialChoice())), chimbote).value).toBeNull();
   });
 
   it('keeps the current value when there is nothing to suggest', () => {
@@ -69,6 +84,8 @@ describe('gpxStart', () => {
   it('reads the first track point, in either attribute order', () => {
     expect(gpxStart('<gpx><trk><trkseg><trkpt lat="-9.09" lon="-78.52"/><trkpt lat="1" lon="2"/>')).toEqual({ lat: -9.09, lng: -78.52 });
     expect(gpxStart("<trkpt lon='-79.03' lat='-8.11'><ele>3</ele></trkpt>")).toEqual({ lat: -8.11, lng: -79.03 });
+    // A data-lat attribute is not the latitude.
+    expect(gpxStart('<trkpt data-lat="0" lat="-9.09" lon="-78.52">')).toEqual({ lat: -9.09, lng: -78.52 });
   });
   it('gives nothing without a usable point', () => {
     expect(gpxStart('<gpx><wpt lat="-9" lon="-78"/></gpx>')).toBeNull();

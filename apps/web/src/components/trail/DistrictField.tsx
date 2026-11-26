@@ -2,7 +2,7 @@
 
 import type { District } from 'api-client';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { choose, districtLabel, edit, initialChoice, suggest, type Choice } from '../../lib/districts';
+import { cancel, choose, districtLabel, edit, initialChoice, suggest, type Choice } from '../../lib/districts';
 import type { Point } from '../../lib/tracer';
 
 type Geo = typeof import('@ciudad-enduro/geo');
@@ -52,9 +52,12 @@ export function DistrictField({ saved, suggestion }: { saved?: District; suggest
     setOpen(false);
   };
 
+  // Leaving without a pick puts the value back, with the lock it had before the typing (lib/districts.ts).
   const close = () => {
     setOpen(false);
-    if (choice.value) setText(districtLabel(choice.value));
+    if (!choice.value) return;
+    setText(districtLabel(choice.value));
+    setChoice(cancel);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {

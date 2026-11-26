@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type ChangeEvent, type SubmitEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type SubmitEvent } from 'react';
 import { gpxStart, suggestionPoint } from '../../lib/districts';
 import { useGeolocation } from '../../lib/geolocation';
 import type { Point } from '../../lib/tracer';
@@ -14,6 +14,8 @@ export function NewTrailForm() {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<TrailFailure | null>(null);
   const [start, setStart] = useState<Point | null>(null);
+  // The file chosen last: the parse of an earlier choice must not set the start.
+  const lastFile = useRef<File | null>(null);
   const geo = useGeolocation();
   const { startIfGranted } = geo;
 
@@ -22,9 +24,12 @@ export function NewTrailForm() {
   useEffect(startIfGranted, [startIfGranted]);
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
+    const file = event.currentTarget.files?.[0] ?? null;
+    lastFile.current = file;
     setStart(null);
-    void file?.text().then((text) => setStart(gpxStart(text)));
+    void file?.text().then((text) => {
+      if (lastFile.current === file) setStart(gpxStart(text));
+    });
   };
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {

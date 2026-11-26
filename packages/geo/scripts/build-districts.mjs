@@ -3,7 +3,7 @@
 // Source used: commit a783fa66effb16fa8f3321b49a3d5e71cab15a5c, CSV sha256
 // 6a2cde8fb82e336285da4d684241450e8a36630e42799652c8d72b596ec252e4.
 // Each row: [ubigeo (INEI), district, province, department, lat, lng]; lat/lng is the district
-// capital point, null when the source has none.
+// capital point (one exception below), null when the source has none.
 import { readFileSync, writeFileSync } from 'node:fs';
 
 /** RFC 4180 rows: quoted fields may hold commas, newlines and doubled quotes. */
@@ -61,13 +61,25 @@ const col = (name) => {
   if (index < 0) throw new Error(`Missing column ${name}`);
   return index;
 };
-const [inei, district, province, department, lat, lng] = ['inei', 'distrito', 'provincia', 'departamento', 'latitude', 'longitude'].map(col);
+const [inei, reniec, district, province, department, lat, lng] = ['inei', 'reniec', 'distrito', 'provincia', 'departamento', 'latitude', 'longitude'].map(col);
+
+// Fixes against the INEI 2025 district layer (UNDP-hosted Distritos_INEI_2025_IDE_2024).
+const INEI_OF_RENIEC = { 170107: '180107' }; // San Antonio (Mariscal Nieto, Moquegua): the source has NA as its INEI code.
+const OBSOLETE = new Set(['160109', '160114']); // Putumayo and Teniente Manuel Clavero moved to province Putumayo (160801, 160803).
+const EXTRA = [
+  // Alto Trujillo (2023, not in the source). No INEI capital point found: the centroid of its polygon in the INEI 2025 layer.
+  ['130112', 'Alto Trujillo', 'Trujillo', 'La Libertad', -8.0476, -79.0056],
+];
 
 const districts = rows
-  // The one row without an INEI code (San Antonio, Moquegua) cannot be stored.
-  .filter((row) => /^[0-9]{6}$/.test(row[inei]))
+  .map((row) => row.with(inei, INEI_OF_RENIEC[row[reniec]] ?? row[inei]))
+  .filter((row) => /^[0-9]{6}$/.test(row[inei]) && !OBSOLETE.has(row[inei]))
   .map((row) => [row[inei], titleCase(row[district]), titleCase(row[province]), titleCase(row[department]), coordinate(row[lat]), coordinate(row[lng])])
+  .concat(EXTRA)
   .sort((a, b) => a[0].localeCompare(b[0]));
+
+const codes = districts.map((d) => d[0]);
+if (new Set(codes).size !== codes.length) throw new Error('Duplicate district code');
 
 const out = new URL('../src/districts.json', import.meta.url);
 writeFileSync(out, `[\n${districts.map((d) => JSON.stringify(d)).join(',\n')}\n]\n`);

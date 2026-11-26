@@ -37,6 +37,8 @@ export function geoReducer(state: GeoState, event: GeoEvent): GeoState {
 export function useGeolocation() {
   const [state, dispatch] = useReducer(geoReducer, IDLE);
   const watch = useRef<number | null>(null);
+  // False after unmount: a late permission answer must not start a watch nobody stops.
+  const alive = useRef(false);
 
   const stop = useCallback(() => {
     if (watch.current !== null) navigator.geolocation.clearWatch(watch.current);
@@ -64,18 +66,20 @@ export function useGeolocation() {
     void navigator.permissions
       ?.query({ name: 'geolocation' })
       .then((permission) => {
-        if (permission.state === 'granted') start();
+        if (alive.current && permission.state === 'granted') start();
       })
       .catch(() => undefined);
   }, [start]);
 
   useEffect(() => {
+    alive.current = true;
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') dispatch({ type: 'hidden' });
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
+      alive.current = false;
       stop();
     };
   }, [stop]);

@@ -16,6 +16,14 @@ describe('the district list', () => {
     expect(districtByUbigeo('130101')?.department).toBe('La Libertad');
   });
 
+  it('matches the INEI 2025 roster: San Antonio and Alto Trujillo in, the old Maynas codes out', () => {
+    expect(districtByUbigeo('180107')).toMatchObject({ name: 'San Antonio', province: 'Mariscal Nieto', lat: null });
+    expect(districtByUbigeo('130112')).toMatchObject({ name: 'Alto Trujillo', province: 'Trujillo', department: 'La Libertad' });
+    expect(districtByUbigeo('160109')).toBeUndefined();
+    expect(districtByUbigeo('160114')).toBeUndefined();
+    expect(districtByUbigeo('160801')?.name).toBe('Putumayo');
+  });
+
   it('knows no unknown code', () => {
     expect(districtByUbigeo('999999')).toBeUndefined();
   });
@@ -63,6 +71,10 @@ describe('nearestDistrict', () => {
 
   it('gives Trujillo next to its capital point', () => {
     expect(nearestDistrict({ lat: -8.101, lng: -79.03 })?.ubigeo).toBe('130101');
+  });
+
+  it('gives Alto Trujillo inside it, not Trujillo', () => {
+    expect(nearestDistrict({ lat: -8.045, lng: -79.0 })?.ubigeo).toBe('130112');
   });
 
   it('never returns a district without coordinates', () => {
