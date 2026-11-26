@@ -4,7 +4,7 @@ import type { components, paths } from './schema.js';
 export type { components, paths };
 
 type Schemas = components['schemas'];
-export type City = Schemas['City'];
+export type District = Schemas['DistrictDto'];
 export type Difficulty = Schemas['Difficulty'];
 export type TrailType = Schemas['TrailType'];
 export type Coordinates = Schemas['CoordinatesDto'];

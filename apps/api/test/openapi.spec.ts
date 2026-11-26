@@ -41,12 +41,22 @@ describe('OpenAPI document', () => {
     expect(okSchema('/api/me')?.content['application/json']?.schema).toEqual({ $ref: '#/components/schemas/MeDto' });
   });
 
-  it('declares city as an enum of the three cities', () => {
-    const city = document.paths['/api/trails']?.get?.parameters?.find((p) => 'name' in p && p.name === 'city');
-    expect(city).toMatchObject({ in: 'query', required: false, schema: { $ref: '#/components/schemas/City' } });
-    expect(document.components?.schemas?.City).toEqual({
-      type: 'string',
-      enum: ['Chimbote', 'Nuevo Chimbote', 'Trujillo'],
-    });
+  // Plan §10.1 A3: a code is a string with a pattern; a 1,892-member enum would reach the client types.
+  const ubigeo = { type: 'string', pattern: '^[0-9]{6}$' };
+
+  it('declares the ubigeo filter as a six-digit string, and no city filter', () => {
+    const params = document.paths['/api/trails']?.get?.parameters ?? [];
+    expect(params.find((p) => 'name' in p && p.name === 'ubigeo')).toMatchObject({ in: 'query', required: false, schema: ubigeo });
+    expect(params.find((p) => 'name' in p && p.name === 'city')).toBeUndefined();
+  });
+
+  it('takes ubigeo on create and patch, and answers a district object', () => {
+    const schemas = document.components?.schemas as Record<string, { properties: Record<string, unknown>; required?: string[] }>;
+    expect(schemas.CreateTrailBody?.properties.ubigeo).toMatchObject(ubigeo);
+    expect(schemas.CreateTrailBody?.required).toContain('ubigeo');
+    expect(schemas.UpdateTrailDto?.properties.ubigeo).toMatchObject(ubigeo);
+    expect(schemas.TrailSummaryDto?.properties.district).toEqual({ $ref: '#/components/schemas/DistrictDto' });
+    expect(schemas.DistrictDto?.required).toEqual(['ubigeo', 'name', 'province', 'department']);
+    expect(JSON.stringify(document)).not.toMatch(/"City"|"enum":\["0\d{5}"/);
   });
 });

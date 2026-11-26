@@ -1,15 +1,11 @@
-import { integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { char, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { lineStringGeom, pointGeom } from '../types/geo.js';
 import { user } from './auth.js';
 
-export const CITIES = ['Chimbote', 'Nuevo Chimbote', 'Trujillo'] as const;
-export const DEPARTMENTS = ['Ancash', 'La Libertad'] as const;
 export const DIFFICULTIES = ['facil', 'intermedio', 'dificil'] as const;
 export const TRAIL_TYPES = ['descenso', 'cross_country', 'urbano'] as const;
 export const TRAIL_STATUSES = ['draft', 'published', 'hidden'] as const;
 
-export type City = (typeof CITIES)[number];
-export type Department = (typeof DEPARTMENTS)[number];
 export type Difficulty = (typeof DIFFICULTIES)[number];
 export type TrailType = (typeof TRAIL_TYPES)[number];
 export type TrailStatus = (typeof TRAIL_STATUSES)[number];
@@ -17,8 +13,6 @@ export type TrailStatus = (typeof TRAIL_STATUSES)[number];
 /** One `[distance_m, ele_m]` pair of the elevation profile. */
 export type ProfilePoint = [number, number];
 
-export const cityEnum = pgEnum('city', CITIES);
-export const departmentEnum = pgEnum('department', DEPARTMENTS);
 export const difficultyEnum = pgEnum('difficulty', DIFFICULTIES);
 export const trailTypeEnum = pgEnum('trail_type', TRAIL_TYPES);
 export const trailStatusEnum = pgEnum('trail_status', TRAIL_STATUSES);
@@ -28,8 +22,8 @@ export const trails = pgTable('trails', {
   slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
-  city: cityEnum('city').notNull(),
-  department: departmentEnum('department').notNull(),
+  // INEI district code, one of @ciudad-enduro/geo (CHECK trails_ubigeo_format in migration 0006).
+  ubigeo: char('ubigeo', { length: 6 }).notNull(),
   difficulty: difficultyEnum('difficulty').notNull(),
   type: trailTypeEnum('type').notNull(),
   status: trailStatusEnum('status').notNull().default('draft'),

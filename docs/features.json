@@ -12,7 +12,7 @@
     },
     {
       "id": "trails-api",
-      "description": "GET /api/trails?city= and GET /api/trails/:slug",
+      "description": "GET /api/trails?ubigeo= (district code) and GET /api/trails/:slug",
       "passes": true,
       "proof": [{ "type": "test", "ref": "apps/api/test/trails.int.spec.ts" }]
     },

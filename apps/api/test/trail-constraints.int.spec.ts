@@ -23,8 +23,7 @@ function insert(startPoint: LngLat, endPoint: LngLat | null = null) {
   return db.insert(trails).values({
     slug: `t-${n}`,
     name: `Trail ${n}`,
-    city: 'Chimbote',
-    department: 'Ancash',
+    ubigeo: '021801',
     difficulty: 'facil',
     type: 'urbano',
     startPoint,
@@ -55,8 +54,7 @@ describe('geo columns', () => {
     await db.insert(trails).values({
       slug: 'srid',
       name: 'SRID',
-      city: 'Chimbote',
-      department: 'Ancash',
+      ubigeo: '021801',
       difficulty: 'facil',
       type: 'urbano',
       startPoint: chimbote,
@@ -74,16 +72,16 @@ describe('geo columns', () => {
   it('reject a point with another SRID', async () => {
     await expect(
       client.query(
-        `insert into trails (slug, name, city, department, difficulty, type, start_point)
-         values ('srid3857', 'SRID 3857', 'Chimbote', 'Ancash', 'facil', 'urbano', ST_SetSRID(ST_MakePoint(-78.5, -9.1), 3857))`,
+        `insert into trails (slug, name, ubigeo, difficulty, type, start_point)
+         values ('srid3857', 'SRID 3857', '021801', 'facil', 'urbano', ST_SetSRID(ST_MakePoint(-78.5, -9.1), 3857))`,
       ),
     ).rejects.toThrow(/does not match column SRID/);
   });
 
   it('store a point written with SRID 0 (unknown) as SRID 4326', async () => {
     await client.query(
-      `insert into trails (slug, name, city, department, difficulty, type, start_point)
-       values ('srid0', 'SRID 0', 'Chimbote', 'Ancash', 'facil', 'urbano', ST_SetSRID(ST_MakePoint(-78.5, -9.1), 0))`,
+      `insert into trails (slug, name, ubigeo, difficulty, type, start_point)
+       values ('srid0', 'SRID 0', '021801', 'facil', 'urbano', ST_SetSRID(ST_MakePoint(-78.5, -9.1), 0))`,
     );
     const { rows } = await client.query<{ srid: number }>('select ST_SRID(start_point) as srid from trails');
     expect(rows[0]?.srid).toBe(4326);

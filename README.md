@@ -39,7 +39,7 @@ pnpm --filter api dev                    # http://localhost:3001/api/health
 pnpm --filter api openapi:emit           # write packages/api-client/openapi.json
 ```
 
-Endpoints: `GET /api/health`, `GET /api/trails?city=`, `GET /api/trails/:slug` (an author also
+Endpoints: `GET /api/health`, `GET /api/trails?ubigeo=` (INEI district code), `GET /api/trails/:slug` (an author also
 sees their own drafts and hidden trails), and Better Auth under `/api/auth/*` (allowlist in
 `src/auth/auth-paths.ts`). Signed in: `GET /api/me`, `GET /api/me/trails`, and `POST /api/trails`
 (multipart GPX import, stores a draft; `Origin` must equal `WEB_ORIGIN`; a non-admin with 3 drafts
@@ -126,17 +126,31 @@ app in the process.
 The typed client is generated from the API contract. After an API change:
 
 ```bash
-pnpm --filter api openapi:emit           # write packages/api-client/openapi.json
+pnpm --filter api openapi:emit           # build packages/geo, write packages/api-client/openapi.json
 pnpm --filter api-client generate        # write packages/api-client/src/schema.d.ts
 ```
 
 Commit both files. CI fails when they differ from what the API emits.
 
+### Districts (`packages/geo`)
+
+Every district of Peru (INEI code, names, capital point) for the API (validation, names) and the web
+(search, suggestion). The API and the web import its runtime from `dist/` (`pnpm --filter
+@ciudad-enduro/geo build`). The list comes from `ubigeo_distrito.csv` of
+jmcastagnetto/ubigeo-peru-aumentado (MIT, `src/districts.LICENSE`); to rebuild it:
+
+```bash
+pnpm --filter @ciudad-enduro/geo districts <path to ubigeo_distrito.csv>   # write src/districts.json
+```
+
+A code that a trail can store needs a data migration of those trails before it leaves the list:
+the API refuses to answer a trail whose code it does not know.
+
 ### Web (`apps/web`)
 
 ```bash
 cp apps/web/.env.example apps/web/.env.local   # API_INTERNAL_URL, TURNSTILE_SITE_KEY
-pnpm --filter api-client build                 # the web imports its runtime from dist/
+pnpm --filter api-client --filter @ciudad-enduro/geo build   # the web imports their runtime from dist/
 pnpm --filter api dev                          # the web reads trails from the API
 pnpm --filter web dev                          # http://localhost:3000
 ```

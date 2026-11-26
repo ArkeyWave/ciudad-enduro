@@ -4,8 +4,10 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type SubmitEvent } from 'react';
+import { suggestionPoint } from '../../lib/districts';
+import { useGeolocation } from '../../lib/geolocation';
 import { formatDistance } from '../../lib/profile';
-import { canMark, pathLengthM, readPoints, toGpx, type Fix, type Point } from '../../lib/tracer';
+import { canMark, pathLengthM, readPoints, toGpx, type Point } from '../../lib/tracer';
 import { uploadTrail, type TrailFailure } from '../../lib/trails-client';
 import { Icon } from '../Icon';
 import { baseMap, CYAN, LIME } from './tiles';
@@ -30,13 +32,12 @@ export default function Tracer() {
   const map = useRef<L.Map | null>(null);
   const route = useRef<L.LayerGroup | null>(null);
   const here = useRef<L.LayerGroup | null>(null);
-  const watch = useRef<number | null>(null);
   const centred = useRef(false);
   const [points, setPoints] = useState<Point[]>(stored);
-  const [fix, setFix] = useState<Fix | null>(null);
+  const geo = useGeolocation();
+  const fix = geo.fix;
   // The clock of the age gate: ticks while there is a fix, so the button turns off when it goes stale.
   const [now, setNow] = useState(() => Date.now());
-  const [noLocation, setNoLocation] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<TrailFailure | null>(null);
 
@@ -53,8 +54,6 @@ export default function Tracer() {
     // A tap adds a point: a rider at home traces a ride without GPS.
     m.on('click', (event) => setPoints((current) => [...current, { lat: event.latlng.lat, lng: event.latlng.lng }]));
     return () => {
-      if (watch.current !== null) navigator.geolocation.clearWatch(watch.current);
-      watch.current = null;
       m.remove();
     };
   }, []);
@@ -90,38 +89,13 @@ export default function Tracer() {
     return () => clearInterval(timer);
   }, [fix]);
 
-  // A hidden page gets no position updates: its fix is stale on return.
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') setFix(null);
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, []);
-
   const locate = () => {
     if (fix) map.current?.setView(latLng(fix), FIX_ZOOM);
-    if (watch.current !== null) return;
-    if (!('geolocation' in navigator)) return setNoLocation(true);
-    setNoLocation(false);
-    centred.current = false;
-    watch.current = navigator.geolocation.watchPosition(
-      ({ coords, timestamp }) => {
-        setNow(Date.now());
-        setFix({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy, at: timestamp });
-      },
-      (error) => {
-        // No fix to mark until the next one. Position unavailable or a timeout is transient: the
-        // watch goes on. Only a denied permission ends it.
-        setFix(null);
-        if (error.code !== error.PERMISSION_DENIED) return;
-        if (watch.current !== null) navigator.geolocation.clearWatch(watch.current);
-        watch.current = null;
-        setNoLocation(true);
-      },
-      { enableHighAccuracy: true, maximumAge: 0 },
-    );
+    // A new watch (first tap, or after a denial) centres again on its first fix.
+    if (geo.status === 'idle' || geo.status === 'denied' || geo.status === 'unavailable') centred.current = false;
+    geo.start();
   };
+  const noLocation = geo.status === 'denied' || geo.status === 'unavailable';
 
   const mark = () => {
     if (canMark(fix, Date.now())) setPoints((current) => [...current, { lat: fix.lat, lng: fix.lng }]);
@@ -170,7 +144,7 @@ export default function Tracer() {
       </p>
       {/* Always mounted, so the typed fields survive an undo below 2 points. */}
       <form onSubmit={submit} className="form">
-        <TrailFields />
+        <TrailFields suggestion={suggestionPoint(points[0] ?? null, fix)} />
         <button type="submit" disabled={busy || points.length < 2} className="cta">
           {busy ? 'Subiendo…' : 'Subir ruta'}
         </button>

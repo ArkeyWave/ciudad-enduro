@@ -1,14 +1,6 @@
 {
   "components": {
     "schemas": {
-      "City": {
-        "enum": [
-          "Chimbote",
-          "Nuevo Chimbote",
-          "Trujillo"
-        ],
-        "type": "string"
-      },
       "CoordinatesDto": {
         "properties": {
           "lat": {
@@ -46,13 +38,6 @@
       },
       "CreateTrailBody": {
         "properties": {
-          "city": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/City"
-              }
-            ]
-          },
           "description": {
             "maxLength": 2000,
             "type": "string"
@@ -80,11 +65,17 @@
                 "$ref": "#/components/schemas/TrailType"
               }
             ]
+          },
+          "ubigeo": {
+            "description": "INEI district code",
+            "example": "021801",
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
           }
         },
         "required": [
           "name",
-          "city",
+          "ubigeo",
           "difficulty",
           "type",
           "gpx"
@@ -98,6 +89,34 @@
           "dificil"
         ],
         "type": "string"
+      },
+      "DistrictDto": {
+        "properties": {
+          "department": {
+            "example": "Ancash",
+            "type": "string"
+          },
+          "name": {
+            "example": "Chimbote",
+            "type": "string"
+          },
+          "province": {
+            "example": "Santa",
+            "type": "string"
+          },
+          "ubigeo": {
+            "example": "021801",
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ubigeo",
+          "name",
+          "province",
+          "department"
+        ],
+        "type": "object"
       },
       "ErrorBodyDto": {
         "properties": {
@@ -153,13 +172,6 @@
       },
       "MyTrailDto": {
         "properties": {
-          "city": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/City"
-              }
-            ]
-          },
           "difficulty": {
             "allOf": [
               {
@@ -170,6 +182,9 @@
           "distanceM": {
             "nullable": true,
             "type": "number"
+          },
+          "district": {
+            "$ref": "#/components/schemas/DistrictDto"
           },
           "elevationGainM": {
             "nullable": true,
@@ -224,7 +239,7 @@
           "id",
           "slug",
           "name",
-          "city",
+          "district",
           "difficulty",
           "type",
           "start",
@@ -388,13 +403,6 @@
             "nullable": true,
             "type": "string"
           },
-          "city": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/City"
-              }
-            ]
-          },
           "difficulty": {
             "allOf": [
               {
@@ -405,6 +413,9 @@
           "distanceM": {
             "nullable": true,
             "type": "number"
+          },
+          "district": {
+            "$ref": "#/components/schemas/DistrictDto"
           },
           "elevationGainM": {
             "nullable": true,
@@ -459,7 +470,7 @@
           "id",
           "slug",
           "name",
-          "city",
+          "district",
           "difficulty",
           "type",
           "start",
@@ -474,13 +485,6 @@
       },
       "TrailDetailDto": {
         "properties": {
-          "city": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/City"
-              }
-            ]
-          },
           "description": {
             "type": "string"
           },
@@ -494,6 +498,9 @@
           "distanceM": {
             "nullable": true,
             "type": "number"
+          },
+          "district": {
+            "$ref": "#/components/schemas/DistrictDto"
           },
           "elevationGainM": {
             "nullable": true,
@@ -585,7 +592,7 @@
           "id",
           "slug",
           "name",
-          "city",
+          "district",
           "difficulty",
           "type",
           "start",
@@ -672,13 +679,6 @@
       },
       "TrailSummaryDto": {
         "properties": {
-          "city": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/City"
-              }
-            ]
-          },
           "difficulty": {
             "allOf": [
               {
@@ -689,6 +689,9 @@
           "distanceM": {
             "nullable": true,
             "type": "number"
+          },
+          "district": {
+            "$ref": "#/components/schemas/DistrictDto"
           },
           "elevationGainM": {
             "nullable": true,
@@ -736,7 +739,7 @@
           "id",
           "slug",
           "name",
-          "city",
+          "district",
           "difficulty",
           "type",
           "start",
@@ -772,13 +775,6 @@
       },
       "UpdateTrailDto": {
         "properties": {
-          "city": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/City"
-              }
-            ]
-          },
           "description": {
             "maxLength": 2000,
             "type": "string"
@@ -808,6 +804,12 @@
                 "$ref": "#/components/schemas/TrailType"
               }
             ]
+          },
+          "ubigeo": {
+            "description": "INEI district code",
+            "example": "021801",
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
           }
         },
         "type": "object"
@@ -1163,11 +1165,14 @@
         "operationId": "TrailsController_list",
         "parameters": [
           {
+            "description": "INEI district code",
             "in": "query",
-            "name": "city",
+            "name": "ubigeo",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/City"
+              "example": "021801",
+              "pattern": "^[0-9]{6}$",
+              "type": "string"
             }
           }
         ],

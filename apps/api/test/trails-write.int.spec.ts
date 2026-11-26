@@ -58,7 +58,7 @@ beforeEach(async () => {
   t.app.get(UploadAttempts).clear();
 });
 
-const fields = { name: 'Cerro de prueba', city: 'Chimbote', difficulty: 'intermedio', type: 'descenso' };
+const fields = { name: 'Cerro de prueba', ubigeo: '021801', difficulty: 'intermedio', type: 'descenso' };
 
 type Headers = Record<string, string>;
 const as = (cookie: string | null, origin: string | null = WEB_ORIGIN): Headers => ({
@@ -83,8 +83,7 @@ async function seed(slug: string, status: 'draft' | 'published' | 'hidden' = 'dr
   await db.insert(trails).values({
     slug,
     name: slug,
-    city: 'Chimbote',
-    department: 'Ancash',
+    ubigeo: '021801',
     difficulty: 'facil',
     type: 'urbano',
     status,
@@ -232,7 +231,7 @@ describe('POST /api/trails: import', () => {
       slug: 'cerro-de-prueba',
       name: 'Cerro de prueba',
       status: 'draft',
-      city: 'Chimbote',
+      district: { ubigeo: '021801', name: 'Chimbote', province: 'Santa', department: 'Ancash' },
       description: '',
       start: { lat: -9.09, lng: -78.52 },
       end: { lat: -9.095, lng: -78.52 },
@@ -253,13 +252,23 @@ describe('POST /api/trails: import', () => {
     expect(body.path[0]).toEqual([-78.52, -9.09]);
     expect(body.path.at(-1)).toEqual([-78.52, -9.095]);
 
-    const { rows } = await client.query<{ department: string; email: string; points: number; gpx: string; sha256: string }>(
-      `select t.department, u.email, ST_NPoints(t.path) as points, s.gpx, s.sha256
+    const { rows } = await client.query<{ ubigeo: string; email: string; points: number; gpx: string; sha256: string }>(
+      `select t.ubigeo, u.email, ST_NPoints(t.path) as points, s.gpx, s.sha256
          from trails t join "user" u on u.id = t.author_id join trail_sources s on s.trail_id = t.id`,
     );
     expect(rows).toEqual([
-      { department: 'Ancash', email: 'admin@x.pe', points: 6, gpx: FIXTURE, sha256: createHash('sha256').update(fixtureBytes).digest('hex') },
+      { ubigeo: '021801', email: 'admin@x.pe', points: 6, gpx: FIXTURE, sha256: createHash('sha256').update(fixtureBytes).digest('hex') },
     ]);
+  });
+
+  it.each(['999999', '21801', ''])('refuses the unknown district code "%s" with 400 and stores nothing', async (ubigeo) => {
+    const res = await upload(as(admin), { ...fields, ubigeo });
+    expect(res.status).toBe(400);
+    expect(await count('trails')).toBe(0);
+  });
+
+  it('refuses the old city field with 400', async () => {
+    expect((await upload(as(admin), { ...fields, city: 'Chimbote' })).status).toBe(400);
   });
 
   it('refuses an invalid GPX with its code', async () => {
@@ -451,7 +460,7 @@ describe('GET /api/me/trails (R-D4)', () => {
       ['oculta', 'hidden'],
       ['vieja', 'published'],
     ]);
-    expect(body[0]).toMatchObject({ city: 'Chimbote', start: { lat: -9.09, lng: -78.52 }, elevationProfile: null });
+    expect(body[0]).toMatchObject({ district: { ubigeo: '021801', name: 'Chimbote' }, start: { lat: -9.09, lng: -78.52 }, elevationProfile: null });
   });
 
   it('answers 401 to an anonymous user', async () => {
@@ -518,12 +527,22 @@ describe('PATCH /api/trails/:slug', () => {
     expect(await res.json()).toMatchObject({ slug: 'borrador', name: 'Nombre nuevo', description: 'Arena', difficulty: 'dificil', type: 'descenso' });
   });
 
-  it('derives the department from the city', async () => {
-    expect((await patch('borrador', as(admin), { city: 'Trujillo' })).status).toBe(200);
-    const { rows } = await client.query<{ city: string; department: string; fresh: boolean }>(
-      `select city, department, updated_at > '2026-01-02' as fresh from trails`,
-    );
-    expect(rows).toEqual([{ city: 'Trujillo', department: 'La Libertad', fresh: true }]);
+  it('changes the district and answers its names', async () => {
+    const res = await patch('borrador', as(admin), { ubigeo: '130101' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ district: { ubigeo: '130101', name: 'Trujillo', province: 'Trujillo', department: 'La Libertad' } });
+    const { rows } = await client.query<{ ubigeo: string; fresh: boolean }>(`select ubigeo, updated_at > '2026-01-02' as fresh from trails`);
+    expect(rows).toEqual([{ ubigeo: '130101', fresh: true }]);
+  });
+
+  it.each([['999999'], ['abcdef'], [21801], [null]])('refuses the district code %j with 400 and keeps the row', async (ubigeo) => {
+    expect((await patch('borrador', as(admin), { ubigeo })).status).toBe(400);
+    const { rows } = await client.query<{ ubigeo: string }>('select ubigeo from trails');
+    expect(rows).toEqual([{ ubigeo: '021801' }]);
+  });
+
+  it('refuses the old city field with 400', async () => {
+    expect((await patch('borrador', as(admin), { city: 'Trujillo' })).status).toBe(400);
   });
 
   it('refuses null, an empty body and an unknown field', async () => {

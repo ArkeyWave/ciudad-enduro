@@ -26,8 +26,8 @@ export const publishAgain = (ids: string[]) => query(`UPDATE trails SET status =
 /** A published trail with a line (`[lng, lat]` pairs), for the photo spec; its photos go with it. */
 export const seedLineTrail = (slug: string, name: string, line: [number, number][]) =>
   query(
-    `INSERT INTO trails (slug, name, city, department, difficulty, type, status, start_point, path, distance_m)
-     VALUES ($1, $2, 'Chimbote', 'Ancash', 'facil', 'urbano', 'published',
+    `INSERT INTO trails (slug, name, ubigeo, difficulty, type, status, start_point, path, distance_m)
+     VALUES ($1, $2, '021801', 'facil', 'urbano', 'published',
              ST_SetSRID(ST_MakePoint($3, $4), 4326), ST_SetSRID(ST_GeomFromGeoJSON($5), 4326), 1100)`,
     [slug, name, line[0]![0], line[0]![1], JSON.stringify({ type: 'LineString', coordinates: line })],
   );

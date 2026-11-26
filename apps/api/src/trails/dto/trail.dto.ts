@@ -1,10 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
-  CITIES,
   DIFFICULTIES,
   TRAIL_STATUSES,
   TRAIL_TYPES,
-  type City,
   type Difficulty,
   type ProfilePoint,
   type TrailStatus,
@@ -12,6 +10,7 @@ import {
 } from '../../db/schema/index.js';
 import { TrailPhotoDto } from '../../photos/dto/photo.dto.js';
 import { CoordinatesDto } from './coordinates.dto.js';
+import { UBIGEO_PATTERN } from './ubigeo.js';
 
 export { CoordinatesDto };
 
@@ -30,11 +29,19 @@ export class ErrorBodyDto {
   @ApiProperty({ required: false, description: 'GPX_DUPLICATE only, when the uploader may see that trail' }) slug?: string;
 }
 
+/** A district of Peru (INEI code and names, plan §10 L3-2). */
+export class DistrictDto {
+  @ApiProperty({ pattern: UBIGEO_PATTERN, example: '021801' }) ubigeo!: string;
+  @ApiProperty({ example: 'Chimbote' }) name!: string;
+  @ApiProperty({ example: 'Santa' }) province!: string;
+  @ApiProperty({ example: 'Ancash' }) department!: string;
+}
+
 export class TrailSummaryDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty() slug!: string;
   @ApiProperty() name!: string;
-  @ApiProperty({ enum: CITIES, enumName: 'City' }) city!: City;
+  @ApiProperty({ type: DistrictDto }) district!: DistrictDto;
   @ApiProperty({ enum: DIFFICULTIES, enumName: 'Difficulty' }) difficulty!: Difficulty;
   @ApiProperty({ enum: TRAIL_TYPES, enumName: 'TrailType' }) type!: TrailType;
   @ApiProperty({ type: CoordinatesDto }) start!: CoordinatesDto;

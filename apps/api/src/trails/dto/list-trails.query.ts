@@ -1,12 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional } from 'class-validator';
-import { CITIES, TRAIL_STATUSES, type City, type TrailStatus } from '../../db/schema/index.js';
+import { TRAIL_STATUSES, type TrailStatus } from '../../db/schema/index.js';
+import { isUbigeo, UBIGEO_PROPERTY } from './ubigeo.js';
 
 export class ListTrailsQuery {
-  @ApiPropertyOptional({ enum: CITIES, enumName: 'City' })
+  @ApiPropertyOptional(UBIGEO_PROPERTY)
   @IsOptional()
-  @IsIn(CITIES)
-  city?: City;
+  @isUbigeo
+  ubigeo?: string;
 }
 
 export class QueueQuery {

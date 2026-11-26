@@ -15,12 +15,12 @@ function apiClient() {
   return createApiClient(baseUrl);
 }
 
-/** Published trails, newest first. Sends no city filter. */
-export async function listTrails(): Promise<TrailSummary[]> {
+/** Published trails, newest first, unfiltered. Cached per request: the Explorar head and the list share one call. */
+export const listTrails = cache(async (): Promise<TrailSummary[]> => {
   const { data, response } = await apiClient().GET('/api/trails', { signal: AbortSignal.timeout(API_TIMEOUT_MS) });
   if (!data) throw new Error(`GET /api/trails failed with ${response.status}`);
   return data;
-}
+});
 
 /**
  * The signed-in user for the given Cookie header, or null. Any failure counts as signed out: the
