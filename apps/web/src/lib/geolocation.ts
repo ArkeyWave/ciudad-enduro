@@ -80,7 +80,6 @@ export function useGeolocation() {
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       alive.current = false;
-      stop();
     };
   }, [stop]);
 
