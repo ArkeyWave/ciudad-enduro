@@ -6,7 +6,6 @@ import { Icon } from '../Icon';
 /** The districts of the published trails (plan §10.1 A6); shares the page's cached list call. None without trails. */
 async function DistrictLine() {
   const line = districtLine(await listTrails());
-  if (!line) return null;
   return (
     <p className="eyebrow">
       <span className="loc-dot">
