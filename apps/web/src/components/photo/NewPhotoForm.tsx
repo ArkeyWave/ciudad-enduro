@@ -39,6 +39,7 @@ export function NewPhotoForm({ trail, trails }: { trail: NamedTrail | null; trai
   // Once there is a map it stays, also when the fix goes stale.
   const [mapShown, setMapShown] = useState(trail !== null);
   if (located && !mapShown) setMapShown(true);
+  if (located && fix && (pin?.lat !== fix.lat || pin?.lng !== fix.lng)) setPin({ lat: fix.lat, lng: fix.lng });
 
   useEffect(start, [start]);
   useEffect(() => {

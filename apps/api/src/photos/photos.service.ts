@@ -261,7 +261,7 @@ export class PhotosService {
       .from(trails)
       .where(
         and(
-          named ? eq(trails.id, named.id) : eq(trails.status, 'published'),
+          named ? eq(trails.status, 'published') : eq(trails.status, 'published'),
           sql`ST_DWithin(${trails.path}::geography, ${point}::geography, ${NEARBY_M})`,
         ),
       )
