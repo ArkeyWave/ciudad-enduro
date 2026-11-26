@@ -20,6 +20,7 @@ import { fillElevations } from './gpx/fill-elevations.js';
 import { elevationMetrics, trackMetrics, type TrackMetrics } from './gpx/metrics.js';
 import { parseGpxIsolated } from './gpx/parse-gpx-isolated.js';
 import { GpxError } from './gpx/parse-gpx.js';
+import { PhotosService } from '../photos/photos.service.js';
 
 // Geo columns are read through PostGIS functions, never as raw driver values.
 const summaryColumns = {
@@ -113,6 +114,7 @@ export class TrailsService {
   constructor(
     @Inject(DB) private readonly db: Database,
     @Inject(ENV) private readonly env: Env,
+    private readonly photos: PhotosService,
   ) {}
 
   async listPublished(city?: City): Promise<TrailSummaryDto[]> {
@@ -156,6 +158,7 @@ export class TrailsService {
       .where(and(eq(trails.slug, slug), visible));
     if (!row) return undefined;
     const { endX, endY, path, ...summary } = row;
+    const photos = await this.photos.listForTrail(row.id, viewer);
     // The profile keeps the global extrema (metrics.ts), so min/max come from it.
     const eles = summary.elevationProfile?.map(([, ele]) => ele);
     return {
@@ -164,6 +167,7 @@ export class TrailsService {
       path: path?.coordinates ?? null,
       elevationMinM: eles ? Math.min(...eles) : null,
       elevationMaxM: eles ? Math.max(...eles) : null,
+      photos,
     };
   }
 

@@ -3,7 +3,14 @@ import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env.js';
 
-const SECRET_KEYS = ['BETTER_AUTH_SECRET', 'OTP_HMAC_SECRET', 'RESEND_API_KEY', 'GOOGLE_CLIENT_SECRET', 'TURNSTILE_SECRET_KEY'] as const;
+const SECRET_KEYS = [
+  'BETTER_AUTH_SECRET',
+  'OTP_HMAC_SECRET',
+  'RESEND_API_KEY',
+  'GOOGLE_CLIENT_SECRET',
+  'TURNSTILE_SECRET_KEY',
+  'R2_SECRET_ACCESS_KEY',
+] as const;
 // Cloudflare's Turnstile test secrets: always pass, always fail, already spent.
 const TURNSTILE_DUMMY_SECRETS = [
   '1x0000000000000000000000000000000AA',
@@ -23,6 +30,12 @@ const valid = {
   GOOGLE_CLIENT_SECRET: 'GOCSPX-real',
   OTP_HMAC_SECRET: 'b'.repeat(32),
   TURNSTILE_SECRET_KEY: '0x4AAAAAAAreal-turnstile-secret',
+  R2_ACCOUNT_ID: 'account-id',
+  R2_ACCESS_KEY_ID: 'access-key-id',
+  R2_SECRET_ACCESS_KEY: 'r2-real-secret',
+  R2_MEDIA_BUCKET: 'ciudad-enduro-media',
+  R2_PRIVATE_BUCKET: 'ciudad-enduro-media-private',
+  MEDIA_PUBLIC_BASE_URL: 'https://media.enduro.vops.pe',
 };
 
 const example = parseEnv(readFileSync(new URL('../.env.example', import.meta.url), 'utf8'));
@@ -56,6 +69,34 @@ describe('loadEnv', () => {
 
   it('rejects a missing NODE_ENV', () => {
     expect(() => loadEnv({ ...valid, NODE_ENV: undefined })).toThrow(/NODE_ENV/);
+  });
+});
+
+describe('photo storage (plan §9 V1, V6)', () => {
+  it('needs R2_ACCOUNT_ID or S3_ENDPOINT, and either one is enough', () => {
+    expect(() => loadEnv({ ...valid, R2_ACCOUNT_ID: undefined })).toThrow(/R2_ACCOUNT_ID or S3_ENDPOINT is required/);
+    expect(() => loadEnv({ ...valid, R2_ACCOUNT_ID: undefined, S3_ENDPOINT: 'http://127.0.0.1:9090' })).not.toThrow();
+  });
+
+  it.each(['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_MEDIA_BUCKET', 'R2_PRIVATE_BUCKET', 'MEDIA_PUBLIC_BASE_URL'])('requires %s', (key) => {
+    expect(() => loadEnv({ ...valid, [key]: undefined })).toThrow(new RegExp(key));
+  });
+
+  it('refuses a private bucket that is the public one, and accepts two buckets', () => {
+    expect(() => loadEnv({ ...valid, R2_PRIVATE_BUCKET: 'ciudad-enduro-media' })).toThrow(/R2_PRIVATE_BUCKET: must differ from R2_MEDIA_BUCKET/);
+    expect(() => loadEnv(valid)).not.toThrow();
+  });
+
+  it('refuses a public base URL with a trailing slash', () => {
+    expect(() => loadEnv({ ...valid, MEDIA_PUBLIC_BASE_URL: 'https://media.enduro.vops.pe/' })).toThrow(/MEDIA_PUBLIC_BASE_URL/);
+  });
+
+  it('takes an empty key prefix by default and a prefix that ends with a slash', () => {
+    expect(loadEnv(valid).MEDIA_KEY_PREFIX).toBe('');
+    expect(loadEnv({ ...valid, MEDIA_KEY_PREFIX: 'staging/' }).MEDIA_KEY_PREFIX).toBe('staging/');
+    for (const value of ['staging', '/staging/', '../x/']) {
+      expect(() => loadEnv({ ...valid, MEDIA_KEY_PREFIX: value }), value).toThrow(/MEDIA_KEY_PREFIX/);
+    }
   });
 });
 
@@ -108,6 +149,12 @@ describe('loadEnv in production', () => {
     expect(() => loadEnv({ ...prod, BETTER_AUTH_TRUSTED_ORIGINS: 'https://other.example' })).toThrow(
       /BETTER_AUTH_TRUSTED_ORIGINS: must not be set in production/,
     );
+  });
+
+  it('requires an https MEDIA_PUBLIC_BASE_URL and refuses S3_ENDPOINT in production, not outside it', () => {
+    expect(() => loadEnv({ ...prod, MEDIA_PUBLIC_BASE_URL: 'http://media.enduro.vops.pe' })).toThrow(/MEDIA_PUBLIC_BASE_URL: must be https in production/);
+    expect(() => loadEnv({ ...prod, S3_ENDPOINT: 'http://127.0.0.1:9090' })).toThrow(/S3_ENDPOINT: must not be set in production/);
+    expect(() => loadEnv({ ...valid, MEDIA_PUBLIC_BASE_URL: 'http://127.0.0.1:9090/b', S3_ENDPOINT: 'http://127.0.0.1:9090' })).not.toThrow();
   });
 
   it('accepts production without BETTER_AUTH_TRUSTED_ORIGINS', () => {

@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, test } from 'vitest';
-import { createApiClient, type Coordinates, type TrailDetail, type TrailSummary } from '../src/index.js';
+import { createApiClient, type Coordinates, type TrailDetail, type TrailPhoto, type TrailSummary } from '../src/index.js';
 
 // Type-level contract checks. `pnpm typecheck` and `pnpm test` (vitest --typecheck) both
 // run them through tsc; a broken assertion is a compile error, not a skipped test.
@@ -19,5 +19,16 @@ describe('trails contract', () => {
 
   test('a trail end point may be null', () => {
     expectTypeOf<TrailDetail['end']>().toEqualTypeOf<Coordinates | null>();
+  });
+});
+
+describe('photos contract', () => {
+  test('a trail detail lists its photos', () => {
+    expectTypeOf<TrailDetail['photos']>().toEqualTypeOf<TrailPhoto[]>();
+  });
+
+  test('a photo heading and time may be null', () => {
+    expectTypeOf<TrailPhoto['heading']>().toEqualTypeOf<number | null>();
+    expectTypeOf<TrailPhoto['takenAt']>().toEqualTypeOf<string | null>();
   });
 });

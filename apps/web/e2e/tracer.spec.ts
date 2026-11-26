@@ -47,7 +47,7 @@ test.describe('the FAB sheet and the tracer', () => {
     await context?.close();
   });
 
-  test('the FAB opens a sheet with Sendero and a disabled Vista; Escape closes it', async () => {
+  test('the FAB opens a sheet with Sendero and Vista; Escape closes it', async () => {
     await rider.goto('/');
     const fab = rider.getByRole('button', { name: 'Registrar ruta' });
     await expectTarget(fab);
@@ -55,8 +55,8 @@ test.describe('the FAB sheet and the tracer', () => {
     const sheet = rider.getByRole('dialog', { name: 'Registrar' });
     await expect(sheet).toBeVisible();
     await expect(sheet.getByRole('link', { name: 'Sendero' })).toHaveAttribute('href', '/rutas/nueva');
-    await expect(sheet.getByRole('button', { name: 'Vista (pronto)' })).toBeDisabled();
-    for (const target of [sheet.getByRole('link', { name: 'Sendero' }), sheet.getByRole('button', { name: 'Vista (pronto)' }), sheet.getByRole('button', { name: 'Cerrar' })]) {
+    await expect(sheet.getByRole('link', { name: 'Vista' })).toHaveAttribute('href', '/vistas/nueva');
+    for (const target of [sheet.getByRole('link', { name: 'Sendero' }), sheet.getByRole('link', { name: 'Vista' }), sheet.getByRole('button', { name: 'Cerrar' })]) {
       await expectTarget(target);
     }
     expect((await axe(rider)).violations).toEqual([]);

@@ -35,13 +35,12 @@ export function FabSheet() {
             </span>
             <span className="o-name">Sendero</span>
           </a>
-          {/* The Vista page is batch L2-B. */}
-          <button type="button" className="opt" disabled>
+          <a href="/vistas/nueva" className="opt">
             <span className="o-icon">
               <Icon name="eye" />
             </span>
-            <span className="o-name">Vista (pronto)</span>
-          </button>
+            <span className="o-name">Vista</span>
+          </a>
         </div>
       </dialog>
     </>

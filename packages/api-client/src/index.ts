@@ -10,6 +10,7 @@ export type TrailType = Schemas['TrailType'];
 export type Coordinates = Schemas['CoordinatesDto'];
 export type TrailSummary = Schemas['TrailSummaryDto'];
 export type TrailDetail = Schemas['TrailDetailDto'];
+export type TrailPhoto = Schemas['TrailPhotoDto'];
 
 /** Typed client for the Ciudad Enduro API. `baseUrl` is the origin; paths start with /api. */
 export function createApiClient(baseUrl: string) {

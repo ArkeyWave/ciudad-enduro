@@ -36,6 +36,13 @@
       "when": 1794370919860,
       "tag": "0004_trail_gpx",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794519101752,
+      "tag": "0005_trail_photos",
+      "breakpoints": true
     }
   ]
 }

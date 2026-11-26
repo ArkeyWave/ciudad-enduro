@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { Icon } from '../../../components/Icon';
+import { PhotoTimeline } from '../../../components/photo/PhotoTimeline';
 import { ElevationProfile } from '../../../components/trail/ElevationProfile';
 import { TrailAdmin } from '../../../components/trail/TrailAdmin';
 import { TrailMapLoader } from '../../../components/trail/TrailMapLoader';
@@ -27,7 +28,14 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
   return (
     <main className="page">
       <div className="detail-hero">
-        <TrailMapLoader slug={trail.slug} path={trail.path} start={trail.start} end={trail.end} profiled={trail.elevationProfile !== null} />
+        <TrailMapLoader
+          slug={trail.slug}
+          path={trail.path}
+          start={trail.start}
+          end={trail.end}
+          profiled={trail.elevationProfile !== null}
+          photos={trail.photos}
+        />
         <a href="/" className="back" aria-label="Volver">
           <Icon name="chevL" size={20} />
         </a>
@@ -51,12 +59,7 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
             {trail.city}
           </p>
         </header>
-        <TrailStats
-        type={trail.type}
-        distanceM={trail.distanceM}
-        gainM={trail.elevationGainM}
-        lossM={trail.elevationLossM}
-      />
+        <TrailStats type={trail.type} distanceM={trail.distanceM} gainM={trail.elevationGainM} lossM={trail.elevationLossM} />
         {trail.elevationProfile && (
           <ElevationProfile
             profile={trail.elevationProfile}
@@ -67,6 +70,7 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
             elevationMaxM={trail.elevationMaxM}
           />
         )}
+        <PhotoTimeline photos={trail.photos} distanceM={trail.distanceM} />
         {trail.description && (
           <p data-testid="trail-description" className="description">
             {trail.description}
