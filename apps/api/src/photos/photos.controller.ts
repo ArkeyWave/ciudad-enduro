@@ -50,7 +50,7 @@ export const PHOTO_UPLOAD_LIMITS = {
   fileSize: 10 * MiB,
   files: 1,
   fields: 3,
-  parts: 4,
+  parts: 3,
   fieldSize: 64,
   fieldNameSize: 16,
   fieldNestingDepth: 0,
