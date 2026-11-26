@@ -35,7 +35,7 @@ export function CardSlider({ name, start, photos }: { name: string; start: Coord
     observer.observe(sentinel.current);
     // A tap does not focus the slider on every browser, so pointerup counts too; not pointerdown,
     // which a vertical page scroll that starts on the slider also fires (then pointercancel).
-    const inputs = ['pointerup', 'scroll', 'focusin'] as const;
+    const inputs = ['pointerdown', 'scroll', 'focusin'] as const;
     for (const type of inputs) el.addEventListener(type, cancel, { passive: true });
     return () => {
       observer.disconnect();
