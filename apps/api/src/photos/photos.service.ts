@@ -173,10 +173,8 @@ export class PhotosService {
     if (!uploader.admin) await this.refuseTooManyPending(this.db, uploader.id);
     const type = photoType(bytes);
     if (!type) throw new UnsupportedMediaTypeException(coded('PHOTO_TYPE'));
-    // The named trail first: an unavailable slug is a 404 whatever the file (plan §10.1 A8).
-    const named = trailSlug === undefined ? undefined : await this.namedTrail(trailSlug);
-    // Only a JPEG can carry the EXIF position (V1b): any other file without one stops here.
     if (!bodyPosition && type !== 'jpeg') throw new BadRequestException(coded('NO_POSITION'));
+    const named = trailSlug === undefined ? undefined : await this.namedTrail(trailSlug);
     let position = bodyPosition;
     let trail = position ? await this.trailNear(position, named) : undefined;
     if (position && !trail && type !== 'jpeg') throw new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));

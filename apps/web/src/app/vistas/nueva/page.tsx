@@ -16,7 +16,7 @@ export default async function NewPhotoPage({ searchParams }: { searchParams: Pro
   const named = trail?.status === 'published' && trail.path && trail.path.length >= 2 ? { slug: trail.slug, name: trail.name, path: trail.path } : null;
   // Without a named trail, the rider picks one when the phone has no good fix (A10).
   // Only a trail with a line can take a vista.
-  const trails = asked ? [] : (await listTrails()).filter((t) => t.hasPath).map(({ slug, name }) => ({ slug, name }));
+  const trails = asked ? [] : (await listTrails()).map(({ slug, name }) => ({ slug, name }));
   return (
     <main className="page narrow">
       <div className="head">
