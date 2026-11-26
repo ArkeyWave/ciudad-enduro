@@ -11,7 +11,7 @@
 
 ### Fixed
 - PR #70 final review: a vertical page scroll that starts on the slider (on touch: `pointerdown`, then `pointercancel`) no longer stops the auto-advance; a tap still does, through `pointerup` (F1). A slider the rider swiped or focused before hydration shows that slide's dot and never moves by itself (F2). The observer reads its last entry (F3). A slider without photos is no tab stop (F4). `docs/features.json` lists the slider proofs (F5).
-- Tests (`card-slider.spec.ts`): `pointerdown` + `pointercancel` → the slider still moves after 3 s; `pointerdown` + `pointerup` → no move; a swipe to the last slide before hydration (page scripts held back) → its dot is current and no move; a focus before hydration → no move; the card without photos has no `tabindex`. Mutation proofs: `pointerdown` back, no `scrollLeft` check, no dot from `scrollLeft` at mount, no focus check, `tabindex` on every slider (CI, throwaway PRs) each turn a test red.
+- Tests (`card-slider.spec.ts`): `pointerdown` + `pointercancel` → the slider still moves after 3 s; `pointerdown` + `pointerup` → no move; a swipe to the last slide before hydration (page scripts held back) → its dot is current and no move; a focus before hydration → no move; the card without photos has no `tabindex`. Mutation proofs: `pointerdown` back, no `scrollLeft` check, no dot from `scrollLeft` at mount, no focus check, `tabindex` on every slider (CI, throwaway PRs #84–#88) each turn a test red.
 
 ## [Unreleased] - Layer 3-A: districts of Peru
 
