@@ -25,7 +25,7 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
   // The API shows a draft or hidden trail to an admin and to its author only, so a non-admin who
   // gets one is its author. A published trail has no chip for everyone else.
   // A vista needs a published line to attach to (plan §10.1 A9); anonymous visitors do not see it.
-  const addPhoto = me !== null && trail.status === 'published' && trail.path !== null && trail.path.length >= 2;
+  const addPhoto = me !== null && trail.path !== null && trail.path.length >= 2;
   const chip = admin ? statusLabel(trail.status) : trail.status === 'published' ? null : reviewLabel(trail.status);
 
   return (

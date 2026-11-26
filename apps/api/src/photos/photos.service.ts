@@ -262,7 +262,7 @@ export class PhotosService {
       .where(
         and(
           named ? eq(trails.id, named.id) : eq(trails.status, 'published'),
-          sql`ST_DWithin(${trails.path}::geography, ${point}::geography, ${NEARBY_M})`,
+          named ? undefined : sql`ST_DWithin(${trails.path}::geography, ${point}::geography, ${NEARBY_M})`,
         ),
       )
       .orderBy(sql`ST_Distance(${trails.path}::geography, ${point}::geography)`)
