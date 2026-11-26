@@ -58,7 +58,7 @@ export function CardSlider({ name, start, photos }: { name: string; start: Coord
           className="slides"
           role="region"
           // Only a slider with photos scrolls, so only then is it a keyboard stop.
-          tabIndex={photos.length > 0 ? 0 : undefined}
+          tabIndex={0}
           aria-label={`Mapa y vistas de ${name}`}
           onScroll={(e) => setActive(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
         >
