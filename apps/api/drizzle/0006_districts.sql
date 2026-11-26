@@ -2,7 +2,7 @@
 -- any other value would stay NULL and make SET NOT NULL fail, so the migration stops instead of guessing.
 ALTER TABLE "trails" ADD COLUMN "ubigeo" char(6);--> statement-breakpoint
 UPDATE "trails" SET "ubigeo" = CASE "city"
-	WHEN 'Chimbote' THEN '021801'
+	WHEN 'Chimbote' THEN '021809'
 	WHEN 'Nuevo Chimbote' THEN '021809'
 	WHEN 'Trujillo' THEN '130101'
 END;--> statement-breakpoint
