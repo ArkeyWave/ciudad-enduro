@@ -1,0 +1,28 @@
+{
+  "name": "@ciudad-enduro/geo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && cp src/districts.LICENSE dist/",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "districts": "node scripts/build-districts.mjs"
+  },
+  "devDependencies": {
+    "@ciudad-enduro/config": "workspace:*",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,15 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsString, Length, MaxLength, NotContains, ValidateIf } from 'class-validator';
 import {
-  CITIES,
   DIFFICULTIES,
   TRAIL_STATUSES,
   TRAIL_TYPES,
-  type City,
   type Difficulty,
   type TrailStatus,
   type TrailType,
 } from '../../db/schema/index.js';
+import { isUbigeo, UBIGEO_PROPERTY } from './ubigeo.js';
 
 export const NAME_MAX = 80;
 export const DESCRIPTION_MAX = 2000;
@@ -25,9 +24,9 @@ export class CreateTrailDto {
   @noNul
   name!: string;
 
-  @ApiProperty({ enum: CITIES, enumName: 'City' })
-  @IsIn(CITIES)
-  city!: City;
+  @ApiProperty(UBIGEO_PROPERTY)
+  @isUbigeo
+  ubigeo!: string;
 
   @ApiProperty({ enum: DIFFICULTIES, enumName: 'Difficulty' })
   @IsIn(DIFFICULTIES)
@@ -74,10 +73,10 @@ export class UpdateTrailDto {
   @noNul
   description?: string;
 
-  @ApiPropertyOptional({ enum: CITIES, enumName: 'City' })
+  @ApiPropertyOptional(UBIGEO_PROPERTY)
   @present
-  @IsIn(CITIES)
-  city?: City;
+  @isUbigeo
+  ubigeo?: string;
 
   @ApiPropertyOptional({ enum: DIFFICULTIES, enumName: 'Difficulty' })
   @present

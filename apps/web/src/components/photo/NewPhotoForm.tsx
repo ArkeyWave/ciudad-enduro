@@ -3,7 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ChangeEvent, type SubmitEvent } from 'react';
 import { photoErrorMessage, positionFields, uploadPhoto, type PhotoFailure } from '../../lib/photos-client';
-import { canMark, type Fix } from '../../lib/tracer';
+import { useGeolocation } from '../../lib/geolocation';
+import { canMark } from '../../lib/tracer';
 
 /**
  * "Vista" (plan §9 V2, V5): the camera input, a preview, the live GPS fix and "Publicar vista". The
@@ -13,35 +14,21 @@ import { canMark, type Fix } from '../../lib/tracer';
  */
 export function NewPhotoForm() {
   const router = useRouter();
-  const [fix, setFix] = useState<Fix | null>(null);
+  const geo = useGeolocation();
+  const { fix, start } = geo;
   const [now, setNow] = useState(() => Date.now());
-  const [noLocation, setNoLocation] = useState(false);
+  const noLocation = geo.status === 'denied' || geo.status === 'unavailable';
   const [preview, setPreview] = useState<{ url: string; width: number; height: number } | null>(null);
   const [busy, setBusy] = useState(false);
   // The file chosen last: a slower load of an earlier choice must not replace its preview.
   const chosen = useRef<string | null>(null);
   const [failure, setFailure] = useState<PhotoFailure | null>(null);
 
+  useEffect(start, [start]);
   useEffect(() => {
-    if (!('geolocation' in navigator)) return setNoLocation(true);
-    const watch = navigator.geolocation.watchPosition(
-      ({ coords, timestamp }) => {
-        setNow(Date.now());
-        setNoLocation(false);
-        setFix({ lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy, at: timestamp });
-      },
-      (error) => {
-        setFix(null);
-        if (error.code === error.PERMISSION_DENIED) setNoLocation(true);
-      },
-      { enableHighAccuracy: true, maximumAge: 0 },
-    );
     // The clock of the age gate: a fix older than 10 s stops counting.
     const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => {
-      navigator.geolocation.clearWatch(watch);
-      clearInterval(timer);
-    };
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => () => {

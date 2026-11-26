@@ -107,9 +107,13 @@ test.describe('the FAB sheet and the tracer', () => {
     await expect(rider.getByRole('heading', { level: 1, name: 'Marcar ruta' })).toBeVisible();
     await expect(rider.getByRole('navigation', { name: 'Modo' }).getByRole('link', { name: 'Marcar' })).toHaveAttribute('aria-current', 'page');
 
+    const district = rider.getByRole('combobox', { name: 'Distrito' });
+    await expect(district).toHaveValue('');
     await rider.getByRole('button', { name: 'Mi ubicación' }).click();
     // Worse than 30 m: the button says the accuracy and stays disabled.
     await expect(markButton(rider)).toHaveText('Marcar punto (±45 m)');
+    // Without a point the device fix suggests the district (plan §10.1 A7).
+    await expect(district).toHaveValue('Chimbote, Santa, Ancash');
     await expect(markButton(rider)).toBeDisabled();
     await expect(rider.getByTestId('tracer-map').locator('path.fix-dot')).toHaveCount(1);
 
@@ -155,8 +159,11 @@ test.describe('the FAB sheet and the tracer', () => {
     await expectMinFontSize(rider);
 
     await rider.getByLabel('Nombre').fill('Ruta Marcada E2E');
+    // After the reload there is no fix: the first point (the Chimbote centre) suggests the district.
+    await expect(rider.getByRole('combobox', { name: 'Distrito' })).toHaveValue('Chimbote, Santa, Ancash');
     await rider.getByRole('button', { name: 'Subir ruta' }).click();
     await expect(rider).toHaveURL(`${ORIGIN}/rutas/ruta-marcada-e2e`);
+    await expect(rider.getByTestId('trail-meta').locator('.eyebrow')).toHaveText('Chimbote');
     await expect(rider.getByTestId('trail-meta').getByTestId('trail-status')).toHaveText('En revisión');
     await expect(rider.getByTestId('trail-map').locator('path.trail-path')).toHaveCount(1);
     // Stored without elevations here (the e2e elevation source is a closed port): no credit.

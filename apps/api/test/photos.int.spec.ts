@@ -65,8 +65,7 @@ async function seedTrail(status: TrailStatus = 'published', path: [number, numbe
     .values({
       slug,
       name: `Sendero ${slug}`,
-      city: 'Chimbote',
-      department: 'Ancash',
+      ubigeo: '021801',
       difficulty: 'facil',
       type: 'urbano',
       status,
@@ -385,7 +384,7 @@ describe('POST /api/photos: who and how many (V4)', () => {
     for (let i = 0; i < 5; i++) {
       const form = new FormData();
       form.append('gpx', new Blob(['<gpx><trk>']), 'r.gpx');
-      for (const [k, v] of Object.entries({ name: 'X', city: 'Chimbote', difficulty: 'facil', type: 'urbano' })) form.append(k, v);
+      for (const [k, v] of Object.entries({ name: 'X', ubigeo: '021801', difficulty: 'facil', type: 'urbano' })) form.append(k, v);
       expect((await fetch(`${t.url}/api/trails`, { method: 'POST', headers: as(rider), body: form })).status).toBe(400);
     }
     const res = await post(as(rider), await plainJpeg(), near(0.1, 0));

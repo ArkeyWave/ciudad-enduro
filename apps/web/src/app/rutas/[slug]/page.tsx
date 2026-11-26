@@ -56,7 +56,7 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
             <span className="loc-dot">
               <Icon name="gps" size={12} />
             </span>
-            {trail.city}
+            {trail.district.name}
           </p>
         </header>
         <TrailStats type={trail.type} distanceM={trail.distanceM} gainM={trail.elevationGainM} lossM={trail.elevationLossM} />

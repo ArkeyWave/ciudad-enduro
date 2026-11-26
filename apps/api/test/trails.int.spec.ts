@@ -21,7 +21,7 @@ afterAll(async () => {
   await app.close();
 });
 
-const base = { department: 'Ancash', difficulty: 'intermedio', type: 'descenso', description: 'Roca suelta' } as const;
+const base = { difficulty: 'intermedio', type: 'descenso', description: 'Roca suelta' } as const;
 
 beforeEach(async () => {
   await client.query('TRUNCATE trails, trail_sources, trail_photos');
@@ -30,7 +30,7 @@ beforeEach(async () => {
       ...base,
       slug: 'cerro-chimbote',
       name: 'Cerro Chimbote',
-      city: 'Chimbote',
+      ubigeo: '021801',
       status: 'published',
       startPoint: { lng: -78.52, lat: -9.09 },
       endPoint: { lng: -78.51, lat: -9.08 },
@@ -46,7 +46,7 @@ beforeEach(async () => {
       ...base,
       slug: 'campana-trujillo',
       name: 'Campana Trujillo',
-      city: 'Trujillo',
+      ubigeo: '130101',
       status: 'published',
       startPoint: { lng: -79.03, lat: -8.11 },
       createdAt: new Date('2026-02-01T00:00:00Z'),
@@ -55,7 +55,7 @@ beforeEach(async () => {
       ...base,
       slug: 'borrador',
       name: 'Borrador',
-      city: 'Chimbote',
+      ubigeo: '021801',
       status: 'draft',
       startPoint: { lng: -78.53, lat: -9.1 },
     },
@@ -73,13 +73,13 @@ describe('GET /api/trails', () => {
   });
 
   it('maps the start point to { lat, lng }', async () => {
-    const body = (await (await get('/trails?city=Chimbote')).json()) as unknown[];
+    const body = (await (await get('/trails?ubigeo=021801')).json()) as unknown[];
     expect(body).toEqual([
       {
         id: expect.any(String) as string,
         slug: 'cerro-chimbote',
         name: 'Cerro Chimbote',
-        city: 'Chimbote',
+        ubigeo: '021801',
         difficulty: 'intermedio',
         type: 'descenso',
         start: { lat: -9.09, lng: -78.52 },
@@ -91,13 +91,25 @@ describe('GET /api/trails', () => {
     ]);
   });
 
-  it('rejects an unknown city with 400', async () => {
-    expect((await get('/trails?city=Lima')).status).toBe(400);
+  it('filters by district code', async () => {
+    const slugs = async (query: string) => ((await (await get(`/trails?${query}`)).json()) as { slug: string }[]).map((t) => t.slug);
+    expect(await slugs('ubigeo=130101')).toEqual(['campana-trujillo']);
+    // A known district without trails is an empty list, not an error.
+    expect(await slugs('ubigeo=021809')).toEqual([]);
+  });
+
+  it.each(['999999', '21801', 'abc'])('rejects the unknown district code %s with 400', async (code) => {
+    expect((await get(`/trails?ubigeo=${code}`)).status).toBe(400);
+  });
+
+  // The city filter is gone (plan §10.1 A3): no silent fallback to the whole list.
+  it('rejects the old city filter with 400', async () => {
+    expect((await get('/trails?city=Chimbote')).status).toBe(400);
   });
 
   it('rejects an unknown query parameter with 400 and accepts the known one', async () => {
-    expect((await get('/trails?city=Chimbote&foo=1')).status).toBe(400);
-    expect((await get('/trails?city=Chimbote')).status).toBe(200);
+    expect((await get('/trails?ubigeo=021801&foo=1')).status).toBe(400);
+    expect((await get('/trails?ubigeo=021801')).status).toBe(200);
   });
 });
 

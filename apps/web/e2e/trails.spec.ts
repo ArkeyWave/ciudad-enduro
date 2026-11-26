@@ -24,7 +24,7 @@ const IMPORT = '/rutas/nueva?modo=gpx';
 
 const PROFILED_TRAIL = PUBLISHED[1] as (typeof PUBLISHED)[number];
 const meta = (page: Page) => page.getByTestId('trail-meta');
-/** The meta row of the detail: difficulty pill, type, city and (admin only) the status chip. */
+/** The meta row of the detail: difficulty pill, type, district and (admin only) the status chip. */
 async function expectMeta(page: Page, status: string) {
   await expect(meta(page).locator('.diff-pill')).toHaveText('Difícil');
   await expect(meta(page).locator('.type-label')).toHaveText('Cross-country');
@@ -35,6 +35,9 @@ const stat = (page: Page, label: string) => page.locator(`[data-stat="${label}"]
 const fact = (page: Page, label: string) => page.locator(`dt:text-is("${label}") + dd`);
 // By name, not by label: the label is the axe scans' job (a missing label must fail axe, not this).
 const gpxInput = (page: Page) => page.locator('input[name="gpx"]');
+const districtBox = (page: Page) => page.getByRole('combobox', { name: 'Distrito' });
+/** The district suggested from the fixture's first point (-9.09, -78.52): nearest capital point. */
+const GPX_DISTRICT = 'Nuevo Chimbote, Santa, Ancash';
 
 test.beforeEach(async ({ context }) => {
   await stubTiles(context);
@@ -117,6 +120,7 @@ test.describe('admin and rider', () => {
     await rider.goto(IMPORT);
     await gpxInput(rider).setInputFiles(gpxVariant(name.replaceAll(' ', '-')));
     await rider.getByLabel('Nombre').fill(name);
+    await expect(districtBox(rider)).toHaveValue(GPX_DISTRICT);
     await rider.getByRole('button', { name: 'Subir ruta' }).click();
   }
 
@@ -151,7 +155,32 @@ test.describe('admin and rider', () => {
     await expect(admin).toHaveURL(`${ORIGIN}${IMPORT}`);
     await gpxInput(admin).setInputFiles(GPX);
     await admin.getByLabel('Nombre').fill(UPLOADED.name);
-    await admin.getByLabel('Ciudad').selectOption('Trujillo');
+    // The district combobox (plan §10 L3-3): suggested from the GPX start, then changed by keyboard.
+    const box = districtBox(admin);
+    const list = admin.getByRole('listbox', { name: 'Distritos' });
+    await expect(box).toHaveValue(GPX_DISTRICT);
+    await box.fill('trujillo');
+    await expect(list).toBeVisible();
+    const options = list.getByRole('option');
+    await expect(options.first()).toHaveText('Trujillo Trujillo, La Libertad');
+    await expect(options.first()).toHaveAttribute('aria-selected', 'true');
+    await expectTarget(options.first());
+    await box.press('ArrowDown');
+    await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(box).toHaveAttribute('aria-activedescendant', (await options.nth(1).getAttribute('id'))!);
+    await box.press('ArrowUp');
+    await expect(options.first()).toHaveAttribute('aria-selected', 'true');
+    // Escape closes the list and keeps the value it had.
+    await box.press('Escape');
+    await expect(list).toBeHidden();
+    await expect(box).toHaveAttribute('aria-expanded', 'false');
+    await expect(box).toHaveValue(GPX_DISTRICT);
+    // Enter picks the active option and does not submit the form.
+    await box.fill('trujillo');
+    await box.press('Enter');
+    await expect(list).toBeHidden();
+    await expect(box).toHaveValue('Trujillo, Trujillo, La Libertad');
+    await expect(admin).toHaveURL(`${ORIGIN}${IMPORT}`);
     await admin.getByLabel('Dificultad').selectOption({ label: 'Difícil' });
     await admin.getByLabel('Tipo').selectOption({ label: 'Cross-country' });
     await admin.getByRole('button', { name: 'Subir ruta' }).click();
@@ -215,6 +244,7 @@ test.describe('admin and rider', () => {
     await admin.goto(IMPORT);
     await gpxInput(admin).setInputFiles(GPX);
     await admin.getByLabel('Nombre').fill('Ruta E2E Duplicada');
+    await expect(districtBox(admin)).toHaveValue(GPX_DISTRICT);
     await admin.getByRole('button', { name: 'Subir ruta' }).click();
     const alert = admin.locator('main').getByRole('alert');
     await expect(alert).toContainText('Este GPX ya está subido.');
@@ -310,6 +340,7 @@ test.describe('admin and rider', () => {
     await rider.goto(IMPORT);
     await gpxInput(rider).setInputFiles(GPX);
     await rider.getByLabel('Nombre').fill('Ruta Rider Duplicada');
+    await expect(districtBox(rider)).toHaveValue(GPX_DISTRICT);
     await rider.getByRole('button', { name: 'Subir ruta' }).click();
     await expect(rider.locator('main').getByRole('alert')).toContainText('Este GPX ya está subido.');
     await expect(rider).toHaveURL(`${ORIGIN}${IMPORT}`);

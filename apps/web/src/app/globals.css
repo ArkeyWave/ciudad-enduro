@@ -350,3 +350,17 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ── District combobox (plan §10 L3-3) ───────────────────────── */
+.combobox { position: relative; }
+.combobox-list {
+  position: absolute; z-index: 20; left: 0; right: 0; top: 100%; margin: 4px 0 0; padding: 4px; list-style: none;
+  background: var(--card-hi); border: 1px solid var(--border); border-radius: 12px; max-height: 360px; overflow-y: auto;
+}
+.combobox-list [role='option'] {
+  min-height: 44px; padding: 6px 10px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; justify-content: center;
+  color: var(--text); font-size: 15px; text-transform: none; letter-spacing: normal; font-weight: 500;
+}
+.combobox-list [role='option'] .muted { font-size: 12px; font-weight: 400; }
+.combobox-list [role='option'][aria-selected='true'] { background: var(--card); outline: 1px solid var(--lime); }
+.eyebrow-skeleton { display: inline-block; width: 12em; height: 1em; }

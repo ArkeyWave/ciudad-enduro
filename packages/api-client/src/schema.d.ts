@@ -152,8 +152,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @enum {string} */
-        City: "Chimbote" | "Nuevo Chimbote" | "Trujillo";
         CoordinatesDto: {
             lat: number;
             lng: number;
@@ -169,7 +167,6 @@ export interface components {
             photo: string;
         };
         CreateTrailBody: {
-            city: components["schemas"]["City"];
             description?: string;
             difficulty: components["schemas"]["Difficulty"];
             /**
@@ -179,9 +176,24 @@ export interface components {
             gpx: string;
             name: string;
             type: components["schemas"]["TrailType"];
+            /**
+             * @description INEI district code
+             * @example 021801
+             */
+            ubigeo: string;
         };
         /** @enum {string} */
         Difficulty: "facil" | "intermedio" | "dificil";
+        DistrictDto: {
+            /** @example Ancash */
+            department: string;
+            /** @example Chimbote */
+            name: string;
+            /** @example Santa */
+            province: string;
+            /** @example 021801 */
+            ubigeo: string;
+        };
         ErrorBodyDto: {
             /** @example TOO_MANY_PENDING */
             code?: string;
@@ -196,9 +208,9 @@ export interface components {
             role: string;
         };
         MyTrailDto: {
-            city: components["schemas"]["City"];
             difficulty: components["schemas"]["Difficulty"];
             distanceM: number | null;
+            district: components["schemas"]["DistrictDto"];
             elevationGainM: number | null;
             elevationLossM: number | null;
             /** @description [distance_m, ele_m] pairs, at most 300 */
@@ -258,9 +270,9 @@ export interface components {
         QueueTrailDto: {
             /** @description Null when the author was deleted */
             authorEmail: string | null;
-            city: components["schemas"]["City"];
             difficulty: components["schemas"]["Difficulty"];
             distanceM: number | null;
+            district: components["schemas"]["DistrictDto"];
             elevationGainM: number | null;
             elevationLossM: number | null;
             /** @description [distance_m, ele_m] pairs, at most 300 */
@@ -274,10 +286,10 @@ export interface components {
             type: components["schemas"]["TrailType"];
         };
         TrailDetailDto: {
-            city: components["schemas"]["City"];
             description: string;
             difficulty: components["schemas"]["Difficulty"];
             distanceM: number | null;
+            district: components["schemas"]["DistrictDto"];
             elevationGainM: number | null;
             elevationLossM: number | null;
             elevationMaxM: number | null;
@@ -318,9 +330,9 @@ export interface components {
         /** @enum {string} */
         TrailStatus: "draft" | "published" | "hidden";
         TrailSummaryDto: {
-            city: components["schemas"]["City"];
             difficulty: components["schemas"]["Difficulty"];
             distanceM: number | null;
+            district: components["schemas"]["DistrictDto"];
             elevationGainM: number | null;
             elevationLossM: number | null;
             /** @description [distance_m, ele_m] pairs, at most 300 */
@@ -338,12 +350,16 @@ export interface components {
             status: components["schemas"]["TrailStatus"];
         };
         UpdateTrailDto: {
-            city?: components["schemas"]["City"];
             description?: string;
             difficulty?: components["schemas"]["Difficulty"];
             name?: string;
             status?: components["schemas"]["TrailStatus"];
             type?: components["schemas"]["TrailType"];
+            /**
+             * @description INEI district code
+             * @example 021801
+             */
+            ubigeo?: string;
         };
     };
     responses: never;
@@ -684,7 +700,8 @@ export interface operations {
     TrailsController_list: {
         parameters: {
             query?: {
-                city?: components["schemas"]["City"];
+                /** @description INEI district code */
+                ubigeo?: string;
             };
             header?: never;
             path?: never;

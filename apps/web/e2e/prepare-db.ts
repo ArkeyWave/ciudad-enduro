@@ -11,15 +11,15 @@ await client.connect();
 try {
   for (const trail of [...PUBLISHED, DRAFT]) {
     await client.query(
-      `INSERT INTO trails (slug, name, city, department, difficulty, type, status, start_point)
-       VALUES ($1, $2, 'Chimbote', 'Ancash', 'intermedio', 'descenso', $3,
+      `INSERT INTO trails (slug, name, ubigeo, difficulty, type, status, start_point)
+       VALUES ($1, $2, '021801', 'intermedio', 'descenso', $3,
                ST_SetSRID(ST_MakePoint(-78.52, -9.09), 4326))`,
       [trail.slug, trail.name, trail.status],
     );
   }
   // The profiled trail: numbers for the card and the detail stats, a start of its own.
   await client.query(
-    `UPDATE trails SET city = 'Trujillo', department = 'La Libertad', difficulty = 'dificil', type = 'cross_country',
+    `UPDATE trails SET ubigeo = '130101', difficulty = 'dificil', type = 'cross_country',
             distance_m = $2, elevation_gain_m = $3, elevation_loss_m = $4, elevation_profile = $5,
             start_point = ST_SetSRID(ST_MakePoint($6, $7), 4326)
       WHERE slug = $1`,

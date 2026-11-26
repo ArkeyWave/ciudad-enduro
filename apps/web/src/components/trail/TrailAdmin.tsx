@@ -42,7 +42,7 @@ export function TrailAdmin({ trail }: { trail: TrailDetail }) {
     };
     void save('edit', {
       name: field('name'),
-      city: field('city') as TrailUpdate['city'],
+      ubigeo: field('ubigeo'),
       difficulty: field('difficulty') as TrailUpdate['difficulty'],
       type: field('type') as TrailUpdate['type'],
       description: field('description'),

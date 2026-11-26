@@ -1,8 +1,6 @@
-import type { City, Difficulty, TrailDetail, TrailType } from 'api-client';
+import type { Difficulty, TrailDetail, TrailType } from 'api-client';
 
 type TrailStatus = TrailDetail['status'];
-
-export const CITIES = ['Chimbote', 'Nuevo Chimbote', 'Trujillo'] as const satisfies readonly City[];
 
 const DIFFICULTY_LABELS = {
   facil: 'Fácil',

@@ -18,12 +18,15 @@ test.beforeEach(async ({ context }) => {
   await stubTiles(context);
 });
 
-test('each published trail is one card link with its city and type; drafts are not listed', async ({ page }) => {
+test('each published trail is one card link with its district and type; drafts are not listed', async ({ page }) => {
   await page.goto('/');
   for (const trail of PUBLISHED) await expect(card(page, trail.name)).toHaveAttribute('href', `/rutas/${trail.slug}`);
   await expect(card(page, PROFILED_TRAIL.name).locator('.type-label')).toHaveText('Trujillo · Cross-country');
   await expect(card(page, BARE.name).locator('.type-label')).toHaveText('Chimbote · Descenso');
   await expect(page.getByText(DRAFT.name)).toHaveCount(0);
+  // The head names the districts of the published trails (plan §10 L3-2), each once.
+  await expect(page.getByTestId('explore-districts')).toContainText('Trujillo');
+  await expect(page.getByTestId('explore-districts')).toContainText('Chimbote');
   await expect(toggle(page, 'Lista')).toHaveAttribute('aria-current', 'page');
   await expect(toggle(page, 'Mapa')).not.toHaveAttribute('aria-current');
   await expectTarget(toggle(page, 'Lista'));

@@ -24,7 +24,7 @@ export function TrailCard({ trail, chip, note }: { trail: TrailSummary; chip?: s
           )}
         </span>
         <span className="type-label">
-          {trail.city} · {trailTypeLabel(trail.type)}
+          {trail.district.name} · {trailTypeLabel(trail.type)}
         </span>
       </span>
       <h2 className="swipe-title">{trail.name}</h2>

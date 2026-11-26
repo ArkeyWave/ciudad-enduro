@@ -12,9 +12,10 @@ import {
 import { and, asc, count, desc, eq, or, sql } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env.js';
 import { DB, type Database } from '../db/db.provider.js';
-import { trails, trailSources, user, type City, type Department, type TrailStatus } from '../db/schema/index.js';
+import { districtByUbigeo } from '@ciudad-enduro/geo';
+import { trails, trailSources, user, type TrailStatus } from '../db/schema/index.js';
 import type { LngLat } from '../db/types/geo.js';
-import type { CoordinatesDto, MyTrailDto, QueueTrailDto, TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
+import type { CoordinatesDto, DistrictDto, MyTrailDto, QueueTrailDto, TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
 import type { CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
 import { fillElevations } from './gpx/fill-elevations.js';
 import { elevationMetrics, trackMetrics, type TrackMetrics } from './gpx/metrics.js';
@@ -27,7 +28,7 @@ const summaryColumns = {
   id: trails.id,
   slug: trails.slug,
   name: trails.name,
-  city: trails.city,
+  ubigeo: trails.ubigeo,
   difficulty: trails.difficulty,
   type: trails.type,
   distanceM: trails.distanceM,
@@ -50,12 +51,25 @@ const detailColumns = {
   path: sql<{ coordinates: [number, number][] } | null>`ST_AsGeoJSON(ST_SimplifyPreserveTopology(${trails.path}, ${DISPLAY_TOLERANCE_DEG}))::json`,
 };
 
-type SummaryRow = Omit<TrailSummaryDto, 'start'> & { startX: number; startY: number };
+type SummaryRow = Omit<TrailSummaryDto, 'start' | 'district'> & { ubigeo: string; startX: number; startY: number };
 
 const point = (x: number, y: number): CoordinatesDto => ({ lat: y, lng: x });
 
-function toSummary<R extends SummaryRow>({ startX, startY, ...row }: R): Omit<R, 'startX' | 'startY'> & { start: CoordinatesDto } {
-  return { ...row, start: point(startX, startY) };
+/** The names of a stored code; every write is checked against the same list, so a miss is a bug. */
+function district(ubigeo: string): DistrictDto {
+  const found = districtByUbigeo(ubigeo);
+  if (!found) throw new Error(`Unknown ubigeo ${ubigeo}`);
+  const { name, province, department } = found;
+  return { ubigeo, name, province, department };
+}
+
+function toSummary<R extends SummaryRow>({
+  startX,
+  startY,
+  ubigeo,
+  ...row
+}: R): Omit<R, 'startX' | 'startY' | 'ubigeo'> & { start: CoordinatesDto; district: DistrictDto } {
+  return { ...row, district: district(ubigeo), start: point(startX, startY) };
 }
 
 /** Drafts a non-admin may have waiting for review (plan R-D2). */
@@ -70,10 +84,6 @@ const UPLOAD_LOCK = sql.raw('7301');
 
 const canSee = (viewer: Viewer, trail: { status: TrailStatus; authorId: string | null }) =>
   viewer.admin || trail.status === 'published' || (viewer.id !== null && trail.authorId === viewer.id);
-
-const DEPARTMENT_OF: Record<City, Department> = { Chimbote: 'Ancash', 'Nuevo Chimbote': 'Ancash', Trujillo: 'La Libertad' };
-/** The one place a department comes from (create and update). */
-export const departmentOf = (city: City): Department => DEPARTMENT_OF[city];
 
 const SLUG_MAX = 56; // room for a -N suffix
 const SLUG_TRIES = 5;
@@ -117,11 +127,11 @@ export class TrailsService {
     private readonly photos: PhotosService,
   ) {}
 
-  async listPublished(city?: City): Promise<TrailSummaryDto[]> {
+  async listPublished(ubigeo?: string): Promise<TrailSummaryDto[]> {
     const rows = await this.db
       .select(summaryColumns)
       .from(trails)
-      .where(and(eq(trails.status, 'published'), city ? eq(trails.city, city) : undefined))
+      .where(and(eq(trails.status, 'published'), ubigeo ? eq(trails.ubigeo, ubigeo) : undefined))
       .orderBy(desc(trails.createdAt));
     return rows.map(toSummary);
   }
@@ -204,8 +214,7 @@ export class TrailsService {
               slug,
               name: input.name,
               description: input.description ?? '',
-              city: input.city,
-              department: departmentOf(input.city),
+              ubigeo: input.ubigeo,
               difficulty: input.difficulty,
               type: input.type,
               startPoint: track.points[0]!,
@@ -268,7 +277,7 @@ export class TrailsService {
     if (Object.values(input).every((value) => value === undefined)) throw new BadRequestException('Nothing to update');
     const rows = await this.db
       .update(trails)
-      .set({ ...input, ...(input.city ? { department: departmentOf(input.city) } : {}), updatedAt: new Date() })
+      .set({ ...input, updatedAt: new Date() })
       .where(eq(trails.slug, slug))
       .returning({ slug: trails.slug });
     return rows.length ? this.findBySlug(slug, ADMIN) : undefined;

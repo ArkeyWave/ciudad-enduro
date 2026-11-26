@@ -72,7 +72,7 @@ export class TrailsController {
   @AllowAnonymous()
   @ApiOkResponse({ type: TrailSummaryDto, isArray: true })
   list(@Query() query: ListTrailsQuery): Promise<TrailSummaryDto[]> {
-    return this.trails.listPublished(query.city);
+    return this.trails.listPublished(query.ubigeo);
   }
 
   @Get(':slug')

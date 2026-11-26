@@ -83,7 +83,7 @@ type Trail = {
 
 async function upload(file: Uint8Array<ArrayBuffer>): Promise<Trail> {
   const form = new FormData();
-  for (const [key, value] of Object.entries({ name: 'Ruta trazada', city: 'Trujillo', difficulty: 'facil', type: 'descenso' })) {
+  for (const [key, value] of Object.entries({ name: 'Ruta trazada', ubigeo: '130101', difficulty: 'facil', type: 'descenso' })) {
     form.append(key, value);
   }
   form.append('gpx', new Blob([file]), 'ruta.gpx');
