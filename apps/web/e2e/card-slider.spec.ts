@@ -83,8 +83,9 @@ test('the card is an article: the title is the only link outside the attribution
     else await expect(dot).not.toHaveAttribute('aria-current');
   }
 
-  // A trail without photos: the map slide only, no dots.
+  // A trail without photos: the map slide only, no dots, no tab stop (nothing scrolls).
   await expect(card(page, BARE.name).getByRole('region')).toHaveCount(1);
+  await expect(card(page, BARE.name).getByRole('region')).not.toHaveAttribute('tabindex');
   await expect(card(page, BARE.name).getByRole('button')).toHaveCount(0);
   await expect(card(page, BARE.name).getByRole('link')).toHaveCount(2);
 
@@ -145,11 +146,10 @@ const INPUTS: Record<string, (page: Page) => Promise<unknown>> = {
       el.scrollTo({ left: el.clientWidth, behavior: 'instant' });
       el.scrollTo({ left: 0, behavior: 'instant' });
     }),
-  'a press on the map slide': async (page) => {
-    const box = (await slides(page).boundingBox())!;
-    await page.mouse.move(box.x + box.width / 3, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.up();
+  // Without the focus a mouse press gives, as a tap on some touch browsers.
+  'a tap on the slider (pointerdown, pointerup)': async (page) => {
+    await slides(page).dispatchEvent('pointerdown');
+    await slides(page).dispatchEvent('pointerup');
   },
   'the keyboard focus on the slider': (page) => slides(page).focus(),
 };
@@ -164,6 +164,57 @@ for (const [input, act] of Object.entries(INPUTS)) {
     expect(await settledIndex(page)).toBe(0);
   });
 }
+
+// Plan review F1: a vertical page scroll that starts on the slider is pointerdown, then pointercancel.
+test('a page scroll that starts on the slider does not stop the move', async ({ page }) => {
+  await open(page);
+  await centre(page);
+  await page.clock.runFor(1000);
+  await slides(page).dispatchEvent('pointerdown');
+  await slides(page).dispatchEvent('pointercancel');
+  await page.clock.runFor(2100);
+  await expect.poll(() => slideIndex(page)).toBe(1);
+});
+
+/**
+ * Explorar with the page scripts held back (not the stylesheets: they hold the streamed list): `act`
+ * runs on the server HTML (a rider who swipes or focuses before hydration), then the scripts load
+ * and the slider hydrates.
+ */
+async function openBeforeHydration(page: Page, act: (page: Page) => Promise<unknown>) {
+  let release = () => {};
+  const scripts = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/_next/static/chunks/*.js', async (route) => {
+    await scripts;
+    await route.continue();
+  });
+  await page.setViewportSize(PHONE);
+  await page.clock.install({ time: new Date('2026-11-25T12:00:00Z') });
+  await page.goto('/', { waitUntil: 'commit' });
+  await expect(slides(page)).toBeVisible();
+  await act(page);
+  release();
+  await page.waitForLoadState('networkidle');
+  // Hydration and the effects run on real time.
+  await page.waitForTimeout(1000);
+  await page.addStyleTag({ content: 'main.page { padding-bottom: 100vh; }' });
+  await page.clock.pauseAt(new Date('2026-11-25T12:01:00Z'));
+}
+
+test('a swipe before hydration: the dots show that slide and the slider never moves by itself', async ({ page }) => {
+  await openBeforeHydration(page, (page) => slides(page).evaluate((el) => el.scrollTo({ left: 2 * el.clientWidth, behavior: 'instant' })));
+  await expect(card(page).getByRole('button', { name: 'Vista 2 de 2' })).toHaveAttribute('aria-current', 'true');
+  await centre(page);
+  await page.clock.runFor(10_000);
+  expect(await settledIndex(page)).toBe(2);
+});
+
+test('a focus before hydration: the slider never moves by itself', async ({ page }) => {
+  await openBeforeHydration(page, (page) => slides(page).focus());
+  await centre(page);
+  await page.clock.runFor(10_000);
+  expect(await settledIndex(page)).toBe(0);
+});
 
 test('a dot click stops the move for good', async ({ page }) => {
   await open(page);

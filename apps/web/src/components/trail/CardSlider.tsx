@@ -24,14 +24,18 @@ export function CardSlider({ name, start, photos }: { name: string; start: Coord
   useEffect(() => {
     const el = scroller.current;
     if (!el || !sentinel.current || photos.length === 0) return;
+    // The rider can swipe or focus the slider before hydration: show that slide, and never move it.
+    setActive(Math.round(el.scrollLeft / el.clientWidth));
+    if (el.scrollLeft > 0 || el.contains(document.activeElement)) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const slider = autoAdvance(() => el.scrollTo({ left: el.clientWidth }));
     const cancel = () => slider.stop();
     stop.current = cancel;
-    const observer = new IntersectionObserver(([entry]) => slider.band(entry?.isIntersecting ?? false), { rootMargin: BAND });
+    const observer = new IntersectionObserver((entries) => slider.band(entries.at(-1)?.isIntersecting ?? false), { rootMargin: BAND });
     observer.observe(sentinel.current);
-    // A tap does not focus the slider on every browser, so pointerdown is listened to as well.
-    const inputs = ['pointerdown', 'scroll', 'focusin'] as const;
+    // A tap does not focus the slider on every browser, so pointerup counts too; not pointerdown,
+    // which a vertical page scroll that starts on the slider also fires (then pointercancel).
+    const inputs = ['pointerup', 'scroll', 'focusin'] as const;
     for (const type of inputs) el.addEventListener(type, cancel, { passive: true });
     return () => {
       observer.disconnect();
@@ -53,7 +57,8 @@ export function CardSlider({ name, start, photos }: { name: string; start: Coord
           ref={scroller}
           className="slides"
           role="region"
-          tabIndex={0}
+          // Only a slider with photos scrolls, so only then is it a keyboard stop.
+          tabIndex={photos.length > 0 ? 0 : undefined}
           aria-label={`Mapa y vistas de ${name}`}
           onScroll={(e) => setActive(Math.round(e.currentTarget.scrollLeft / e.currentTarget.clientWidth))}
         >
