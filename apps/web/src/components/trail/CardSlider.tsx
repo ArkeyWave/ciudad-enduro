@@ -25,7 +25,6 @@ export function CardSlider({ name, start, photos }: { name: string; start: Coord
     const el = scroller.current;
     if (!el || !sentinel.current || photos.length === 0) return;
     // The rider can swipe or focus the slider before hydration: show that slide, and never move it.
-    setActive(Math.round(el.scrollLeft / el.clientWidth));
     if (el.scrollLeft > 0 || el.contains(document.activeElement)) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const slider = autoAdvance(() => el.scrollTo({ left: el.clientWidth }));
