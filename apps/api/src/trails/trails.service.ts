@@ -169,7 +169,7 @@ export class TrailsService {
       .where(and(eq(trails.slug, slug), visible));
     if (!row) return undefined;
     const { endX, endY, path, ...summary } = row;
-    const photos = await this.photos.listForTrail(row.id, viewer);
+    const photos = await this.photos.listForTrail(row.id, { id: null, admin: false });
     // The profile keeps the global extrema (metrics.ts), so min/max come from it.
     const eles = summary.elevationProfile?.map(([, ele]) => ele);
     return {

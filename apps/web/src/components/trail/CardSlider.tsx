@@ -6,7 +6,7 @@ import { autoAdvance } from '../../lib/auto-advance';
 import { OSM_COPYRIGHT_URL, tileMosaic } from '../../lib/osm';
 
 /** The screen-centre band the card centre must reach before the auto-advance (plan §10 L3-8). */
-const BAND = '-40% 0px -40% 0px';
+const BAND = '0px';
 
 /**
  * The Explorar card slider (plan §10.1 A13, A14): slide 1 is a static map of the trail start, then
