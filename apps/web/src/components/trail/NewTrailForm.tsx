@@ -50,7 +50,7 @@ export function NewTrailForm() {
         Archivo GPX
         <input name="gpx" type="file" required accept=".gpx,application/gpx+xml" onChange={chooseFile} />
       </label>
-      <TrailFields suggestion={suggestionPoint(start, geo.fix)} />
+      <TrailFields suggestion={suggestionPoint(geo.fix, start)} />
       <button type="submit" disabled={busy} className="cta">
         {busy ? 'Subiendo…' : 'Subir ruta'}
       </button>
