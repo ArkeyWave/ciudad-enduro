@@ -10,7 +10,8 @@ import { formatDistance } from '../../lib/profile';
 import { canMark, pathLengthM, readPoints, toGpx, type Point } from '../../lib/tracer';
 import { uploadTrail, type TrailFailure } from '../../lib/trails-client';
 import { Icon } from '../Icon';
-import { baseMap, CYAN, LIME } from './tiles';
+import { LocateChip, useHere } from './Locate';
+import { baseMap, LIME } from './tiles';
 import { TrailFailureAlert } from './TrailFailureAlert';
 import { TrailFields } from './TrailFields';
 
@@ -31,8 +32,6 @@ export default function Tracer() {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const route = useRef<L.LayerGroup | null>(null);
-  const here = useRef<L.LayerGroup | null>(null);
-  const centred = useRef(false);
   const [points, setPoints] = useState<Point[]>(stored);
   const geo = useGeolocation();
   const fix = geo.fix;
@@ -47,7 +46,6 @@ export default function Tracer() {
     const m = baseMap(container.current, { doubleClickZoom: false });
     map.current = m;
     route.current = L.layerGroup().addTo(m);
-    here.current = L.layerGroup().addTo(m);
     const initial = stored();
     if (initial.length >= 2) m.fitBounds(L.latLngBounds(initial.map(latLng)), { padding: [32, 32] });
     else m.setView(initial[0] ? latLng(initial[0]) : CHIMBOTE, initial[0] ? FIX_ZOOM : 13);
@@ -69,19 +67,7 @@ export default function Tracer() {
     }
   }, [points]);
 
-  useEffect(() => {
-    const layer = here.current;
-    if (!layer) return;
-    layer.clearLayers();
-    if (!fix) return;
-    // Not interactive, so a tap on the dot still reaches the map.
-    L.circle(latLng(fix), { className: 'fix-accuracy', radius: fix.accuracy, color: CYAN, weight: 1, fillOpacity: 0.12, interactive: false }).addTo(layer);
-    L.circleMarker(latLng(fix), { className: 'fix-dot', radius: 7, color: '#F5F5F5', weight: 2, fillColor: CYAN, fillOpacity: 1, interactive: false }).addTo(layer);
-    if (!centred.current) {
-      centred.current = true;
-      map.current?.setView(latLng(fix), FIX_ZOOM);
-    }
-  }, [fix]);
+  const locate = useHere(map, geo, true);
 
   useEffect(() => {
     if (!fix) return;
@@ -89,12 +75,6 @@ export default function Tracer() {
     return () => clearInterval(timer);
   }, [fix]);
 
-  const locate = () => {
-    if (fix) map.current?.setView(latLng(fix), FIX_ZOOM);
-    // A new watch (first tap, or after a denial) centres again on its first fix.
-    if (geo.status === 'idle' || geo.status === 'denied' || geo.status === 'unavailable') centred.current = false;
-    geo.start();
-  };
   const noLocation = geo.status === 'denied' || geo.status === 'unavailable';
 
   const mark = () => {
@@ -122,10 +102,7 @@ export default function Tracer() {
     <>
       <div ref={container} role="region" aria-label="Mapa para marcar la ruta" data-testid="tracer-map" className="map-box rounded tracer-map" />
       <div className="tracer-controls">
-        <button type="button" className="chip" onClick={locate}>
-          <Icon name="location" size={18} />
-          Mi ubicación
-        </button>
+        <LocateChip geo={geo} onClick={locate} />
         <button type="button" className="chip" onClick={mark} disabled={!canMark(fix, now)}>
           <Icon name="plus" size={18} />
           {fix ? `Marcar punto (±${Math.round(fix.accuracy)} m)` : 'Marcar punto'}

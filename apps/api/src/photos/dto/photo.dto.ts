@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsLatitude, IsLongitude, ValidateIf } from 'class-validator';
+import { IsIn, IsLatitude, IsLongitude, IsOptional, Matches, MaxLength, ValidateIf } from 'class-validator';
 import { TRAIL_STATUSES, type TrailStatus } from '../../db/schema/index.js';
 import { CoordinatesDto } from '../../trails/dto/coordinates.dto.js';
 
@@ -29,6 +29,8 @@ export class QueuePhotoDto extends PhotoDto {
   @ApiProperty({ format: 'date-time' }) createdAt!: string;
 }
 
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 // Both or neither: a lone coordinate is a 400.
 const withPosition = ValidateIf((body: CreatePhotoDto) => body.lat !== undefined || body.lng !== undefined);
 
@@ -43,6 +45,18 @@ export class CreatePhotoDto {
   @withPosition
   @IsLongitude()
   lng?: string;
+
+  // The multipart field limit is 64 bytes (PHOTO_UPLOAD_LIMITS.fieldSize).
+  @ApiPropertyOptional({
+    type: String,
+    pattern: SLUG_PATTERN.source,
+    maxLength: 64,
+    description: 'A published trail with a line: the photo links to it (within 50 m), never to the nearest one',
+  })
+  @IsOptional()
+  @MaxLength(64)
+  @Matches(SLUG_PATTERN)
+  trail?: string;
 }
 
 /** The multipart body as OpenAPI shows it. */

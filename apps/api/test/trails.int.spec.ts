@@ -72,6 +72,11 @@ describe('GET /api/trails', () => {
     expect(body.map((t) => t.slug)).toEqual(['campana-trujillo', 'cerro-chimbote']);
   });
 
+  it('tells whether a trail has a line', async () => {
+    const body = (await (await get('/trails')).json()) as { slug: string; hasPath: boolean }[];
+    expect(Object.fromEntries(body.map((t) => [t.slug, t.hasPath]))).toEqual({ 'campana-trujillo': false, 'cerro-chimbote': true });
+  });
+
   it('maps the start point to { lat, lng }', async () => {
     const body = (await (await get('/trails?ubigeo=021801')).json()) as unknown[];
     expect(body).toEqual([
@@ -88,6 +93,7 @@ describe('GET /api/trails', () => {
         elevationLossM: null,
         elevationProfile: null,
         previewPhotos: [],
+        hasPath: true,
       },
     ]);
   });

@@ -3,6 +3,7 @@
 // against the S3 mock (docker-compose.dev.yml locally, a CI service).
 import { crc32 } from 'node:zlib';
 import { CopyObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
+import { eq } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import exifr from 'exifr';
 import type pg from 'pg';
@@ -141,13 +142,14 @@ const as = (cookie: string | null, origin: string | null = WEB_ORIGIN): Headers 
   ...(origin ? { origin } : {}),
 });
 
-function upload(app: AuthTestApp, headers: Headers, file: Uint8Array | null, position?: { lat: number; lng: number } | Record<string, string>) {
+type Fields = Record<string, string | number>;
+function upload(app: AuthTestApp, headers: Headers, file: Uint8Array | null, position?: Fields) {
   const form = new FormData();
   if (position) for (const [key, value] of Object.entries(position)) form.append(key, String(value));
   if (file) form.append('photo', new Blob([new Uint8Array(file)]), 'IMG_0001.jpg');
   return fetch(`${app.url}/api/photos`, { method: 'POST', headers, body: form });
 }
-const post = (headers: Headers, file: Uint8Array | null, position?: { lat: number; lng: number } | Record<string, string>) => upload(t, headers, file, position);
+const post = (headers: Headers, file: Uint8Array | null, position?: Fields) => upload(t, headers, file, position);
 const patch = (id: string, headers: Headers, body: unknown) =>
   fetch(`${t.url}/api/photos/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 const get = (path: string, headers: Headers = as(null, null)) => fetch(`${t.url}/api${path}`, { headers });
@@ -330,6 +332,190 @@ describe('POST /api/photos: the position and the trail link (V2, V3)', () => {
     await seedTrail('published', shifted(25), 'medio');
     const res = await post(as(rider), await plainJpeg(), near(0.5, 0));
     expect(await res.json()).toMatchObject({ trailSlug: 'cerca' });
+  });
+});
+
+describe('POST /api/photos: a named trail and the EXIF fallback (plan §10 L3-7, A8, A10)', () => {
+  /** LINE moved `m` metres east; `reversed` runs it north, so its line fractions are the other way round. */
+  const shifted = (m: number, reversed = false): [number, number][] => {
+    const line = LINE.map(([lng, lat]): [number, number] => [lng + m * LNG_PER_M, lat]);
+    return reversed ? line.reverse() : line;
+  };
+  const rowOf = async (id: string) =>
+    (await client.query<{ trail_id: string; line_fraction: number }>('select trail_id, line_fraction from trail_photos where id = $1', [id])).rows[0];
+
+  it('links a four-part upload to the named trail 40 m away, not to another trail 10 m away; the fraction is on the named line', async () => {
+    const named = await seedTrail('published', LINE, 'nombrado');
+    await seedTrail('published', shifted(30, true), 'cerca');
+    const res = await post(as(rider), await plainJpeg(), { ...near(0.3, 40), trail: named.slug });
+    expect(res.status).toBe(201);
+    const photo = (await res.json()) as Photo;
+    expect(photo.trailSlug).toBe('nombrado');
+    const row = await rowOf(photo.id);
+    expect(row?.trail_id).toBe(named.id);
+    expect(row?.line_fraction).toBeCloseTo(0.3, 2);
+  });
+
+  it('answers 422 NO_TRAIL_NEARBY for the named trail 60 m away, even with another trail 10 m away', async () => {
+    const named = await seedTrail('published', LINE, 'nombrado');
+    await seedTrail('published', shifted(50), 'cerca');
+    const res = await post(as(rider), await plainJpeg(), { ...near(0.5, 60), trail: named.slug });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
+    expect(await count()).toBe(0);
+  });
+
+  it('answers 404 TRAIL_NOT_FOUND to an unknown, draft, hidden or pathless trail before any decode or storage call; 400 to a bad slug', async () => {
+    await seedTrail('draft', LINE, 'borrador');
+    await seedTrail('hidden', LINE, 'oculto');
+    await seedTrail('published', LINE, 'sin-linea');
+    await client.query(`update trails set path = null where slug = 'sin-linea'`);
+    const put = vi.spyOn(t.app.get(MediaStorage), 'putPrivate');
+    try {
+      for (const slug of ['no-existe', 'borrador', 'oculto', 'sin-linea']) {
+        // A bomb would be 413 once decoded: the 404 proves the check runs first.
+        const res = await post(as(rider), bombPng(), { ...near(0.5, 0), trail: slug });
+        expect(res.status, slug).toBe(404);
+        expect(await res.json()).toMatchObject({ code: 'TRAIL_NOT_FOUND' });
+      }
+      expect((await post(as(rider), await plainJpeg(), { ...near(0.5, 0), trail: 'Con Espacio' })).status).toBe(400);
+      expect(put).not.toHaveBeenCalled();
+      expect(await count()).toBe(0);
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it('re-checks the publication in the insert transaction: a trail unpublished during the upload gets 404 and no row, no file', async () => {
+    const named = await seedTrail('published', LINE, 'nombrado');
+    const media = t.app.get(MediaStorage);
+    const real = media.putPrivate.bind(media);
+    const put = vi.spyOn(media, 'putPrivate').mockImplementation(async (key, body) => {
+      await db.update(trails).set({ status: 'draft' }).where(eq(trails.id, named.id));
+      return real(key, body);
+    });
+    try {
+      const res = await post(as(rider), await plainJpeg(), { ...near(0.5, 0), trail: named.slug });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toMatchObject({ code: 'TRAIL_NOT_FOUND' });
+      expect(await count()).toBe(0);
+      expect(await listKeys()).toEqual([]);
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it('checks the named trail before NO_POSITION: a PNG without a position gets 404 for an unavailable slug, 400 for a published one', async () => {
+    await seedTrail('published', LINE, 'nombrado');
+    await seedTrail('draft', LINE, 'borrador');
+    for (const slug of ['borrador', 'no-existe']) {
+      const res = await post(as(rider), bombPng(), { trail: slug });
+      expect(res.status, slug).toBe(404);
+      expect(await res.json()).toMatchObject({ code: 'TRAIL_NOT_FOUND' });
+    }
+    const res = await post(as(rider), bombPng(), { trail: 'nombrado' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: 'NO_POSITION' });
+  });
+
+  it('keeps the named trail in the EXIF fallback: linked to it, not to the trail under the EXIF position', async () => {
+    const named = await seedTrail('published', shifted(40), 'nombrado');
+    await seedTrail('published', LINE, 'cerca');
+    const res = await post(as(rider), await cameraJpeg(), { ...near(0.5, 500), trail: 'nombrado' });
+    expect(res.status).toBe(201);
+    const photo = (await res.json()) as Photo;
+    expect(photo.trailSlug).toBe('nombrado');
+    const row = await rowOf(photo.id);
+    expect(row?.trail_id).toBe(named.id);
+    expect(row?.line_fraction).toBeCloseTo(0.25, 2);
+  });
+
+  it('answers 422 when both the body and the EXIF position are far from the named trail, even with the EXIF on another trail', async () => {
+    await seedTrail('published', shifted(300), 'nombrado');
+    await seedTrail('published', LINE, 'cerca');
+    const res = await post(as(rider), await cameraJpeg(), { ...near(0.5, 500), trail: 'nombrado' });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
+    expect(await count()).toBe(0);
+  });
+
+  it('refuses a far PNG with 422 before decoding it', async () => {
+    await seedTrail();
+    // A bomb would be 413 once decoded: the 422 proves the refusal comes first.
+    const res = await post(as(rider), bombPng(), near(0.5, 500));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
+  });
+
+  it('re-checks the publication of the nearest trail too: unpublished during the upload gets 422, no row, no file', async () => {
+    const trail = await seedTrail();
+    const media = t.app.get(MediaStorage);
+    const real = media.putPrivate.bind(media);
+    const put = vi.spyOn(media, 'putPrivate').mockImplementation(async (key, body) => {
+      await db.update(trails).set({ status: 'draft' }).where(eq(trails.id, trail.id));
+      return real(key, body);
+    });
+    try {
+      const res = await post(as(rider), await plainJpeg(), near(0.5, 0));
+      expect(res.status).toBe(422);
+      expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
+      expect(await count()).toBe(0);
+      expect(await listKeys()).toEqual([]);
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it('holds a share lock on the trail until the insert commits: a concurrent unpublish waits', async () => {
+    const trail = await seedTrail();
+    // `blocker` stops the upload at its insert (SHARE conflicts with the insert's ROW EXCLUSIVE),
+    // after the trail read; `other` then tries to unpublish the trail from a third connection.
+    const blocker = await openTestClient();
+    const other = await openTestClient();
+    try {
+      await blocker.query('begin');
+      await blocker.query('lock table trail_photos in share mode');
+      const upload = post(as(rider), await plainJpeg(), near(0.5, 0));
+      await expect
+        .poll(
+          async () =>
+            Number(
+              (
+                await client.query<{ n: string }>(
+                  `select count(*) as n from pg_stat_activity where wait_event_type = 'Lock' and query ilike 'insert into "trail_photos"%'`,
+                )
+              ).rows[0]!.n,
+            ),
+          { timeout: 10_000 },
+        )
+        .toBe(1);
+      await other.query(`set lock_timeout = '300ms'`);
+      // With the share lock, the update cannot take the row while the upload's transaction is open.
+      await expect(other.query(`update trails set status = 'draft' where id = $1`, [trail.id])).rejects.toMatchObject({ code: '55P03' });
+      await blocker.query('commit');
+      expect((await upload).status).toBe(201);
+      expect(await count()).toBe(1);
+    } finally {
+      await blocker.query('rollback').catch(() => undefined);
+      await blocker.end();
+      await other.end();
+    }
+  });
+
+  it('falls back to the EXIF position when the body position has no trail within 50 m', async () => {
+    await seedTrail();
+    const res = await post(as(rider), await cameraJpeg(), near(0.5, 500));
+    expect(res.status).toBe(201);
+    const photo = (await res.json()) as Photo;
+    expect(photo.lineFraction).toBeCloseTo(0.25, 2);
+    expect(photo.position.lat).toBeCloseTo(-9.0925, 6);
+  });
+
+  it('answers 422 when the body position is far and the photo has no EXIF GPS', async () => {
+    await seedTrail();
+    const res = await post(as(rider), await plainJpeg(), near(0.5, 500));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
   });
 });
 

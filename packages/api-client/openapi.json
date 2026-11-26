@@ -29,6 +29,12 @@
             "description": "One JPEG, PNG or WebP, at most 10 MiB",
             "format": "binary",
             "type": "string"
+          },
+          "trail": {
+            "description": "A published trail with a line: the photo links to it (within 50 m), never to the nearest one",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
           }
         },
         "required": [
@@ -207,6 +213,10 @@
             "nullable": true,
             "type": "array"
           },
+          "hasPath": {
+            "description": "The trail has a line: a vista can attach to it (plan §10.1 A9)",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -247,6 +257,7 @@
           "elevationGainM",
           "elevationLossM",
           "elevationProfile",
+          "hasPath",
           "status"
         ],
         "type": "object"
@@ -455,6 +466,10 @@
             "nullable": true,
             "type": "array"
           },
+          "hasPath": {
+            "description": "The trail has a line: a vista can attach to it (plan §10.1 A9)",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -495,6 +510,7 @@
           "elevationGainM",
           "elevationLossM",
           "elevationProfile",
+          "hasPath",
           "status",
           "authorEmail"
         ],
@@ -557,6 +573,10 @@
             "nullable": true,
             "type": "object"
           },
+          "hasPath": {
+            "description": "The trail has a line: a vista can attach to it (plan §10.1 A9)",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -617,6 +637,7 @@
           "elevationGainM",
           "elevationLossM",
           "elevationProfile",
+          "hasPath",
           "status",
           "description",
           "end",
@@ -664,6 +685,10 @@
             "nullable": true,
             "type": "array"
           },
+          "hasPath": {
+            "description": "The trail has a line: a vista can attach to it (plan §10.1 A9)",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "type": "string"
@@ -704,6 +729,7 @@
           "elevationGainM",
           "elevationLossM",
           "elevationProfile",
+          "hasPath",
           "previewPhotos"
         ],
         "type": "object"
@@ -1030,6 +1056,16 @@
           "401": {
             "description": "No valid session"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "TRAIL_NOT_FOUND: the `trail` slug names no published trail with a line"
+          },
           "413": {
             "content": {
               "application/json": {
@@ -1058,7 +1094,7 @@
                 }
               }
             },
-            "description": "NO_TRAIL_NEARBY: no published trail within 50 m"
+            "description": "NO_TRAIL_NEARBY: no published trail within 50 m (with `trail`: that trail)"
           },
           "429": {
             "content": {

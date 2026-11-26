@@ -50,6 +50,7 @@ export class TrailSummaryDto {
   @ApiProperty({ type: Number, nullable: true }) elevationLossM!: number | null;
   @ApiProperty(pairs('[distance_m, ele_m] pairs, at most 300'))
   elevationProfile!: ProfilePoint[] | null;
+  @ApiProperty({ description: 'The trail has a line: a vista can attach to it (plan §10.1 A9)' }) hasPath!: boolean;
 }
 
 /** A photo on an Explorar card (plan §10.1 A12): published only. */

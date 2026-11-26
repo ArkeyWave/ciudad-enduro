@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { MESSAGES } from './auth-errors';
-import { photoErrorMessage, positionFields } from './photos-client';
+import { photoErrorMessage, positionFields, submitPosition } from './photos-client';
 
 describe('photoErrorMessage', () => {
   it('maps the API codes of plan §9 to their Spanish messages, before the status', () => {
     expect(photoErrorMessage({ status: 422, code: 'NO_TRAIL_NEARBY' })).toBe('No hay un sendero a menos de 50 m.');
-    expect(photoErrorMessage({ status: 400, code: 'NO_POSITION' })).toBe('No sabemos dónde tomaste la foto. Activa tu ubicación.');
+    expect(photoErrorMessage({ status: 400, code: 'NO_POSITION' })).toBe('Toca el mapa donde tomaste la foto.');
+    expect(photoErrorMessage({ status: 404, code: 'TRAIL_NOT_FOUND' })).toBe('Este sendero no está disponible.');
     expect(photoErrorMessage({ status: 429, code: 'TOO_MANY_PENDING' })).toBe('Tienes 20 vistas en revisión. Espera la aprobación.');
     // 413 also has a status message: the code must still win.
     expect(photoErrorMessage({ status: 413, code: 'PHOTO_TOO_LARGE' })).toBe('La foto tiene demasiados píxeles.');
@@ -34,5 +35,21 @@ describe('positionFields (the tracer gate, plan §9 V2)', () => {
     expect(positionFields(null, now)).toBeNull();
     expect(positionFields({ ...fix, accuracy: 31 }, now)).toBeNull();
     expect(positionFields({ ...fix, at: now - 10_001 }, now)).toBeNull();
+  });
+});
+
+describe('submitPosition (plan §10.1 A10: the pin, else a good fix, else none)', () => {
+  const now = 1_000_000;
+  const fix = { lat: -9.0925, lng: -78.52, accuracy: 8, at: now };
+  const pin = { lat: -9.1, lng: -78.53 };
+
+  it('sends the pin over a good fix', () => {
+    expect(submitPosition(pin, fix, now)).toEqual({ lat: '-9.1', lng: '-78.53' });
+  });
+
+  it('sends a good fix without a pin, and nothing without a pin and a good fix', () => {
+    expect(submitPosition(null, fix, now)).toEqual({ lat: '-9.0925', lng: '-78.52' });
+    expect(submitPosition(null, { ...fix, accuracy: 31 }, now)).toBeNull();
+    expect(submitPosition(null, null, now)).toBeNull();
   });
 });

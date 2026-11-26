@@ -317,7 +317,19 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 }
 .mini-stats { display: flex; gap: 12px; font-size: 11px; color: var(--muted); font-weight: 500; }
 .tracer-map { height: 360px; }
-.tracer-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.tracer-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 4px; }
+/* "Mi ubicación" with a fix (plan §10 L3-5); the state itself is the text next to it. */
+.chip.located { background: var(--lime); border-color: var(--lime); color: #0A0A0A; }
+.chip .spin { display: inline-flex; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.chip-state { font-size: 12px; color: var(--muted); }
+/* The vista pin (plan §10 L3-6): draggable, 28 px. */
+.photo-pin { border-radius: 50%; background: var(--lime); border: 3px solid #0A0A0A; box-shadow: 0 2px 8px rgba(0,0,0,0.6); cursor: grab; }
+.trail-pick { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.trail-pick a {
+  display: flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 12px;
+  background: var(--card); border: 1px solid var(--border); color: var(--text); text-decoration: none; font-weight: 600;
+}
 
 /* ── Vistas (trail photos, plan §9 V5) ───────────────────────── */
 .photo-preview { display: block; width: 100%; height: auto; border-radius: 16px; }
