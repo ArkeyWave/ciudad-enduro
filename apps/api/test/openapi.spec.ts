@@ -30,7 +30,7 @@ describe('OpenAPI document', () => {
   it('references the DTOs in the 200 responses', () => {
     expect(okSchema('/api/trails')?.content['application/json']?.schema).toEqual({
       type: 'array',
-      items: { $ref: '#/components/schemas/TrailSummaryDto' },
+      items: { $ref: '#/components/schemas/TrailListItemDto' },
     });
     expect(okSchema('/api/trails/{slug}')?.content['application/json']?.schema).toEqual({
       $ref: '#/components/schemas/TrailDetailDto',

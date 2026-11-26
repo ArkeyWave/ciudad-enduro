@@ -1,14 +1,20 @@
 import { describe, expectTypeOf, test } from 'vitest';
-import { createApiClient, type Coordinates, type District, type TrailDetail, type TrailPhoto, type TrailSummary } from '../src/index.js';
+import { createApiClient, type Coordinates, type District, type TrailDetail, type PreviewPhoto, type TrailListItem, type TrailPhoto, type TrailSummary } from '../src/index.js';
 
 // Type-level contract checks. `pnpm typecheck` and `pnpm test` (vitest --typecheck) both
 // run them through tsc; a broken assertion is a compile error, not a skipped test.
 const client = createApiClient('http://localhost');
 
 describe('trails contract', () => {
-  test('GET /api/trails returns TrailSummary[]', async () => {
+  test('GET /api/trails returns TrailListItem[]: the summary and the card photos (plan §10.1 A12)', async () => {
     const { data } = await client.GET('/api/trails');
-    expectTypeOf(data).toEqualTypeOf<TrailSummary[] | undefined>();
+    expectTypeOf(data).toEqualTypeOf<TrailListItem[] | undefined>();
+    expectTypeOf<TrailListItem['previewPhotos']>().toEqualTypeOf<PreviewPhoto[]>();
+    expectTypeOf<PreviewPhoto>().toEqualTypeOf<{ url: string; thumbUrl: string }>();
+  });
+
+  test('only the list carries card photos', () => {
+    expectTypeOf<TrailDetail>().not.toHaveProperty('previewPhotos');
   });
 
   test('the list filters by ubigeo, a plain string; the city filter is gone', async () => {

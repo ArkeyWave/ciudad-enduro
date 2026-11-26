@@ -318,6 +318,23 @@
         ],
         "type": "object"
       },
+      "PreviewPhotoDto": {
+        "properties": {
+          "thumbUrl": {
+            "description": "WebP, 160 px square",
+            "type": "string"
+          },
+          "url": {
+            "description": "WebP, at most 1600 px",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "thumbUrl"
+        ],
+        "type": "object"
+      },
       "QueuePhotoDto": {
         "properties": {
           "authorEmail": {
@@ -610,6 +627,87 @@
         ],
         "type": "object"
       },
+      "TrailListItemDto": {
+        "properties": {
+          "difficulty": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Difficulty"
+              }
+            ]
+          },
+          "distanceM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "district": {
+            "$ref": "#/components/schemas/DistrictDto"
+          },
+          "elevationGainM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationLossM": {
+            "nullable": true,
+            "type": "number"
+          },
+          "elevationProfile": {
+            "description": "[distance_m, ele_m] pairs, at most 300",
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "type": "array"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "previewPhotos": {
+            "description": "At most 5 published photos, line order",
+            "items": {
+              "$ref": "#/components/schemas/PreviewPhotoDto"
+            },
+            "type": "array"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "start": {
+            "$ref": "#/components/schemas/CoordinatesDto"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TrailType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "district",
+          "difficulty",
+          "type",
+          "start",
+          "distanceM",
+          "elevationGainM",
+          "elevationLossM",
+          "elevationProfile",
+          "previewPhotos"
+        ],
+        "type": "object"
+      },
       "TrailPhotoDto": {
         "properties": {
           "heading": {
@@ -676,79 +774,6 @@
           "hidden"
         ],
         "type": "string"
-      },
-      "TrailSummaryDto": {
-        "properties": {
-          "difficulty": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Difficulty"
-              }
-            ]
-          },
-          "distanceM": {
-            "nullable": true,
-            "type": "number"
-          },
-          "district": {
-            "$ref": "#/components/schemas/DistrictDto"
-          },
-          "elevationGainM": {
-            "nullable": true,
-            "type": "number"
-          },
-          "elevationLossM": {
-            "nullable": true,
-            "type": "number"
-          },
-          "elevationProfile": {
-            "description": "[distance_m, ele_m] pairs, at most 300",
-            "items": {
-              "items": {
-                "type": "number"
-              },
-              "maxItems": 2,
-              "minItems": 2,
-              "type": "array"
-            },
-            "nullable": true,
-            "type": "array"
-          },
-          "id": {
-            "format": "uuid",
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "slug": {
-            "type": "string"
-          },
-          "start": {
-            "$ref": "#/components/schemas/CoordinatesDto"
-          },
-          "type": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/TrailType"
-              }
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "slug",
-          "name",
-          "district",
-          "difficulty",
-          "type",
-          "start",
-          "distanceM",
-          "elevationGainM",
-          "elevationLossM",
-          "elevationProfile"
-        ],
-        "type": "object"
       },
       "TrailType": {
         "enum": [
@@ -1182,7 +1207,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/TrailSummaryDto"
+                    "$ref": "#/components/schemas/TrailListItemDto"
                   },
                   "type": "array"
                 }

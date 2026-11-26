@@ -31,7 +31,7 @@ import type { Auth } from '../auth/auth.factory.js';
 import { OriginGuard } from '../auth/origin.guard.js';
 import { hasRole } from '../auth/roles.js';
 import { ListTrailsQuery } from './dto/list-trails.query.js';
-import { ErrorBodyDto, TrailDetailDto, TrailSummaryDto } from './dto/trail.dto.js';
+import { ErrorBodyDto, TrailDetailDto, TrailListItemDto } from './dto/trail.dto.js';
 import { CreateTrailBody, CreateTrailDto, UpdateTrailDto } from './dto/write-trail.dto.js';
 import { TrailsService } from './trails.service.js';
 import { UploadThrottleGuard } from './upload-throttle.js';
@@ -70,8 +70,8 @@ export class TrailsController {
 
   @Get()
   @AllowAnonymous()
-  @ApiOkResponse({ type: TrailSummaryDto, isArray: true })
-  list(@Query() query: ListTrailsQuery): Promise<TrailSummaryDto[]> {
+  @ApiOkResponse({ type: TrailListItemDto, isArray: true })
+  list(@Query() query: ListTrailsQuery): Promise<TrailListItemDto[]> {
     return this.trails.listPublished(query.ubigeo);
   }
 

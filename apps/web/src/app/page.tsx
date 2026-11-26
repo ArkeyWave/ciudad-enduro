@@ -16,7 +16,7 @@ async function TrailList() {
       <ul className="list">
         {trails.map((trail) => (
           <li key={trail.id}>
-            <TrailCard trail={trail} />
+            <TrailCard trail={trail} slides={trail.previewPhotos} />
           </li>
         ))}
       </ul>
