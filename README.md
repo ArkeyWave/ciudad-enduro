@@ -126,7 +126,7 @@ app in the process.
 The typed client is generated from the API contract. After an API change:
 
 ```bash
-pnpm --filter api openapi:emit           # write packages/api-client/openapi.json
+pnpm --filter api openapi:emit           # build packages/geo, write packages/api-client/openapi.json
 pnpm --filter api-client generate        # write packages/api-client/src/schema.d.ts
 ```
 

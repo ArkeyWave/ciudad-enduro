@@ -12,7 +12,7 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=.env --import @swc-node/register/esm-register src/db/migrate.ts",
-    "openapi:emit": "node --import @swc-node/register/esm-register scripts/emit-openapi.ts"
+    "openapi:emit": "pnpm --filter @ciudad-enduro/geo build && node --import @swc-node/register/esm-register scripts/emit-openapi.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1158.0",

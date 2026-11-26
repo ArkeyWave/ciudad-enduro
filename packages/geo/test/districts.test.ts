@@ -33,9 +33,17 @@ describe('searchDistricts', () => {
     expect(codes(searchDistricts('chacna'))).toContain('030411');
   });
 
-  it('puts a district whose name starts with the query first', () => {
-    const found = searchDistricts('chimbote');
-    expect(codes(found).slice(0, 2)).toEqual(['021801', '021809']);
+  it('puts names that start with the query first, then names that contain it', () => {
+    // In code order the Santa Rosa of Amazonas (0106xx) comes before Rosario (0901xx).
+    const names = searchDistricts('rosa').map((d) => d.name);
+    expect(names.slice(0, 3)).toEqual(['Rosario', 'Rosa Panduro', 'Rosaspata']);
+    expect(names.slice(3).every((name) => name === 'Santa Rosa')).toBe(true);
+  });
+
+  it('puts a name match before a match on the province only', () => {
+    expect(searchDistricts('chimbote').map((d) => d.ubigeo)).toEqual(['021801', '021809']);
+    // "cajamarca" also matches the 126 districts of the department; Nueva Cajamarca (San Martín) comes second.
+    expect(searchDistricts('cajamarca').map((d) => d.name).slice(0, 2)).toEqual(['Cajamarca', 'Nueva Cajamarca']);
   });
 
   it('matches every word across district, province and department', () => {

@@ -79,7 +79,7 @@ describe('GET /api/trails', () => {
         id: expect.any(String) as string,
         slug: 'cerro-chimbote',
         name: 'Cerro Chimbote',
-        ubigeo: '021801',
+        district: { ubigeo: '021801', name: 'Chimbote', province: 'Santa', department: 'Ancash' },
         difficulty: 'intermedio',
         type: 'descenso',
         start: { lat: -9.09, lng: -78.52 },
