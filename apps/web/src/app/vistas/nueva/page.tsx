@@ -19,7 +19,7 @@ export default async function NewPhotoPage({ searchParams }: { searchParams: Pro
       <div className="head">
         <h1 className="h-display">Nueva vista</h1>
       </div>
-      {slug !== null && !named ? (
+      {slug !== null && !named && slug.length > 64 ? (
         <p role="alert" className="alert">
           Este sendero no está disponible.
         </p>

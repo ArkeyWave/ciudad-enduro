@@ -175,11 +175,12 @@ export class PhotosService {
     if (!type) throw new UnsupportedMediaTypeException(coded('PHOTO_TYPE'));
     // Only a JPEG can carry the EXIF position (V1b): any other file without one stops here.
     if (!bodyPosition && type !== 'jpeg') throw new BadRequestException(coded('NO_POSITION'));
+    const early = await encodePhoto(bytes, type);
     const named = trailSlug === undefined ? undefined : await this.namedTrail(trailSlug);
     let position = bodyPosition;
     let trail = position ? await this.trailNear(position, named) : undefined;
     if (position && !trail && type !== 'jpeg') throw new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
-    const encoded = await encodePhoto(bytes, type);
+    const encoded = early;
     const { exif } = encoded;
     if (!trail && exif.position) {
       position = exif.position;
