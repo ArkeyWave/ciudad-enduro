@@ -32,6 +32,10 @@ export const seedLineTrail = (slug: string, name: string, line: [number, number]
     [slug, name, line[0]![0], line[0]![1], JSON.stringify({ type: 'LineString', coordinates: line })],
   );
 
+/** Makes a trail a draft of the user with this e-mail, so that user sees it (and nobody else). */
+export const makeDraftOf = (slug: string, email: string) =>
+  query(`UPDATE trails SET status = 'draft', author_id = (SELECT id FROM "user" WHERE email = $2) WHERE slug = $1`, [slug, email]);
+
 /** Deletes a trail; its photos go with it (ON DELETE CASCADE). */
 export const deleteTrail = (slug: string) => query('DELETE FROM trails WHERE slug = $1', [slug]);
 

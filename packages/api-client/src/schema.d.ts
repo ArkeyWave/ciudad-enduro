@@ -165,6 +165,8 @@ export interface components {
              * @description One JPEG, PNG or WebP, at most 10 MiB
              */
             photo: string;
+            /** @description A published trail with a line: the photo links to it (within 50 m), never to the nearest one */
+            trail?: string;
         };
         CreateTrailBody: {
             description?: string;
@@ -546,6 +548,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description TRAIL_NOT_FOUND: the `trail` slug names no published trail with a line */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorBodyDto"];
+                };
+            };
             /** @description Over 10 MiB, or PHOTO_TOO_LARGE: over 50 megapixels */
             413: {
                 headers: {
@@ -564,7 +575,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorBodyDto"];
                 };
             };
-            /** @description NO_TRAIL_NEARBY: no published trail within 50 m */
+            /** @description NO_TRAIL_NEARBY: no published trail within 50 m (with `trail`: that trail) */
             422: {
                 headers: {
                     [name: string]: unknown;

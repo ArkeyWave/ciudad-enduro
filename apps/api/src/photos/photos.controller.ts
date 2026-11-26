@@ -45,12 +45,12 @@ import { CreatePhotoBody, CreatePhotoDto, PhotoDto, QueuePhotoDto, UpdatePhotoDt
 import { PhotosService } from './photos.service.js';
 
 const MiB = 1024 * 1024;
-// One file and the two position fields, flat names only (as the GPX upload, plan D2).
+// One file, the two position fields and the trail slug, flat names only (as the GPX upload, plan D2).
 export const PHOTO_UPLOAD_LIMITS = {
   fileSize: 10 * MiB,
   files: 1,
-  fields: 2,
-  parts: 3,
+  fields: 3,
+  parts: 4,
   fieldSize: 64,
   fieldNameSize: 16,
   fieldNestingDepth: 0,
@@ -76,7 +76,8 @@ export class PhotosController {
   @ApiBadRequestResponse({ type: ErrorBodyDto, description: 'NO_POSITION (no body position and no EXIF GPS), PHOTO_INVALID, or a validation error' })
   @ApiUnsupportedMediaTypeResponse({ type: ErrorBodyDto, description: 'PHOTO_TYPE: not a JPEG, PNG or WebP' })
   @ApiPayloadTooLargeResponse({ type: ErrorBodyDto, description: 'Over 10 MiB, or PHOTO_TOO_LARGE: over 50 megapixels' })
-  @ApiUnprocessableEntityResponse({ type: ErrorBodyDto, description: 'NO_TRAIL_NEARBY: no published trail within 50 m' })
+  @ApiNotFoundResponse({ type: ErrorBodyDto, description: 'TRAIL_NOT_FOUND: the `trail` slug names no published trail with a line' })
+  @ApiUnprocessableEntityResponse({ type: ErrorBodyDto, description: 'NO_TRAIL_NEARBY: no published trail within 50 m (with `trail`: that trail)' })
   @ApiTooManyRequestsResponse({
     type: ErrorBodyDto,
     description: 'TOO_MANY_UPLOADS: a non-admin made 10 uploads (trails and photos) in 10 min; TOO_MANY_PENDING: 20 photos in review',
@@ -88,7 +89,7 @@ export class PhotosController {
     @Session() session: UserSession<Auth>,
   ): Promise<PhotoDto> {
     const position = body.lat !== undefined && body.lng !== undefined ? { lat: Number(body.lat), lng: Number(body.lng) } : null;
-    return this.photos.create({ id: session.user.id, admin: hasRole(session.user.role, ['admin']) }, file.buffer, position);
+    return this.photos.create({ id: session.user.id, admin: hasRole(session.user.role, ['admin']) }, file.buffer, position, body.trail);
   }
 
   @Patch('photos/:id')

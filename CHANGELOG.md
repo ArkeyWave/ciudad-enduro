@@ -1,5 +1,23 @@
 # Changelog
 
+## [Unreleased] - Layer 3-B: location, the vista pin, vistas from the trail
+
+### Added
+- `POST /api/photos` takes an optional `trail` slug (plan `docs/plans/2026-11-11-ui-redesign-layer-1.md` §10 L3-7, amendment A8; multipart DTO and OpenAPI: `pattern ^[a-z0-9]+(?:-[a-z0-9]+)*$`, at most 64; `PHOTO_UPLOAD_LIMITS` → `fields: 3, parts: 4`). The slug must name a published trail with a line, else 404 `TRAIL_NOT_FOUND` (documented), checked before any decode or storage call. With a slug the photo links to that trail only: the distance (50 m) and `line_fraction` are against its line, and it is a 422 `NO_TRAIL_NEARBY` beyond 50 m even when another trail is nearer; without a slug the nearest published trail as before. The insert transaction re-reads the trail `for share`: a trail unpublished during the upload is a 404 (named) or a 422 (nearest), with no row and no file. `packages/api-client` regenerated.
+- EXIF fallback (A10): when the body position has no trail within 50 m and the JPEG has EXIF GPS, the API tries the EXIF position (and stores it as the photo position). A PNG or WebP far from every trail is still refused before the decode.
+- `/vistas/nueva` (L3-6, A10): a Leaflet map (`components/photo/PhotoMap.tsx`) with one explicit pin: a tap places it, a drag moves it, "Poner aquí" puts it at the map centre (the keyboard way); a fix never moves it. The upload sends the pin, else a fix that passes the tracer gate (≤ 30 m, ≤ 10 s), else no position (the API reads the EXIF GPS): `submitPosition` in `lib/photos-client.ts`. Without `?ruta=` and without a good fix, the rider first picks a published trail from a list (a link to `?ruta=<slug>`); once shown, the map stays when the fix goes stale.
+- `?ruta=<slug>` (A9): the page shows that trail's line and the map starts on it; the form sends `trail=<slug>`. A slug that is not a published trail with a line shows "Este sendero no está disponible." and no map and no form.
+- "Agregar vista" on the trail page (a link to `/vistas/nueva?ruta=<slug>`): only on a published trail with a line, for signed-in users; anonymous visitors do not see it.
+- Spanish messages: `TRAIL_NOT_FOUND` → "Este sendero no está disponible."; `NO_POSITION` → "Toca el mapa donde tomaste la foto." (was "… Activa tu ubicación.").
+
+### Changed
+- "Mi ubicación" (L3-5, A11; `components/trail/Locate.tsx`, shared by the tracer and `/vistas/nueva`): the accessible name is "Centrar en mi ubicación", no `aria-pressed`; the state is text in a live region next to it ("Buscando…", "±N m"; a denial shows the page's alert), a turning icon while searching and a lime chip with a fix. Both maps draw the fix as the tracer did (cyan dot and accuracy circle, gone with a stale fix of a hidden page) and the dot follows each fix; a tap re-centres. The tracer map centres on the first fix of a watch; the `/vistas/nueva` map does so only without a trail line.
+
+### Tests
+- `apps/api/test/photos.int.spec.ts`: a four-part upload with `trail` 40 m from it and 10 m from a reversed trail links to the named one (its id and `line_fraction` 0.3 in the row); the named trail 60 m away with another one 10 m away → 422; an unknown, draft, hidden or pathless slug → 404 with a bomb PNG (no decode) and no `putPrivate` call, a bad slug → 400; a trail unpublished during the upload → 404, no row, no file; body 500 m away + EXIF on the line → linked at the EXIF fraction; body far, no EXIF → 422. `openapi.spec.ts`: the `trail` pattern and the documented 404. `photos-client.test.ts`: the pin over a good fix, a good fix without a pin, nothing else; the two messages.
+- e2e `location.spec.ts`: the tracer chip states with a mocked geolocation ("Buscando…", "±12 m", the dot moves with the next fix, the denied alert, never `aria-pressed`, axe); geolocation denied: pick the trail, its line, a tap, the upload sends `lat`/`lng` and `trail` and the photo is "En revisión" on the trail; "Poner aquí" with the keyboard; tap, drag, then a mocked fix: the pin stays and the three uploads send the tap, then the dragged pin twice; "Agregar vista" opens the form, absent on the rider's own draft and for an anonymous visitor; an unavailable `?ruta=` (draft, unknown) has no map.
+- The L3-A unmount e2e (`districts.spec.ts`) keeps `window.next.router.push`: the new client links are on the trail page and `/vistas/nueva`, none on the tracer page.
+
 ## [Unreleased] - Layer 3-A: districts of Peru
 
 ### Changed

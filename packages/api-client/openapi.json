@@ -29,6 +29,12 @@
             "description": "One JPEG, PNG or WebP, at most 10 MiB",
             "format": "binary",
             "type": "string"
+          },
+          "trail": {
+            "description": "A published trail with a line: the photo links to it (within 50 m), never to the nearest one",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "type": "string"
           }
         },
         "required": [
@@ -1005,6 +1011,16 @@
           "401": {
             "description": "No valid session"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBodyDto"
+                }
+              }
+            },
+            "description": "TRAIL_NOT_FOUND: the `trail` slug names no published trail with a line"
+          },
           "413": {
             "content": {
               "application/json": {
@@ -1033,7 +1049,7 @@
                 }
               }
             },
-            "description": "NO_TRAIL_NEARBY: no published trail within 50 m"
+            "description": "NO_TRAIL_NEARBY: no published trail within 50 m (with `trail`: that trail)"
           },
           "429": {
             "content": {

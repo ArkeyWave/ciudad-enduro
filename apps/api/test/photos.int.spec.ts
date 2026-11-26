@@ -3,6 +3,7 @@
 // against the S3 mock (docker-compose.dev.yml locally, a CI service).
 import { crc32 } from 'node:zlib';
 import { CopyObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
+import { eq } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import exifr from 'exifr';
 import type pg from 'pg';
@@ -141,13 +142,14 @@ const as = (cookie: string | null, origin: string | null = WEB_ORIGIN): Headers 
   ...(origin ? { origin } : {}),
 });
 
-function upload(app: AuthTestApp, headers: Headers, file: Uint8Array | null, position?: { lat: number; lng: number } | Record<string, string>) {
+type Fields = Record<string, string | number>;
+function upload(app: AuthTestApp, headers: Headers, file: Uint8Array | null, position?: Fields) {
   const form = new FormData();
   if (position) for (const [key, value] of Object.entries(position)) form.append(key, String(value));
   if (file) form.append('photo', new Blob([new Uint8Array(file)]), 'IMG_0001.jpg');
   return fetch(`${app.url}/api/photos`, { method: 'POST', headers, body: form });
 }
-const post = (headers: Headers, file: Uint8Array | null, position?: { lat: number; lng: number } | Record<string, string>) => upload(t, headers, file, position);
+const post = (headers: Headers, file: Uint8Array | null, position?: Fields) => upload(t, headers, file, position);
 const patch = (id: string, headers: Headers, body: unknown) =>
   fetch(`${t.url}/api/photos/${id}`, { method: 'PATCH', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 const get = (path: string, headers: Headers = as(null, null)) => fetch(`${t.url}/api${path}`, { headers });
@@ -330,6 +332,93 @@ describe('POST /api/photos: the position and the trail link (V2, V3)', () => {
     await seedTrail('published', shifted(25), 'medio');
     const res = await post(as(rider), await plainJpeg(), near(0.5, 0));
     expect(await res.json()).toMatchObject({ trailSlug: 'cerca' });
+  });
+});
+
+describe('POST /api/photos: a named trail and the EXIF fallback (plan §10 L3-7, A8, A10)', () => {
+  /** LINE moved `m` metres east; `reversed` runs it north, so its line fractions are the other way round. */
+  const shifted = (m: number, reversed = false): [number, number][] => {
+    const line = LINE.map(([lng, lat]): [number, number] => [lng + m * LNG_PER_M, lat]);
+    return reversed ? line.reverse() : line;
+  };
+  const rowOf = async (id: string) =>
+    (await client.query<{ trail_id: string; line_fraction: number }>('select trail_id, line_fraction from trail_photos where id = $1', [id])).rows[0];
+
+  it('links a four-part upload to the named trail 40 m away, not to another trail 10 m away; the fraction is on the named line', async () => {
+    const named = await seedTrail('published', LINE, 'nombrado');
+    await seedTrail('published', shifted(30, true), 'cerca');
+    const res = await post(as(rider), await plainJpeg(), { ...near(0.3, 40), trail: named.slug });
+    expect(res.status).toBe(201);
+    const photo = (await res.json()) as Photo;
+    expect(photo.trailSlug).toBe('nombrado');
+    const row = await rowOf(photo.id);
+    expect(row?.trail_id).toBe(named.id);
+    expect(row?.line_fraction).toBeCloseTo(0.3, 2);
+  });
+
+  it('answers 422 NO_TRAIL_NEARBY for the named trail 60 m away, even with another trail 10 m away', async () => {
+    const named = await seedTrail('published', LINE, 'nombrado');
+    await seedTrail('published', shifted(50), 'cerca');
+    const res = await post(as(rider), await plainJpeg(), { ...near(0.5, 60), trail: named.slug });
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
+    expect(await count()).toBe(0);
+  });
+
+  it('answers 404 TRAIL_NOT_FOUND to an unknown, draft, hidden or pathless trail before any decode or storage call; 400 to a bad slug', async () => {
+    await seedTrail('draft', LINE, 'borrador');
+    await seedTrail('hidden', LINE, 'oculto');
+    await seedTrail('published', LINE, 'sin-linea');
+    await client.query(`update trails set path = null where slug = 'sin-linea'`);
+    const put = vi.spyOn(t.app.get(MediaStorage), 'putPrivate');
+    try {
+      for (const slug of ['no-existe', 'borrador', 'oculto', 'sin-linea']) {
+        // A bomb would be 413 once decoded: the 404 proves the check runs first.
+        const res = await post(as(rider), bombPng(), { ...near(0.5, 0), trail: slug });
+        expect(res.status, slug).toBe(404);
+        expect(await res.json()).toMatchObject({ code: 'TRAIL_NOT_FOUND' });
+      }
+      expect((await post(as(rider), await plainJpeg(), { ...near(0.5, 0), trail: 'Con Espacio' })).status).toBe(400);
+      expect(put).not.toHaveBeenCalled();
+      expect(await count()).toBe(0);
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it('re-checks the publication in the insert transaction: a trail unpublished during the upload gets 404 and no row, no file', async () => {
+    const named = await seedTrail('published', LINE, 'nombrado');
+    const media = t.app.get(MediaStorage);
+    const real = media.putPrivate.bind(media);
+    const put = vi.spyOn(media, 'putPrivate').mockImplementation(async (key, body) => {
+      await db.update(trails).set({ status: 'draft' }).where(eq(trails.id, named.id));
+      return real(key, body);
+    });
+    try {
+      const res = await post(as(rider), await plainJpeg(), { ...near(0.5, 0), trail: named.slug });
+      expect(res.status).toBe(404);
+      expect(await res.json()).toMatchObject({ code: 'TRAIL_NOT_FOUND' });
+      expect(await count()).toBe(0);
+      expect(await listKeys()).toEqual([]);
+    } finally {
+      put.mockRestore();
+    }
+  });
+
+  it('falls back to the EXIF position when the body position has no trail within 50 m', async () => {
+    await seedTrail();
+    const res = await post(as(rider), await cameraJpeg(), near(0.5, 500));
+    expect(res.status).toBe(201);
+    const photo = (await res.json()) as Photo;
+    expect(photo.lineFraction).toBeCloseTo(0.25, 2);
+    expect(photo.position.lat).toBeCloseTo(-9.0925, 6);
+  });
+
+  it('answers 422 when the body position is far and the photo has no EXIF GPS', async () => {
+    await seedTrail();
+    const res = await post(as(rider), await plainJpeg(), near(0.5, 500));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ code: 'NO_TRAIL_NEARBY' });
   });
 });
 

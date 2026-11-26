@@ -7,11 +7,12 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
-import { and, asc, count, eq, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, isNotNull, or, sql, type SQL } from 'drizzle-orm';
 import { DB, type Database } from '../db/db.provider.js';
 import { trailPhotos, trails, user, type TrailStatus } from '../db/schema/index.js';
 import type { LngLat } from '../db/types/geo.js';
@@ -159,25 +160,34 @@ export class PhotosService {
   }
 
   /**
-   * A new draft photo (plan §9 V1–V4, V1c). Order: the pending limit (a shortcut), the type by
-   * magic bytes, the trail near the body position (when given: no encode for a far photo), the
-   * EXIF fields (JPEG only) and the re-encode in one encode slot, the position (body, else EXIF),
-   * the nearest published trail, the upload of both files to the PRIVATE bucket, then the row under
-   * a per-author lock with the limit rechecked. Both uploads settle before any cleanup; a failed
-   * upload writes no row and a failed insert deletes the files.
+   * A new draft photo (plan §9 V1–V4, V1c; §10 L3-7, A8, A10). Order: the pending limit (a
+   * shortcut), the type by magic bytes, the named trail (404 before any decode), the trail near the
+   * body position (when given: no decode for a far PNG or WebP, which has no EXIF fallback), the
+   * EXIF fields (JPEG only) and the re-encode in one encode slot, the EXIF position when the body
+   * has none or has no trail near it, the upload of both files to the PRIVATE bucket, then the row
+   * under a per-author lock with the limit and the trail's publication rechecked. With a named
+   * trail the photo links to that trail only, never to the nearest one. Both uploads settle before
+   * any cleanup; a failed upload writes no row and a failed insert deletes the files.
    */
-  async create(uploader: { id: string; admin: boolean }, bytes: Uint8Array, bodyPosition: LngLat | null): Promise<PhotoDto> {
+  async create(uploader: { id: string; admin: boolean }, bytes: Uint8Array, bodyPosition: LngLat | null, trailSlug?: string): Promise<PhotoDto> {
     if (!uploader.admin) await this.refuseTooManyPending(this.db, uploader.id);
     const type = photoType(bytes);
     if (!type) throw new UnsupportedMediaTypeException(coded('PHOTO_TYPE'));
     // Only a JPEG can carry the EXIF position (V1b): any other file without one stops here.
     if (!bodyPosition && type !== 'jpeg') throw new BadRequestException(coded('NO_POSITION'));
-    let trail = bodyPosition ? await this.requireTrail(bodyPosition) : undefined;
+    const named = trailSlug === undefined ? undefined : await this.namedTrail(trailSlug);
+    let position = bodyPosition;
+    let trail = position ? await this.trailNear(position, named) : undefined;
+    if (position && !trail && type !== 'jpeg') throw new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
     const encoded = await encodePhoto(bytes, type);
     const { exif } = encoded;
-    const position = bodyPosition ?? exif.position;
+    if (!trail && exif.position) {
+      position = exif.position;
+      trail = await this.trailNear(position, named);
+    }
     if (!position) throw new BadRequestException(coded('NO_POSITION'));
-    trail ??= await this.requireTrail(position);
+    if (!trail) throw new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
+    const linked = trail;
 
     const id = randomUUID();
     const imageKey = this.media.key(`${id}.webp`);
@@ -199,12 +209,17 @@ export class PhotosService {
           await tx.execute(sql`select pg_advisory_xact_lock(${PHOTO_LOCK}, hashtext(${uploader.id}))`);
           await this.refuseTooManyPending(tx, uploader.id);
         }
+        // `for share`: an unpublish waits for this insert, and a trail unpublished during the upload is refused.
+        const [current] = await tx.select({ status: trails.status }).from(trails).where(eq(trails.id, linked.id)).for('share');
+        if (current?.status !== 'published') {
+          throw named ? new NotFoundException(coded('TRAIL_NOT_FOUND')) : new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
+        }
         await tx.insert(trailPhotos).values({
           id,
-          trailId: trail.id,
+          trailId: linked.id,
           authorId: uploader.id,
           position,
-          lineFraction: trail.fraction,
+          lineFraction: linked.fraction,
           exifPosition: exif.position,
           altitudeM: exif.altitudeM,
           heading: exif.heading,
@@ -225,19 +240,31 @@ export class PhotosService {
     return (await this.findOne(id))!;
   }
 
-  private async requireTrail(position: LngLat): Promise<{ id: string; fraction: number }> {
-    const trail = await this.nearestTrail(position);
-    if (!trail) throw new UnprocessableEntityException(coded('NO_TRAIL_NEARBY'));
-    return trail;
+  /** The published trail with a line that the upload names; else 404 TRAIL_NOT_FOUND. */
+  private async namedTrail(slug: string): Promise<{ id: string }> {
+    const [row] = await this.db
+      .select({ id: trails.id })
+      .from(trails)
+      .where(and(eq(trails.slug, slug), eq(trails.status, 'published'), isNotNull(trails.path)));
+    if (!row) throw new NotFoundException(coded('TRAIL_NOT_FOUND'));
+    return row;
   }
 
-  /** The nearest published trail whose line passes within NEARBY_M, and the point's place on it. */
-  private async nearestTrail({ lng, lat }: LngLat): Promise<{ id: string; fraction: number } | undefined> {
+  /**
+   * The trail whose line passes within NEARBY_M of the point, and the point's place on it: the named
+   * trail only, else the nearest published one.
+   */
+  private async trailNear({ lng, lat }: LngLat, named?: { id: string }): Promise<{ id: string; fraction: number } | undefined> {
     const point = sql`ST_SetSRID(ST_MakePoint(${lng}::float8, ${lat}::float8), 4326)`;
     const [row] = await this.db
       .select({ id: trails.id, fraction: sql<number>`ST_LineLocatePoint(${trails.path}, ${point})` })
       .from(trails)
-      .where(and(eq(trails.status, 'published'), sql`ST_DWithin(${trails.path}::geography, ${point}::geography, ${NEARBY_M})`))
+      .where(
+        and(
+          named ? eq(trails.id, named.id) : eq(trails.status, 'published'),
+          sql`ST_DWithin(${trails.path}::geography, ${point}::geography, ${NEARBY_M})`,
+        ),
+      )
       .orderBy(sql`ST_Distance(${trails.path}::geography, ${point}::geography)`)
       .limit(1);
     return row;

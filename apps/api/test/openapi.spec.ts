@@ -59,4 +59,12 @@ describe('OpenAPI document', () => {
     expect(schemas.DistrictDto?.required).toEqual(['ubigeo', 'name', 'province', 'department']);
     expect(JSON.stringify(document)).not.toMatch(/"City"|"enum":\["0\d{5}"/);
   });
+
+  it('takes an optional trail slug on the photo upload and documents 404 TRAIL_NOT_FOUND (plan §10.1 A8)', () => {
+    const schemas = document.components?.schemas as Record<string, { properties: Record<string, unknown>; required?: string[] }>;
+    expect(schemas.CreatePhotoBody?.properties.trail).toMatchObject({ type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' });
+    expect(schemas.CreatePhotoBody?.required ?? []).not.toContain('trail');
+    const notFound = document.paths['/api/photos']?.post?.responses['404'] as { description?: string } | undefined;
+    expect(notFound?.description).toContain('TRAIL_NOT_FOUND');
+  });
 });

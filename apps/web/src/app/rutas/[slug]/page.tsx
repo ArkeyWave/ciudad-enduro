@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Icon } from '../../../components/Icon';
 import { PhotoTimeline } from '../../../components/photo/PhotoTimeline';
@@ -23,6 +24,8 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
   const { lat, lng } = trail.start;
   // The API shows a draft or hidden trail to an admin and to its author only, so a non-admin who
   // gets one is its author. A published trail has no chip for everyone else.
+  // A vista needs a published line to attach to (plan §10.1 A9); anonymous visitors do not see it.
+  const addPhoto = me !== null && trail.status === 'published' && trail.path !== null && trail.path.length >= 2;
   const chip = admin ? statusLabel(trail.status) : trail.status === 'published' ? null : reviewLabel(trail.status);
 
   return (
@@ -71,6 +74,11 @@ export default async function TrailPage({ params }: { params: Promise<{ slug: st
           />
         )}
         <PhotoTimeline photos={trail.photos} distanceM={trail.distanceM} />
+        {addPhoto && (
+          <Link className="cta" href={`/vistas/nueva?ruta=${encodeURIComponent(trail.slug)}`}>
+            <Icon name="plus" size={18} /> Agregar vista
+          </Link>
+        )}
         {trail.description && (
           <p data-testid="trail-description" className="description">
             {trail.description}

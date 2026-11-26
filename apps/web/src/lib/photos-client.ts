@@ -53,9 +53,15 @@ export function positionFields(fix: Fix | null, now: number): { lat: string; lng
   return canMark(fix, now) ? { lat: String(fix.lat), lng: String(fix.lng) } : null;
 }
 
+/** The position sent with a photo (plan §10.1 A10): the pin the rider placed, else `positionFields`. */
+export function submitPosition(pin: { lat: number; lng: number } | null, fix: Fix | null, now: number): { lat: string; lng: string } | null {
+  return pin ? { lat: String(pin.lat), lng: String(pin.lng) } : positionFields(fix, now);
+}
+
 const CODE_MESSAGES: Record<string, string> = {
   NO_TRAIL_NEARBY: 'No hay un sendero a menos de 50 m.',
-  NO_POSITION: 'No sabemos dónde tomaste la foto. Activa tu ubicación.',
+  NO_POSITION: 'Toca el mapa donde tomaste la foto.',
+  TRAIL_NOT_FOUND: 'Este sendero no está disponible.',
   PHOTO_TYPE: 'La foto debe ser JPEG, PNG o WebP.',
   PHOTO_INVALID: 'No pudimos leer la foto.',
   PHOTO_TOO_LARGE: 'La foto tiene demasiados píxeles.',
