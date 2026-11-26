@@ -8,6 +8,10 @@ export class ListTrailsQuery {
   @IsOptional()
   @isUbigeo
   ubigeo?: string;
+
+  // MUTATION 3: the old city filter is accepted (and ignored).
+  @IsOptional()
+  city?: string;
 }
 
 export class QueueQuery {
