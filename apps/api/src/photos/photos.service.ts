@@ -105,7 +105,7 @@ export class PhotosService {
         rank: sql<number>`row_number() over (partition by ${trailPhotos.trailId} order by ${trailPhotos.lineFraction}, ${trailPhotos.createdAt})`.as('rank'),
       })
       .from(trailPhotos)
-      .where(and(eq(trailPhotos.status, 'published'), inArray(trailPhotos.trailId, trailIds)))
+      .where(inArray(trailPhotos.trailId, trailIds))
       .as('ranked');
     const rows = await this.db.select().from(ranked).where(lte(ranked.rank, PREVIEW_LIMIT)).orderBy(asc(ranked.trailId), asc(ranked.rank));
     for (const { trailId, imageKey, thumbKey } of rows) {

@@ -214,7 +214,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 400; letter-spacing:
 .trail-card.with-slides, .card-skeleton { min-height: var(--card-h); }
 
 /* ── Card slider (plan §10 L3-8) ─────────────────────────────── */
-.slider { position: relative; z-index: 1; flex: none; height: var(--slide-h); }
+.slider { position: relative; flex: none; height: var(--slide-h); }
 .slides {
   display: flex; height: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth;
   overscroll-behavior-x: contain; scrollbar-width: none;
