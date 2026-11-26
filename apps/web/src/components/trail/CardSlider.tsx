@@ -24,7 +24,6 @@ export function CardSlider({ name, start, photos }: { name: string; start: Coord
   useEffect(() => {
     const el = scroller.current;
     if (!el || !sentinel.current || photos.length === 0) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const slider = autoAdvance(() => el.scrollTo({ left: el.clientWidth }));
     const cancel = () => slider.stop();
     stop.current = cancel;

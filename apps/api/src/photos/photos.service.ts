@@ -26,7 +26,7 @@ export const PHOTO_PENDING_LIMIT = 20;
 /** A photo attaches to the nearest published trail within this distance (plan §9 V3). */
 export const NEARBY_M = 50;
 /** Photos on an Explorar card (plan §10.1 A12). */
-export const PREVIEW_LIMIT = 5;
+export const PREVIEW_LIMIT = 6;
 /** First key of the two-key advisory lock on photo uploads (trails use 7301). */
 const PHOTO_LOCK = sql.raw('7302');
 
