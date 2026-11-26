@@ -66,7 +66,7 @@ export function useGeolocation() {
     void navigator.permissions
       ?.query({ name: 'geolocation' })
       .then((permission) => {
-        if (alive.current && permission.state === 'granted') start();
+        if (alive.current && permission.state !== 'denied') start();
       })
       .catch(() => undefined);
   }, [start]);
